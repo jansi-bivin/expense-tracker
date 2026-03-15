@@ -5,12 +5,23 @@ const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUz
 
 export const supabase = createClient(supabaseUrl, supabaseKey);
 
-export interface Transaction {
+// Raw SMS as stored in Supabase
+export interface RawSms {
   id: number;
-  sms_id: string | null;
   address: string;
   body: string;
   sms_date: number;
+  created_at: string;
+}
+
+// Enriched transaction after client-side field detection
+export interface Transaction {
+  id: number;
+  address: string;
+  body: string;
+  sms_date: number;
+  created_at: string;
+  // Detected fields (computed client-side)
   amount: number | null;
   transaction_type: string | null;
   account_number: string | null;
@@ -18,8 +29,4 @@ export interface Transaction {
   transaction_date: string | null;
   balance: number | null;
   reference_id: string | null;
-  device_id: string | null;
-  category: string | null;
-  notes: string | null;
-  created_at: string;
 }

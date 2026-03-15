@@ -12,7 +12,13 @@ export interface DetectedTransaction {
 }
 
 function parseAmount(amountStr: string): number {
-  const cleaned = amountStr.replace(/[^0-9.]/g, "");
+  // Remove everything except digits, dots, and commas, then strip commas
+  let cleaned = amountStr.replace(/[^0-9.,]/g, "").replace(/,/g, "");
+  // Handle multiple dots — keep only the last one as decimal separator
+  const lastDot = cleaned.lastIndexOf(".");
+  if (lastDot >= 0) {
+    cleaned = cleaned.substring(0, lastDot).replace(/\./g, "") + "." + cleaned.substring(lastDot + 1);
+  }
   return parseFloat(cleaned) || 0;
 }
 
@@ -37,7 +43,7 @@ export function detectFields(body: string): Partial<DetectedTransaction> {
     if (start > 0 && /[a-zA-Z]/.test(body.charAt(start - 1))) continue;
     const digitsOnly = amountMatch[1].replace(/[^0-9]/g, "");
     if (digitsOnly.length > 10) continue; // Skip reference numbers
-    if (!bestAmount) bestAmount = amountMatch[0];
+    if (!bestAmount) bestAmount = amountMatch[1];
   }
   if (!bestAmount) {
     const fallback = body.match(/(?:debited|credited|withdrawn|deposited|received|transferred|spent)\s+(?:by|for|with|of)\s+([0-9,]+\.\d{2})/i);

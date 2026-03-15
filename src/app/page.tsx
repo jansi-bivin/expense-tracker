@@ -1,10 +1,26 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import { supabase, Transaction } from "@/lib/supabase";
+import { supabase, RawSms, Transaction } from "@/lib/supabase";
+import { detectFields } from "@/lib/smsDetector";
 
 type SortField = "date" | "amount" | "merchant";
 type FilterType = "ALL" | "CREDIT" | "DEBIT";
+
+/** Enrich a raw SMS row with client-side field detection */
+function enrichSms(raw: RawSms): Transaction {
+  const fields = detectFields(raw.body);
+  return {
+    ...raw,
+    amount: fields.amount ?? null,
+    transaction_type: fields.transactionType ?? null,
+    account_number: fields.accountNumber ?? null,
+    merchant: fields.merchant ?? null,
+    transaction_date: fields.transactionDate ?? null,
+    balance: fields.balance ?? null,
+    reference_id: fields.referenceId ?? null,
+  };
+}
 
 export default function Home() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -19,18 +35,17 @@ export default function Home() {
   const [selectedTxn, setSelectedTxn] = useState<Transaction | null>(null);
   const PAGE_SIZE = 50;
 
-  // Fetch all transactions from Supabase
+  // Fetch raw SMS from Supabase, then detect fields client-side
   useEffect(() => {
     async function fetchAll() {
       setLoading(true);
-      // Fetch in pages of 1000 (Supabase limit)
-      let allData: Transaction[] = [];
+      let allData: RawSms[] = [];
       let from = 0;
       const batchSize = 1000;
       while (true) {
         const { data, error } = await supabase
           .from("transactions")
-          .select("*")
+          .select("id, address, body, sms_date, created_at")
           .order("sms_date", { ascending: false })
           .range(from, from + batchSize - 1);
         if (error) { console.error("Fetch error:", error); break; }
@@ -39,17 +54,20 @@ export default function Home() {
         from += batchSize;
         if (data.length < batchSize) break;
       }
-      setTransactions(allData);
-      setTotalCount(allData.length);
+      // Detect fields client-side
+      const enriched = allData.map(enrichSms);
+      setTransactions(enriched);
+      setTotalCount(enriched.length);
       setLoading(false);
     }
     fetchAll();
 
-    // Subscribe to real-time inserts
+    // Subscribe to real-time inserts — enrich new SMS on arrival
     const channel = supabase
       .channel("transactions-realtime")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "transactions" }, (payload) => {
-        setTransactions((prev) => [payload.new as Transaction, ...prev]);
+        const enriched = enrichSms(payload.new as RawSms);
+        setTransactions((prev) => [enriched, ...prev]);
         setTotalCount((prev) => prev + 1);
       })
       .subscribe();
@@ -117,7 +135,7 @@ export default function Home() {
     return Array.from(map.entries()).sort((a, b) => b[0].localeCompare(a[0])).slice(0, 12);
   }, [transactions]);
 
-  const fmt = (n: number) => "₹" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmt = (n: number) => "\u20B9" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmtDate = (ts: number) => new Date(ts).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" });
 
   const handleSort = (field: SortField) => {
@@ -137,9 +155,9 @@ export default function Home() {
     <div className="max-w-7xl mx-auto px-4 py-6">
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">💰 Expense Tracker</h1>
+        <h1 className="text-3xl font-bold">Expense Tracker</h1>
         <div className="text-xs text-gray-400 bg-green-50 px-3 py-1 rounded-full border border-green-200">
-          🟢 Live from Supabase &middot; {totalCount} transactions
+          Live from Supabase &middot; {totalCount} transactions
         </div>
       </div>
 
@@ -224,16 +242,16 @@ export default function Home() {
           <thead className="bg-gray-100">
             <tr>
               <th className="text-left py-3 px-3 cursor-pointer hover:bg-gray-200" onClick={() => handleSort("date")}>
-                Date {sortField === "date" ? (sortAsc ? "↑" : "↓") : ""}
+                Date {sortField === "date" ? (sortAsc ? "\u2191" : "\u2193") : ""}
               </th>
               <th className="text-left py-3 px-3">Type</th>
               <th className="text-left py-3 px-3 cursor-pointer hover:bg-gray-200" onClick={() => handleSort("merchant")}>
-                Merchant {sortField === "merchant" ? (sortAsc ? "↑" : "↓") : ""}
+                Merchant {sortField === "merchant" ? (sortAsc ? "\u2191" : "\u2193") : ""}
               </th>
               <th className="text-left py-3 px-3">Account</th>
               <th className="text-left py-3 px-3">Sender</th>
               <th className="text-right py-3 px-3 cursor-pointer hover:bg-gray-200" onClick={() => handleSort("amount")}>
-                Amount {sortField === "amount" ? (sortAsc ? "↑" : "↓") : ""}
+                Amount {sortField === "amount" ? (sortAsc ? "\u2191" : "\u2193") : ""}
               </th>
               <th className="text-right py-3 px-3">Balance</th>
             </tr>
@@ -277,7 +295,7 @@ export default function Home() {
           disabled={page === 0}
           onClick={() => setPage(page - 1)}
         >
-          ← Previous
+          Previous
         </button>
         <span className="text-sm text-gray-500">Page {page + 1} of {totalPages}</span>
         <button
@@ -285,7 +303,7 @@ export default function Home() {
           disabled={page >= totalPages - 1}
           onClick={() => setPage(page + 1)}
         >
-          Next →
+          Next
         </button>
       </div>
 
@@ -295,19 +313,18 @@ export default function Home() {
           <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full mx-4 p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold">Transaction Detail</h3>
-              <button className="text-gray-400 hover:text-gray-600 text-2xl" onClick={() => setSelectedTxn(null)}>×</button>
+              <button className="text-gray-400 hover:text-gray-600 text-2xl" onClick={() => setSelectedTxn(null)}>&times;</button>
             </div>
             <div className="space-y-3 text-sm">
               <div className="flex justify-between"><span className="text-gray-500">Amount</span><span className={`font-bold text-lg ${selectedTxn.transaction_type === "CREDIT" ? "text-green-600" : "text-red-600"}`}>{fmt(Number(selectedTxn.amount) ?? 0)}</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">Type</span><span className="font-medium">{selectedTxn.transaction_type}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Type</span><span className="font-medium">{selectedTxn.transaction_type ?? "-"}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Account</span><span className="font-mono">{selectedTxn.account_number ?? "-"}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Merchant</span><span>{selectedTxn.merchant ?? "-"}</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">Date (SMS)</span><span>{selectedTxn.transaction_date ?? "-"}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Date (in SMS)</span><span>{selectedTxn.transaction_date ?? "-"}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Date (received)</span><span>{fmtDate(selectedTxn.sms_date)}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Balance</span><span>{selectedTxn.balance ? fmt(Number(selectedTxn.balance)) : "-"}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Reference</span><span className="text-xs font-mono">{selectedTxn.reference_id ?? "-"}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Sender</span><span>{selectedTxn.address}</span></div>
-              {selectedTxn.category && <div className="flex justify-between"><span className="text-gray-500">Category</span><span>{selectedTxn.category}</span></div>}
               <div className="mt-3 p-3 bg-gray-100 rounded-lg">
                 <div className="text-xs text-gray-500 mb-1">Raw SMS</div>
                 <div className="text-xs break-all">{selectedTxn.body}</div>
