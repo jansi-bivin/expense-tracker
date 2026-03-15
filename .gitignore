@@ -1,0 +1,5 @@
+node_modules/
+.next/
+.env.local
+src/lib/sms_data.json
+.claude/
