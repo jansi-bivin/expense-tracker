@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Expense Tracker",
-  description: "Family expense tracking from bank SMS - v2",
+  description: "Family expense tracking from bank SMS - v3",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
