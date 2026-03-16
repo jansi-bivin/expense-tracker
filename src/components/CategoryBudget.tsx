@@ -1,27 +1,41 @@
 "use client";
 
-import { useMemo } from "react";
-import { Transaction, Category } from "@/lib/supabase";
+import { useMemo, useState } from "react";
+import { supabase, Transaction, Category } from "@/lib/supabase";
 
 interface Props {
   transactions: Transaction[];
   categories: Category[];
   isPrimary: boolean;
+  scaleFactor: number; // active days scaling (1.0 = full month)
+  onCategoriesChange: (cats: Category[]) => void;
+  onShowAddCategory: () => void;
 }
 
-export default function CategoryBudget({ transactions, categories, isPrimary }: Props) {
+export default function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, onCategoriesChange, onShowAddCategory }: Props) {
   const now = new Date();
   const currentMonth = now.getMonth();
   const currentYear = now.getFullYear();
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editCap, setEditCap] = useState("");
+  const [editVisibility, setEditVisibility] = useState<"all" | "primary" | "secondary">("all");
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const fmt = (n: number) => "\u20B9" + n.toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
   const pctFmt = (n: number) => Math.round(n) + "%";
+
+  // Filter categories by visibility for secondary user
+  const visibleCategories = useMemo(() => {
+    return categories.filter((c) =>
+      isPrimary || c.visible_to === "all" || c.visible_to === "secondary"
+    );
+  }, [categories, isPrimary]);
 
   const categorySpend = useMemo(() => {
     const spend = new Map<string, number>();
     for (const txn of transactions) {
       if (!txn.category || !txn.amount) continue;
-      const cat = categories.find((c) => c.name === txn.category);
+      const cat = visibleCategories.find((c) => c.name === txn.category);
       if (!cat) continue;
 
       const d = new Date(txn.sms_date);
@@ -35,59 +49,137 @@ export default function CategoryBudget({ transactions, categories, isPrimary }: 
       }
     }
     return spend;
-  }, [transactions, categories, currentMonth, currentYear]);
+  }, [transactions, visibleCategories, currentMonth, currentYear]);
+
+  const monthlyCategories = visibleCategories.filter((c) => c.recurrence === "Monthly");
+  const yearlyCategories = visibleCategories.filter((c) => c.recurrence === "Yearly");
 
   const totalCap = useMemo(() => {
-    return categories
-      .filter((c) => c.recurrence === "Monthly")
-      .reduce((sum, c) => sum + c.cap, 0);
-  }, [categories]);
+    return monthlyCategories.reduce((sum, c) => sum + c.cap * scaleFactor, 0);
+  }, [monthlyCategories, scaleFactor]);
 
   const totalSpent = useMemo(() => {
     let sum = 0;
-    for (const cat of categories) {
-      if (cat.recurrence === "Monthly") {
-        sum += categorySpend.get(cat.name) || 0;
-      }
+    for (const cat of monthlyCategories) {
+      sum += categorySpend.get(cat.name) || 0;
     }
     return sum;
-  }, [categories, categorySpend]);
-
-  const monthlyCategories = categories.filter((c) => c.recurrence === "Monthly");
-  const yearlyCategories = categories.filter((c) => c.recurrence === "Yearly");
+  }, [monthlyCategories, categorySpend]);
 
   const totalPct = totalCap > 0 ? Math.min((totalSpent / totalCap) * 100, 100) : 0;
   const totalRemainingPct = Math.max(100 - totalPct, 0);
   const totalRemaining = totalCap - totalSpent;
 
+  function startEdit(cat: Category) {
+    if (!isPrimary) return;
+    setEditingId(cat.id);
+    setEditCap(String(cat.cap));
+    setEditVisibility(cat.visible_to);
+  }
+
+  async function saveEdit(cat: Category) {
+    const newCap = Number(editCap);
+    if (!newCap || newCap <= 0) return;
+    setSavingEdit(true);
+
+    await supabase.from("categories").update({ cap: newCap, visible_to: editVisibility }).eq("id", cat.id);
+    onCategoriesChange(categories.map((c) => c.id === cat.id ? { ...c, cap: newCap, visible_to: editVisibility } : c));
+
+    setEditingId(null);
+    setSavingEdit(false);
+  }
+
   function CategoryCard({ cat, index }: { cat: Category; index: number }) {
+    const effectiveCap = cat.recurrence === "Monthly" ? cat.cap * scaleFactor : cat.cap;
     const spent = categorySpend.get(cat.name) || 0;
-    const remaining = cat.cap - spent;
-    const pct = cat.cap > 0 ? Math.min((spent / cat.cap) * 100, 100) : 0;
+    const remaining = effectiveCap - spent;
+    const pct = effectiveCap > 0 ? Math.min((spent / effectiveCap) * 100, 100) : 0;
     const remainingPct = Math.max(100 - pct, 0);
     const fillClass = pct >= 90 ? "progress-fill-red" : pct >= 75 ? "progress-fill-yellow" : "progress-fill-green";
     const accentColor = pct >= 90 ? "var(--accent-red)" : pct >= 75 ? "var(--accent-orange)" : "var(--accent-green)";
+    const isEditing = editingId === cat.id;
+
+    if (isEditing) {
+      return (
+        <div className="card p-4 animate-scale-in glow-accent" style={{ animationDelay: `${index * 50}ms` }}>
+          <div className="text-sm font-semibold mb-3" style={{ color: "var(--text-primary)" }}>{cat.name}</div>
+
+          {/* Cap input */}
+          <div className="relative mb-3">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: "var(--text-tertiary)" }}>₹</span>
+            <input
+              type="number"
+              className="w-full pl-7 pr-3 py-2 text-sm rounded-xl"
+              value={editCap}
+              onChange={(e) => setEditCap(e.target.value)}
+              autoFocus
+            />
+          </div>
+
+          {/* Visibility toggle */}
+          <div className="section-label mb-1.5">Visible to</div>
+          <div className="flex gap-1.5 mb-3">
+            {([
+              { value: "all" as const, label: "Both" },
+              { value: "primary" as const, label: "Me" },
+              { value: "secondary" as const, label: "Wife" },
+            ]).map((opt) => (
+              <button
+                key={opt.value}
+                className={`flex-1 py-1.5 rounded-lg text-[11px] font-semibold transition-all ${editVisibility === opt.value ? "btn-primary" : "btn-ghost"}`}
+                onClick={() => setEditVisibility(opt.value)}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              className="flex-1 py-2 btn-primary text-xs rounded-xl disabled:opacity-35"
+              disabled={savingEdit}
+              onClick={() => saveEdit(cat)}
+            >
+              {savingEdit ? "..." : "✓ Save"}
+            </button>
+            <button className="px-4 py-2 btn-ghost text-xs rounded-xl" onClick={() => setEditingId(null)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      );
+    }
 
     return (
-      <div className="card p-4 animate-slide-up" style={{ animationDelay: `${index * 50}ms` }}>
+      <div className="card p-4 animate-slide-up" style={{ animationDelay: `${index * 50}ms` }}
+        onClick={() => startEdit(cat)}>
         <div className="flex justify-between items-start mb-2.5">
-          <div className="text-sm font-semibold leading-tight" style={{ color: "var(--text-primary)" }}>{cat.name}</div>
+          <div className="flex items-center gap-2">
+            <div className="text-sm font-semibold leading-tight" style={{ color: "var(--text-primary)" }}>{cat.name}</div>
+            {/* Visibility badge — primary user only, when not 'all' */}
+            {isPrimary && cat.visible_to !== "all" && (
+              <span className={`badge text-[9px] py-0 ${cat.visible_to === "primary" ? "badge-purple" : "badge-green"}`}>
+                {cat.visible_to === "primary" ? "Me" : "Wife"}
+              </span>
+            )}
+          </div>
           <span className="badge badge-muted text-[10px]">{cat.recurrence === "Monthly" ? "Mo" : "Yr"}</span>
         </div>
 
         {isPrimary ? (
-          /* ── Primary: show ₹ amounts ── */
           <div className="flex justify-between items-baseline mb-2">
             <div>
               <span className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>{fmt(spent)}</span>
-              <span className="text-xs ml-1" style={{ color: "var(--text-tertiary)" }}>/ {fmt(cat.cap)}</span>
+              <span className="text-xs ml-1" style={{ color: "var(--text-tertiary)" }}>/ {fmt(effectiveCap)}</span>
+              {scaleFactor < 1 && cat.recurrence === "Monthly" && (
+                <span className="text-[10px] ml-1" style={{ color: "var(--accent-orange)" }}>({fmt(cat.cap)})</span>
+              )}
             </div>
             <span className="text-xs font-semibold" style={{ color: accentColor }}>
               {remaining >= 0 ? fmt(remaining) + " left" : fmt(-remaining) + " over"}
             </span>
           </div>
         ) : (
-          /* ── Secondary: show % remaining — focus on what's left ── */
           <div className="flex justify-between items-baseline mb-2">
             <span className="text-lg font-bold" style={{ color: accentColor }}>
               {remainingPct > 0 ? pctFmt(remainingPct) + " left" : "Budget exceeded"}
@@ -98,7 +190,6 @@ export default function CategoryBudget({ transactions, categories, isPrimary }: 
           </div>
         )}
 
-        {/* Progress bar — inverted for secondary (shows remaining) */}
         <div className="progress-track">
           <div className={`progress-fill ${fillClass}`} style={{ width: `${pct}%` }} />
         </div>
@@ -118,7 +209,6 @@ export default function CategoryBudget({ transactions, categories, isPrimary }: 
         </div>
 
         {isPrimary ? (
-          /* ── Primary hero: ₹ spent + ₹ remaining ── */
           <div className="flex justify-between items-end mb-4">
             <div>
               <div className="text-[11px] font-medium mb-1" style={{ color: "var(--text-tertiary)" }}>Total Spent</div>
@@ -133,31 +223,26 @@ export default function CategoryBudget({ transactions, categories, isPrimary }: 
             </div>
           </div>
         ) : (
-          /* ── Secondary hero: % remaining — encouraging tone ── */
           <div className="text-center mb-4">
             <div className="text-[11px] font-medium mb-2" style={{ color: "var(--text-tertiary)" }}>Monthly Budget Remaining</div>
             <div className="text-4xl font-extrabold tracking-tight" style={{ color: totalRemainingPct > 25 ? "var(--accent-green)" : totalRemainingPct > 10 ? "var(--accent-orange)" : "var(--accent-red)" }}>
               {pctFmt(totalRemainingPct)}
             </div>
             <div className="text-xs mt-2" style={{ color: "var(--text-tertiary)" }}>
-              {totalRemainingPct > 50
-                ? "Going great! Plenty of budget left 👍"
-                : totalRemainingPct > 25
-                ? "Past halfway — spend wisely"
-                : totalRemainingPct > 10
-                ? "Running low — be careful"
+              {totalRemainingPct > 50 ? "Going great! Plenty of budget left 👍"
+                : totalRemainingPct > 25 ? "Past halfway — spend wisely"
+                : totalRemainingPct > 10 ? "Running low — be careful"
                 : "⚠️ Almost out of budget"}
             </div>
           </div>
         )}
 
-        {/* Overall progress */}
         <div className="progress-track" style={{ height: "8px" }}>
           <div className={`progress-fill ${totalPct >= 90 ? "progress-fill-red" : totalPct >= 75 ? "progress-fill-yellow" : "progress-fill-green"}`}
             style={{ width: `${totalPct}%`, height: "8px" }} />
         </div>
         <div className="text-[11px] mt-2 text-right font-medium" style={{ color: "var(--text-tertiary)" }}>
-          {isPrimary ? `${Math.round(totalPct)}% used` : `${pctFmt(totalPct)} used`}
+          {pctFmt(totalPct)} used
         </div>
       </div>
 
@@ -167,6 +252,17 @@ export default function CategoryBudget({ transactions, categories, isPrimary }: 
         {monthlyCategories.map((cat, i) => (
           <CategoryCard key={cat.id} cat={cat} index={i} />
         ))}
+        {/* Add Category button — primary only */}
+        {isPrimary && (
+          <button
+            className="card p-4 flex items-center justify-center gap-2 transition-all hover:scale-[1.01]"
+            style={{ border: "1px dashed var(--border-light)" }}
+            onClick={onShowAddCategory}
+          >
+            <span style={{ color: "var(--accent)" }}>+</span>
+            <span className="text-sm font-medium" style={{ color: "var(--text-tertiary)" }}>Add Category</span>
+          </button>
+        )}
       </div>
 
       {/* ═══ Yearly Categories ═══ */}

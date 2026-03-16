@@ -37,6 +37,13 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
   const isDebit = txn.transaction_type === "DEBIT";
   const isCredit = txn.transaction_type === "CREDIT";
 
+  // Filter categories by visibility
+  const visibleCategories = useMemo(() => {
+    return categories.filter((c) =>
+      isPrimary || c.visible_to === "all" || c.visible_to === "secondary"
+    );
+  }, [categories, isPrimary]);
+
   // Auto-detect if this looks like a settlement payment
   const isLikelySettlement = useMemo(() => {
     if (!isPrimary || !settlementHints || settlementHints.length === 0) return false;
@@ -223,7 +230,7 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
             >
               <option value="">Select category...</option>
               {CATEGORY_GROUPS.map((group) => {
-                const items = categories.filter(group.filter);
+                const items = visibleCategories.filter(group.filter);
                 if (items.length === 0) return null;
                 return (
                   <optgroup key={group.label} label={group.label}>

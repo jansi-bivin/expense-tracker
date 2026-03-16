@@ -7,6 +7,9 @@ import { detectFields } from "@/lib/smsDetector";
 import NewSmsReview from "@/components/NewSmsReview";
 import CategoryBudget from "@/components/CategoryBudget";
 import DuesView from "@/components/DuesView";
+import ActiveDaysControl from "@/components/ActiveDaysControl";
+import AddCategoryForm from "@/components/AddCategoryForm";
+import ManualExpenseForm from "@/components/ManualExpenseForm";
 
 function enrichSms(raw: RawSms): Transaction {
   const fields = detectFields(raw.body);
@@ -34,6 +37,21 @@ function HomeInner() {
   const [view, setView] = useState<"review" | "budget" | "dues">("budget");
   const [resetting, setResetting] = useState(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Feature 3: Active days
+  const [activeDays, setActiveDays] = useState<number | null>(null);
+
+  // Feature 4: Manual expense
+  const [showManualExpense, setShowManualExpense] = useState(false);
+
+  // Feature 5: Add category
+  const [showAddCategory, setShowAddCategory] = useState(false);
+
+  // Compute days in current month & scale factor
+  const now = new Date();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const effectiveActiveDays = activeDays ?? daysInMonth;
+  const scaleFactor = effectiveActiveDays / daysInMonth;
 
   // Secret reset: long-press logo for 3 seconds
   function startLongPress() {
@@ -96,7 +114,21 @@ function HomeInner() {
       const { data: cats } = await supabase.from("categories").select("*").order("name");
       if (cats) setCategories(cats);
 
-      // Fetch new SMS for this user (or all if no phone_number filter)
+      // Fetch active days setting
+      const { data: settingsData } = await supabase.from("settings").select("*").eq("key", "active_days").single();
+      if (settingsData) {
+        const val = settingsData.value as { days?: number | null; month?: number; year?: number };
+        const currentMonth = now.getMonth() + 1; // 1-indexed
+        const currentYear = now.getFullYear();
+        // Only use stored days if it matches the current month
+        if (val.month === currentMonth && val.year === currentYear && val.days != null) {
+          setActiveDays(val.days);
+        } else {
+          setActiveDays(null); // full month
+        }
+      }
+
+      // Fetch new SMS for this user
       let newQuery = supabase.from("transactions").select("*").eq("status", "new").order("sms_date", { ascending: false });
       if (user) {
         newQuery = newQuery.eq("phone_number", user.phone_number);
@@ -162,6 +194,56 @@ function HomeInner() {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
+  // Feature 3: Save active days to Supabase
+  async function handleActiveDaysUpdate(days: number) {
+    setActiveDays(days === daysInMonth ? null : days);
+    const currentMonth = now.getMonth() + 1;
+    const currentYear = now.getFullYear();
+    await supabase.from("settings").upsert({
+      key: "active_days",
+      value: { days: days === daysInMonth ? null : days, month: currentMonth, year: currentYear },
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "key" });
+  }
+
+  // Feature 4: Save manual expense
+  async function handleManualExpense(expense: { amount: number; category: string; note: string; date: number }) {
+    const phone = currentUser?.phone_number ?? null;
+    const body = expense.note ? `Manual: ${expense.note}` : "Manual expense";
+
+    const { data: inserted } = await supabase.from("transactions").insert({
+      address: "MANUAL",
+      body,
+      sms_date: expense.date,
+      phone_number: phone,
+      category: expense.category,
+      notes: expense.note || null,
+      status: "categorized",
+    }).select().single();
+
+    if (inserted) {
+      const enriched = enrichSms(inserted as RawSms);
+      setCategorizedTxns((prev) => [enriched, ...prev]);
+
+      // If secondary user, create a due
+      if (currentUser && !currentUser.is_primary) {
+        await supabase.from("dues").insert({
+          transaction_id: inserted.id,
+          category: expense.category,
+          amount: expense.amount,
+        });
+      }
+    }
+
+    setShowManualExpense(false);
+  }
+
+  // Feature 5: Add new category
+  function handleAddCategory(cat: Category) {
+    setCategories((prev) => [...prev, cat].sort((a, b) => a.name.localeCompare(b.name)));
+    setShowAddCategory(false);
+  }
+
   async function handleReviewDone(id: number, category?: string, notes?: string) {
     const txn = newTxns.find((t) => t.id === id);
     setNewTxns((prev) => prev.filter((t) => t.id !== id));
@@ -169,7 +251,6 @@ function HomeInner() {
       setCategorizedTxns((prev) => [{ ...txn, category, notes: notes || null, status: "categorized" as const }, ...prev]);
 
       // If secondary user categorized, create a due
-      // Don't update state here — realtime INSERT listener will add it
       if (currentUser && !currentUser.is_primary && txn.amount) {
         await supabase.from("dues").insert({
           transaction_id: id,
@@ -185,23 +266,20 @@ function HomeInner() {
     const txn = newTxns.find((t) => t.id === txnId);
     setNewTxns((prev) => prev.filter((t) => t.id !== txnId));
 
-    // Mark transaction as Settlement
     await supabase.from("transactions").update({ category: "Settlement", status: "categorized" }).eq("id", txnId);
     if (txn) {
       setCategorizedTxns((prev) => [{ ...txn, category: "Settlement", status: "categorized" as const }, ...prev]);
     }
 
-    // Clear selected dues and link settlement
-    const now = new Date().toISOString();
+    const nowIso = new Date().toISOString();
     await supabase.from("dues").update({
       cleared: true,
-      cleared_at: now,
+      cleared_at: nowIso,
       settlement_transaction_id: txnId,
     }).in("id", dueIds);
 
-    // Update local dues state
     setDues((prev) => prev.map((d) =>
-      dueIds.includes(d.id) ? { ...d, cleared: true, cleared_at: now, settlement_transaction_id: txnId } : d
+      dueIds.includes(d.id) ? { ...d, cleared: true, cleared_at: nowIso, settlement_transaction_id: txnId } : d
     ));
   }
 
@@ -216,6 +294,8 @@ function HomeInner() {
     setCurrentUser(user);
     window.location.reload();
   }
+
+  const isPrimary = currentUser?.is_primary ?? false;
 
   // User selection screen
   if (!loading && !currentUser && allUsers.length > 0) {
@@ -268,7 +348,7 @@ function HomeInner() {
   const activeView = showReview ? "review" : view === "review" ? "budget" : view;
 
   return (
-    <div className="max-w-2xl mx-auto px-4 pt-5 pb-8 animate-fade-in">
+    <div className="max-w-2xl mx-auto px-4 pt-5 pb-24 animate-fade-in">
       {/* Header */}
       <div className="flex justify-between items-center mb-5">
         <div>
@@ -325,7 +405,7 @@ function HomeInner() {
             categories={categories}
             onDone={handleReviewDone}
             userName={currentUser?.name}
-            isPrimary={currentUser?.is_primary}
+            isPrimary={isPrimary}
             unclearedDues={unclearedDues}
             onSettle={handleSettle}
             settlementHints={settlementHints}
@@ -338,17 +418,60 @@ function HomeInner() {
             onDuesChange={setDues}
             payeeUpi={allUsers.find((u) => !u.is_primary)?.upi_id ?? null}
             payeeName={allUsers.find((u) => !u.is_primary)?.name ?? ""}
-            isPrimary={currentUser?.is_primary ?? false}
+            isPrimary={isPrimary}
             primaryName={allUsers.find((u) => u.is_primary)?.name ?? ""}
           />
         ) : (
-          <CategoryBudget
-            transactions={categorizedTxns}
-            categories={categories}
-            isPrimary={currentUser?.is_primary ?? false}
-          />
+          <>
+            {/* Active Days Control — above budget */}
+            <ActiveDaysControl
+              activeDays={effectiveActiveDays}
+              daysInMonth={daysInMonth}
+              isPrimary={isPrimary}
+              onUpdate={handleActiveDaysUpdate}
+            />
+            <CategoryBudget
+              transactions={categorizedTxns}
+              categories={categories}
+              isPrimary={isPrimary}
+              scaleFactor={scaleFactor}
+              onCategoriesChange={setCategories}
+              onShowAddCategory={() => setShowAddCategory(true)}
+            />
+          </>
         )}
       </div>
+
+      {/* FAB — floating "+" button for manual expense */}
+      <button
+        className="fixed bottom-6 right-6 w-14 h-14 rounded-full flex items-center justify-center text-2xl font-bold shadow-lg transition-all active:scale-90 z-40"
+        style={{
+          background: "linear-gradient(135deg, var(--accent), var(--accent-dim))",
+          color: "#fff",
+          boxShadow: "0 4px 20px rgba(123, 108, 246, 0.4)",
+        }}
+        onClick={() => setShowManualExpense(true)}
+      >
+        +
+      </button>
+
+      {/* Manual Expense Form overlay */}
+      {showManualExpense && (
+        <ManualExpenseForm
+          categories={categories}
+          isPrimary={isPrimary}
+          onSave={handleManualExpense}
+          onClose={() => setShowManualExpense(false)}
+        />
+      )}
+
+      {/* Add Category Form overlay */}
+      {showAddCategory && (
+        <AddCategoryForm
+          onSave={handleAddCategory}
+          onClose={() => setShowAddCategory(false)}
+        />
+      )}
     </div>
   );
 }

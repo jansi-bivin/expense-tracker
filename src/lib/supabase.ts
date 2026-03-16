@@ -34,6 +34,14 @@ export interface Category {
   name: string;
   cap: number;
   recurrence: 'Monthly' | 'Yearly';
+  visible_to: 'all' | 'primary' | 'secondary';
+}
+
+export interface AppSettings {
+  id: number;
+  key: string;
+  value: Record<string, unknown>;
+  updated_at: string;
 }
 
 export interface User {
