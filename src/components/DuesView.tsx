@@ -50,27 +50,22 @@ export default function DuesView({ dues, transactions, categories, onDuesChange,
     return m;
   }, [transactions]);
 
-  const [payHint, setPayHint] = useState<number | null>(null);
-
   function openUpiPay(amount: number) {
     if (!payeeUpi) return;
-    // Show amount hint so user knows what to enter in UPI app
-    setPayHint(amount);
-    setTimeout(() => setPayHint(null), 8000);
+    const amt = amount.toFixed(2);
 
-    // Open UPI app with ONLY payee — no amount, no tr.
-    // Prefilled amounts on P2P trigger NPCI risk policy blocks.
-    // User enters the amount manually in the UPI app.
+    // Use native Android bridge — builds raw URI (no @-encoding issues)
+    // and launches via startActivityForResult with chooser
     const androidUpi = (window as unknown as Record<string, unknown>).AndroidUpi as
       | { pay: (vpa: string, name: string, amount: string, txnRef: string) => void }
       | undefined;
     if (androidUpi?.pay) {
-      androidUpi.pay(payeeUpi, payeeName, "", "");
+      androidUpi.pay(payeeUpi, payeeName, amt, "");
       return;
     }
 
     // Fallback for browser testing
-    const url = `upi://pay?pa=${payeeUpi}&pn=${encodeURIComponent(payeeName)}&cu=INR`;
+    const url = `upi://pay?pa=${payeeUpi}&pn=${encodeURIComponent(payeeName)}&am=${amt}&cu=INR`;
     const a = document.createElement("a");
     a.href = url;
     a.style.display = "none";
@@ -121,14 +116,6 @@ export default function DuesView({ dues, transactions, categories, onDuesChange,
               Pay {fmt(totalOutstanding)} via UPI
             </button>
           )}
-        </div>
-      )}
-
-      {/* Amount hint — shown after Pay is tapped */}
-      {payHint !== null && (
-        <div className="bg-yellow-100 border border-yellow-400 rounded-lg p-3 mb-4 text-center animate-pulse">
-          <div className="text-sm text-yellow-800 font-medium">Enter this amount in UPI app:</div>
-          <div className="text-2xl font-bold text-yellow-900">{fmt(payHint)}</div>
         </div>
       )}
 
