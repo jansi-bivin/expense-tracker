@@ -197,18 +197,33 @@ function HomeInner() {
   // User selection screen
   if (!loading && !currentUser && allUsers.length > 0) {
     return (
-      <div className="max-w-sm mx-auto px-4 py-16 text-center">
-        <h1 className="text-2xl font-bold mb-2" style={{ color: "var(--text-primary)" }}>ExpTrack</h1>
-        <p className="mb-8" style={{ color: "var(--text-secondary)" }}>Who are you?</p>
-        <div className="space-y-3">
+      <div className="max-w-sm mx-auto px-5 py-20 text-center animate-fade-in">
+        <div className="text-3xl font-extrabold tracking-tight mb-1" style={{ color: "var(--text-primary)" }}>
+          Exp<span style={{ color: "var(--accent)" }}>Track</span>
+        </div>
+        <p className="text-sm mb-10" style={{ color: "var(--text-tertiary)" }}>Select your profile</p>
+        <div className="space-y-3 stagger">
           {allUsers.map((u) => (
             <button
               key={u.id}
               onClick={() => handleSelectUser(u)}
-              className="glass w-full py-4 px-6 rounded-xl text-lg font-medium transition-all hover:scale-[1.02]"
-              style={{ color: "var(--text-primary)" }}
+              className="card w-full py-4 px-6 text-left animate-slide-up"
             >
-              {u.name} {u.is_primary && <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>(primary)</span>}
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center text-base font-bold"
+                  style={{ background: u.is_primary ? "linear-gradient(135deg, #7b6cf6, #5b4cd4)" : "linear-gradient(135deg, #00d4a1, #00a67d)", color: "#fff" }}>
+                  {u.name.charAt(0).toUpperCase()}
+                </div>
+                <div className="flex-1">
+                  <div className="font-semibold" style={{ color: "var(--text-primary)" }}>{u.name}</div>
+                  <div className="text-xs" style={{ color: "var(--text-tertiary)" }}>
+                    {u.is_primary ? "Primary account" : "Secondary account"}
+                  </div>
+                </div>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: "var(--text-tertiary)" }}>
+                  <path d="M9 18l6-6-6-6" />
+                </svg>
+              </div>
             </button>
           ))}
         </div>
@@ -217,8 +232,10 @@ function HomeInner() {
   }
 
   if (loading) return (
-    <div className="flex items-center justify-center min-h-screen">
-      <div className="text-lg" style={{ color: "var(--text-secondary)" }}>Loading...</div>
+    <div className="flex flex-col items-center justify-center min-h-screen gap-3">
+      <div className="w-8 h-8 rounded-full border-2 border-transparent animate-spin"
+        style={{ borderTopColor: "var(--accent)", borderRightColor: "var(--accent)" }} />
+      <div className="text-sm" style={{ color: "var(--text-tertiary)" }}>Loading...</div>
     </div>
   );
 
@@ -228,32 +245,46 @@ function HomeInner() {
   const activeView = showReview ? "review" : view === "review" ? "budget" : view;
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-6">
-      <div className="flex justify-between items-center mb-4 pb-3" style={{ borderBottom: "1px solid var(--border)" }}>
-        <h1 className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>ExpTrack</h1>
-        <div className="text-right">
-          {currentUser && <div className="text-xs" style={{ color: "var(--text-secondary)" }}>{currentUser.name}</div>}
-          <div className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>v15</div>
+    <div className="max-w-2xl mx-auto px-4 pt-5 pb-8 animate-fade-in">
+      {/* Header */}
+      <div className="flex justify-between items-center mb-5">
+        <div>
+          <div className="text-xl font-extrabold tracking-tight">
+            Exp<span style={{ color: "var(--accent)" }}>Track</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {currentUser && (
+            <div className="flex items-center gap-2">
+              <div className="pulse-dot" />
+              <span className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>{currentUser.name}</span>
+            </div>
+          )}
         </div>
       </div>
 
+      {/* Tab bar */}
       {!showReview && (
-        <div className="flex gap-2 mb-4">
+        <div className="flex gap-1.5 mb-5 p-1 rounded-2xl" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)" }}>
           <button
             onClick={() => setView("budget")}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeView === "budget" ? "btn-gradient text-white glow-accent" : "glass"}`}
-            style={activeView !== "budget" ? { color: "var(--text-secondary)" } : undefined}
+            className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+              activeView === "budget" ? "btn-primary" : ""
+            }`}
+            style={activeView !== "budget" ? { color: "var(--text-tertiary)" } : undefined}
           >
-            Budget
+            💰 Budget
           </button>
           <button
             onClick={() => setView("dues")}
-            className={`px-4 py-2 rounded-lg text-sm font-medium relative transition-all ${activeView === "dues" ? "btn-gradient text-white glow-accent" : "glass"}`}
-            style={activeView !== "dues" ? { color: "var(--text-secondary)" } : undefined}
+            className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all relative ${
+              activeView === "dues" ? "btn-primary" : ""
+            }`}
+            style={activeView !== "dues" ? { color: "var(--text-tertiary)" } : undefined}
           >
-            Dues
+            📋 Dues
             {duesTotal > 0 && (
-              <span className="ml-1.5 px-1.5 py-0.5 text-white text-xs rounded-full" style={{ background: "var(--accent-red)" }}>
+              <span className="badge badge-red ml-1.5 text-[10px] py-0">
                 {"\u20B9"}{duesTotal.toLocaleString("en-IN")}
               </span>
             )}
@@ -261,41 +292,50 @@ function HomeInner() {
         </div>
       )}
 
-      {activeView === "review" ? (
-        <NewSmsReview
-          transactions={newTxns}
-          categories={categories}
-          onDone={handleReviewDone}
-          userName={currentUser?.name}
-          isPrimary={currentUser?.is_primary}
-          unclearedDues={unclearedDues}
-          onSettle={handleSettle}
-          settlementHints={settlementHints}
-        />
-      ) : activeView === "dues" ? (
-        <DuesView
-          dues={dues}
-          transactions={categorizedTxns}
-          categories={categories}
-          onDuesChange={setDues}
-          payeeUpi={allUsers.find((u) => !u.is_primary)?.upi_id ?? null}
-          payeeName={allUsers.find((u) => !u.is_primary)?.name ?? ""}
-          isPrimary={currentUser?.is_primary ?? false}
-          primaryName={allUsers.find((u) => u.is_primary)?.name ?? ""}
-        />
-      ) : (
-        <CategoryBudget
-          transactions={categorizedTxns}
-          categories={categories}
-        />
-      )}
+      {/* Content */}
+      <div className="animate-fade-in">
+        {activeView === "review" ? (
+          <NewSmsReview
+            transactions={newTxns}
+            categories={categories}
+            onDone={handleReviewDone}
+            userName={currentUser?.name}
+            isPrimary={currentUser?.is_primary}
+            unclearedDues={unclearedDues}
+            onSettle={handleSettle}
+            settlementHints={settlementHints}
+          />
+        ) : activeView === "dues" ? (
+          <DuesView
+            dues={dues}
+            transactions={categorizedTxns}
+            categories={categories}
+            onDuesChange={setDues}
+            payeeUpi={allUsers.find((u) => !u.is_primary)?.upi_id ?? null}
+            payeeName={allUsers.find((u) => !u.is_primary)?.name ?? ""}
+            isPrimary={currentUser?.is_primary ?? false}
+            primaryName={allUsers.find((u) => u.is_primary)?.name ?? ""}
+          />
+        ) : (
+          <CategoryBudget
+            transactions={categorizedTxns}
+            categories={categories}
+          />
+        )}
+      </div>
     </div>
   );
 }
 
 export default function Home() {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><div className="text-lg" style={{ color: "var(--text-secondary)" }}>Loading...</div></div>}>
+    <Suspense fallback={
+      <div className="flex flex-col items-center justify-center min-h-screen gap-3">
+        <div className="w-8 h-8 rounded-full border-2 border-transparent animate-spin"
+          style={{ borderTopColor: "var(--accent)", borderRightColor: "var(--accent)" }} />
+        <div className="text-sm" style={{ color: "var(--text-tertiary)" }}>Loading...</div>
+      </div>
+    }>
       <HomeInner />
     </Suspense>
   );

@@ -55,71 +55,91 @@ export default function CategoryBudget({ transactions, categories }: Props) {
   const yearlyCategories = categories.filter((c) => c.recurrence === "Yearly");
 
   const totalPct = totalCap > 0 ? Math.min((totalSpent / totalCap) * 100, 100) : 0;
+  const totalRemaining = totalCap - totalSpent;
 
-  function CategoryCard({ cat }: { cat: Category }) {
+  function CategoryCard({ cat, index }: { cat: Category; index: number }) {
     const spent = categorySpend.get(cat.name) || 0;
     const remaining = cat.cap - spent;
     const pct = cat.cap > 0 ? Math.min((spent / cat.cap) * 100, 100) : 0;
-    const barGradient = pct >= 90 ? "linear-gradient(90deg, #ff4757, #e84141)" : pct >= 75 ? "linear-gradient(90deg, #ff9f43, #e67e22)" : "linear-gradient(90deg, #00c896, #00a67d)";
-    const glowClass = pct >= 90 ? "progress-glow-red" : pct >= 75 ? "progress-glow-yellow" : "progress-glow-green";
+    const fillClass = pct >= 90 ? "progress-fill-red" : pct >= 75 ? "progress-fill-yellow" : "progress-fill-green";
+    const accentColor = pct >= 90 ? "var(--accent-red)" : pct >= 75 ? "var(--accent-orange)" : "var(--accent-green)";
 
     return (
-      <div className="glass rounded-xl p-4 transition-all hover:scale-[1.01]">
-        <div className="flex justify-between items-start mb-2">
-          <div className="text-sm font-medium leading-tight" style={{ color: "var(--text-primary)" }}>{cat.name}</div>
-          <div className="text-xs whitespace-nowrap ml-2" style={{ color: "var(--text-tertiary)" }}>{cat.recurrence}</div>
+      <div className="card p-4 animate-slide-up" style={{ animationDelay: `${index * 50}ms` }}>
+        <div className="flex justify-between items-start mb-2.5">
+          <div className="text-sm font-semibold leading-tight" style={{ color: "var(--text-primary)" }}>{cat.name}</div>
+          <span className="badge badge-muted text-[10px]">{cat.recurrence === "Monthly" ? "Mo" : "Yr"}</span>
         </div>
-        <div className="flex justify-between text-xs mb-1.5">
-          <span style={{ color: "var(--text-secondary)" }}>{fmt(spent)} / {fmt(cat.cap)}</span>
-          <span style={{ color: remaining >= 0 ? "var(--accent-green)" : "var(--accent-red)" }}>
+
+        {/* Spend vs Cap */}
+        <div className="flex justify-between items-baseline mb-2">
+          <div>
+            <span className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>{fmt(spent)}</span>
+            <span className="text-xs ml-1" style={{ color: "var(--text-tertiary)" }}>/ {fmt(cat.cap)}</span>
+          </div>
+          <span className="text-xs font-semibold" style={{ color: accentColor }}>
             {remaining >= 0 ? fmt(remaining) + " left" : fmt(-remaining) + " over"}
           </span>
         </div>
-        <div className="w-full rounded-full h-2" style={{ background: "var(--bg-base)" }}>
-          <div className={`h-2 rounded-full ${glowClass} transition-all`} style={{ width: `${pct}%`, background: barGradient }} />
+
+        {/* Progress bar */}
+        <div className="progress-track">
+          <div className={`progress-fill ${fillClass}`} style={{ width: `${pct}%` }} />
         </div>
       </div>
     );
   }
 
   return (
-    <div>
-      {/* Monthly summary */}
-      <div className="glass-elevated rounded-xl p-4 mb-4 glow-accent">
-        <div className="text-sm mb-1" style={{ color: "var(--text-secondary)" }}>
-          {now.toLocaleDateString("en-IN", { month: "long", year: "numeric" })} — Monthly Budget
+    <div className="animate-fade-in">
+      {/* ═══ Monthly Hero Card ═══ */}
+      <div className="card-gradient-purple shimmer p-5 mb-6 animate-slide-up">
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-base">💰</span>
+          <span className="section-label" style={{ color: "var(--accent-bright)" }}>
+            {now.toLocaleDateString("en-IN", { month: "long", year: "numeric" })}
+          </span>
         </div>
-        <div className="flex justify-between items-end mb-3">
+
+        <div className="flex justify-between items-end mb-4">
           <div>
-            <span className="text-2xl font-bold" style={{ color: "var(--accent-red)" }}>{fmt(totalSpent)}</span>
-            <span className="text-sm" style={{ color: "var(--text-tertiary)" }}> / {fmt(totalCap)}</span>
+            <div className="text-[11px] font-medium mb-1" style={{ color: "var(--text-tertiary)" }}>Total Spent</div>
+            <div className="amount-large amount-debit">{fmt(totalSpent)}</div>
+            <div className="text-xs mt-1" style={{ color: "var(--text-tertiary)" }}>of {fmt(totalCap)} budget</div>
           </div>
-          <div className="text-lg font-semibold" style={{ color: totalCap - totalSpent >= 0 ? "var(--accent-green)" : "var(--accent-red)" }}>
-            {totalCap - totalSpent >= 0 ? fmt(totalCap - totalSpent) + " left" : fmt(totalSpent - totalCap) + " over"}
+          <div className="text-right">
+            <div className="text-[11px] font-medium mb-1" style={{ color: "var(--text-tertiary)" }}>Remaining</div>
+            <div className="text-2xl font-extrabold" style={{ color: totalRemaining >= 0 ? "var(--accent-green)" : "var(--accent-red)" }}>
+              {totalRemaining >= 0 ? fmt(totalRemaining) : "-" + fmt(-totalRemaining)}
+            </div>
           </div>
         </div>
-        {/* Overall progress bar */}
-        <div className="w-full rounded-full h-2" style={{ background: "var(--bg-base)" }}>
-          <div className={`h-2 rounded-full transition-all ${totalPct >= 90 ? "progress-glow-red" : totalPct >= 75 ? "progress-glow-yellow" : "progress-glow-green"}`}
-            style={{ width: `${totalPct}%`, background: totalPct >= 90 ? "linear-gradient(90deg, #ff4757, #e84141)" : totalPct >= 75 ? "linear-gradient(90deg, #ff9f43, #e67e22)" : "linear-gradient(90deg, #00c896, #00a67d)" }} />
+
+        {/* Overall progress */}
+        <div className="progress-track" style={{ height: "8px" }}>
+          <div className={`progress-fill ${totalPct >= 90 ? "progress-fill-red" : totalPct >= 75 ? "progress-fill-yellow" : "progress-fill-green"}`}
+            style={{ width: `${totalPct}%`, height: "8px" }} />
+        </div>
+        <div className="text-[11px] mt-2 text-right font-medium" style={{ color: "var(--text-tertiary)" }}>
+          {Math.round(totalPct)}% used
         </div>
       </div>
 
-      {/* Monthly categories */}
-      <h3 className="text-xs font-semibold mb-2 uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>Monthly</h3>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
-        {monthlyCategories.map((cat) => (
-          <CategoryCard key={cat.id} cat={cat} />
+      {/* ═══ Monthly Categories ═══ */}
+      <div className="section-label mb-3">Monthly</div>
+      <div className="grid grid-cols-1 gap-3 mb-6">
+        {monthlyCategories.map((cat, i) => (
+          <CategoryCard key={cat.id} cat={cat} index={i} />
         ))}
       </div>
 
-      {/* Yearly categories */}
+      {/* ═══ Yearly Categories ═══ */}
       {yearlyCategories.length > 0 && (
         <>
-          <h3 className="text-xs font-semibold mb-2 uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>Yearly</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {yearlyCategories.map((cat) => (
-              <CategoryCard key={cat.id} cat={cat} />
+          <div className="section-label mb-3">Yearly</div>
+          <div className="grid grid-cols-1 gap-3 mb-6">
+            {yearlyCategories.map((cat, i) => (
+              <CategoryCard key={cat.id} cat={cat} index={i} />
             ))}
           </div>
         </>

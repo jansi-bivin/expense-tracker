@@ -16,25 +16,35 @@ interface Props {
 
 export default function NewSmsReview({ transactions, categories, onDone, userName, isPrimary, unclearedDues, onSettle, settlementHints }: Props) {
   return (
-    <div>
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>
-          {transactions.length} new transaction{transactions.length !== 1 ? "s" : ""} to review
-          {userName && <span className="text-sm font-normal ml-2" style={{ color: "var(--text-tertiary)" }}>({userName}&apos;s phone)</span>}
-        </h2>
+    <div className="animate-fade-in">
+      <div className="flex items-center gap-3 mb-5">
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold"
+          style={{ background: "rgba(123, 108, 246, 0.12)", color: "var(--accent-bright)", border: "1px solid rgba(123,108,246,0.2)" }}>
+          {transactions.length}
+        </div>
+        <div>
+          <div className="text-base font-bold" style={{ color: "var(--text-primary)" }}>
+            New transaction{transactions.length !== 1 ? "s" : ""} to review
+          </div>
+          {userName && (
+            <div className="text-xs" style={{ color: "var(--text-tertiary)" }}>{userName}&apos;s phone</div>
+          )}
+        </div>
       </div>
-      {transactions.map((txn) => (
-        <SmsCard
-          key={txn.id}
-          txn={txn}
-          categories={categories}
-          onDone={onDone}
-          isPrimary={isPrimary}
-          unclearedDues={unclearedDues}
-          onSettle={onSettle}
-          settlementHints={settlementHints}
-        />
-      ))}
+      <div className="stagger">
+        {transactions.map((txn) => (
+          <SmsCard
+            key={txn.id}
+            txn={txn}
+            categories={categories}
+            onDone={onDone}
+            isPrimary={isPrimary}
+            unclearedDues={unclearedDues}
+            onSettle={onSettle}
+            settlementHints={settlementHints}
+          />
+        ))}
+      </div>
     </div>
   );
 }
