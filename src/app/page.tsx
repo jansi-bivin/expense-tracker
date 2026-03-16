@@ -487,7 +487,7 @@ function HomeInner() {
 
       {/* Version footer */}
       <div className="text-center mt-8 mb-2">
-        <span className="text-[10px]" style={{ color: "var(--text-tertiary)", opacity: 0.4 }}>v0.2.0</span>
+        <span className="text-[10px]" style={{ color: "var(--text-tertiary)", opacity: 0.4 }}>v{process.env.APP_VERSION}</span>
       </div>
 
       {/* Add Expense button — fixed bottom bar, budget view only */}
