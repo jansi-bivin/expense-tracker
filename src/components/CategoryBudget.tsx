@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { supabase, Transaction, Category } from "@/lib/supabase";
+import ActiveDaysControl from "./ActiveDaysControl";
 
 interface Props {
   transactions: Transaction[];
@@ -12,9 +13,12 @@ interface Props {
   onCategoriesChange: (cats: Category[]) => void;
   onShowAddCategory: () => void;
   onMonthlyOverride: (catId: number, cap: number | null) => void;
+  activeDays: number;
+  daysInMonth: number;
+  onActiveDaysUpdate: (days: number) => void;
 }
 
-export default function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, monthlyOverrides, onCategoriesChange, onShowAddCategory, onMonthlyOverride }: Props) {
+export default function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, monthlyOverrides, onCategoriesChange, onShowAddCategory, onMonthlyOverride, activeDays, daysInMonth, onActiveDaysUpdate }: Props) {
   const now = new Date();
   const currentMonth = now.getMonth();
   const currentYear = now.getFullYear();
@@ -484,8 +488,16 @@ export default function CategoryBudget({ transactions, categories, isPrimary, sc
           <div className={`progress-fill ${totalPct >= 90 ? "progress-fill-red" : totalPct >= 75 ? "progress-fill-yellow" : "progress-fill-green"}`}
             style={{ width: `${totalPct}%`, height: "8px" }} />
         </div>
-        <div className="text-[11px] mt-2 text-right font-medium" style={{ color: "var(--text-tertiary)" }}>
-          {pctFmt(totalPct)} used
+        <div className="flex items-center justify-between mt-2">
+          <ActiveDaysControl
+            activeDays={activeDays}
+            daysInMonth={daysInMonth}
+            isPrimary={isPrimary}
+            onUpdate={onActiveDaysUpdate}
+          />
+          <span className="text-[11px] font-medium" style={{ color: "var(--text-tertiary)" }}>
+            {pctFmt(totalPct)} used
+          </span>
         </div>
       </div>
 

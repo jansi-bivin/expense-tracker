@@ -26,7 +26,7 @@ export default function ActiveDaysControl({ activeDays, daysInMonth, isPrimary, 
   if (!open) {
     return (
       <button
-        className="flex items-center gap-1.5 px-3 py-1.5 mb-4 rounded-xl text-xs font-medium transition-all"
+        className="flex items-center gap-1.5 px-3 py-1.5 mt-1 rounded-xl text-xs font-medium transition-all"
         style={{
           background: isScaled ? "rgba(255,179,71,0.08)" : "rgba(255,255,255,0.03)",
           border: `1px solid ${isScaled ? "rgba(255,179,71,0.15)" : "var(--border)"}`,
@@ -44,7 +44,7 @@ export default function ActiveDaysControl({ activeDays, daysInMonth, isPrimary, 
 
   // Expanded: stepper controls
   return (
-    <div className="flex items-center justify-between px-4 py-2.5 mb-4 rounded-2xl animate-scale-in"
+    <div className="flex items-center justify-between px-4 py-2.5 mt-1 rounded-2xl animate-scale-in"
       style={{ background: isScaled ? "rgba(255,179,71,0.08)" : "rgba(255,255,255,0.02)", border: `1px solid ${isScaled ? "rgba(255,179,71,0.15)" : "var(--border)"}` }}>
 
       <div className="flex items-center gap-2">

@@ -7,7 +7,6 @@ import { detectFields } from "@/lib/smsDetector";
 import NewSmsReview from "@/components/NewSmsReview";
 import CategoryBudget from "@/components/CategoryBudget";
 import DuesView from "@/components/DuesView";
-import ActiveDaysControl from "@/components/ActiveDaysControl";
 import AddCategoryForm from "@/components/AddCategoryForm";
 import ManualExpenseForm from "@/components/ManualExpenseForm";
 
@@ -463,13 +462,6 @@ function HomeInner() {
           />
         ) : (
           <>
-            {/* Active Days Control — above budget */}
-            <ActiveDaysControl
-              activeDays={effectiveActiveDays}
-              daysInMonth={daysInMonth}
-              isPrimary={isPrimary}
-              onUpdate={handleActiveDaysUpdate}
-            />
             <CategoryBudget
               transactions={categorizedTxns}
               categories={categories}
@@ -479,9 +471,17 @@ function HomeInner() {
               onCategoriesChange={setCategories}
               onShowAddCategory={() => setShowAddCategory(true)}
               onMonthlyOverride={handleMonthlyOverride}
+              activeDays={effectiveActiveDays}
+              daysInMonth={daysInMonth}
+              onActiveDaysUpdate={handleActiveDaysUpdate}
             />
           </>
         )}
+      </div>
+
+      {/* Version footer */}
+      <div className="text-center mt-8 mb-2">
+        <span className="text-[10px]" style={{ color: "var(--text-tertiary)", opacity: 0.4 }}>v0.1.0</span>
       </div>
 
       {/* Add Expense button — fixed bottom bar, budget view only */}
