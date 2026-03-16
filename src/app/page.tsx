@@ -245,7 +245,11 @@ function HomeInner() {
   // Feature 4: Save manual expense
   async function handleManualExpense(expense: { amount: number; category: string; note: string; date: number }) {
     const phone = currentUser?.phone_number ?? null;
-    const body = expense.note ? `Manual: ${expense.note}` : "Manual expense";
+    // Format body so detectFields can parse amount: "Rs.500.00 debited. Manual: note"
+    const amtStr = expense.amount.toFixed(2);
+    const body = expense.note
+      ? `Rs.${amtStr} debited. Manual: ${expense.note}`
+      : `Rs.${amtStr} debited. Manual expense`;
 
     const { data: inserted } = await supabase.from("transactions").insert({
       address: "MANUAL",
@@ -480,18 +484,24 @@ function HomeInner() {
         )}
       </div>
 
-      {/* FAB — floating "+" button for manual expense */}
-      <button
-        className="fixed bottom-6 right-6 w-14 h-14 rounded-full flex items-center justify-center text-2xl font-bold shadow-lg transition-all active:scale-90 z-40"
-        style={{
-          background: "linear-gradient(135deg, var(--accent), var(--accent-dim))",
-          color: "#fff",
-          boxShadow: "0 4px 20px rgba(123, 108, 246, 0.4)",
-        }}
-        onClick={() => setShowManualExpense(true)}
-      >
-        +
-      </button>
+      {/* Add Expense button — fixed bottom bar, budget view only */}
+      {activeView === "budget" && !showManualExpense && !showAddCategory && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 px-4 pb-5 pt-3"
+          style={{ background: "linear-gradient(to top, var(--bg-base) 70%, transparent)" }}>
+          <button
+            className="w-full max-w-2xl mx-auto flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-semibold transition-all active:scale-[0.98]"
+            style={{
+              background: "linear-gradient(135deg, var(--accent), var(--accent-dim))",
+              color: "#fff",
+              boxShadow: "0 4px 20px rgba(123, 108, 246, 0.3)",
+            }}
+            onClick={() => setShowManualExpense(true)}
+          >
+            <span>+</span>
+            <span>Add Expense</span>
+          </button>
+        </div>
+      )}
 
       {/* Manual Expense Form overlay */}
       {showManualExpense && (
