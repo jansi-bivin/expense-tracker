@@ -185,7 +185,11 @@ function HomeInner() {
         const enriched = enrichSms(payload.new as RawSms);
         const phone = localStorage.getItem("userPhone");
         if (enriched.status === "new" && enriched.phone_number === phone) {
-          setNewTxns((prev) => [enriched, ...prev]);
+          setNewTxns((prev) => prev.some((t) => t.id === enriched.id) ? prev : [enriched, ...prev]);
+        }
+        // Manual expenses arrive as INSERT with status=categorized
+        if (enriched.status === "categorized") {
+          setCategorizedTxns((prev) => prev.some((t) => t.id === enriched.id) ? prev : [enriched, ...prev]);
         }
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "transactions" }, (payload) => {
@@ -194,12 +198,14 @@ function HomeInner() {
           setNewTxns((prev) => prev.filter((t) => t.id !== updated.id));
           if (updated.status === "categorized") {
             const enriched = enrichSms(updated);
-            setCategorizedTxns((prev) => [enriched, ...prev]);
+            // Deduplicate: skip if already added by handleReviewDone or handleManualExpense
+            setCategorizedTxns((prev) => prev.some((t) => t.id === enriched.id) ? prev : [enriched, ...prev]);
           }
         }
       })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "dues" }, (payload) => {
-        setDues((prev) => [payload.new as Due, ...prev]);
+        const d = payload.new as Due;
+        setDues((prev) => prev.some((x) => x.id === d.id) ? prev : [d, ...prev]);
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "dues" }, (payload) => {
         const updated = payload.new as Due;
