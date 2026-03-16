@@ -15,6 +15,7 @@ export interface RawSms {
   category: string | null;
   notes: string | null;
   status: 'new' | 'categorized' | 'ignored';
+  phone_number: string | null;
 }
 
 // Enriched transaction after client-side field detection
@@ -33,4 +34,21 @@ export interface Category {
   name: string;
   cap: number;
   recurrence: 'Monthly' | 'Yearly';
+}
+
+export interface User {
+  id: number;
+  phone_number: string;
+  name: string;
+  is_primary: boolean;
+}
+
+export interface Due {
+  id: number;
+  transaction_id: number;
+  category: string;
+  amount: number;
+  cleared: boolean;
+  cleared_at: string | null;
+  created_at: string;
 }
