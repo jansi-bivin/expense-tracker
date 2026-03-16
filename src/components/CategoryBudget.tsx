@@ -150,49 +150,43 @@ export default function CategoryBudget({ transactions, categories, isPrimary, sc
 
     return (
       <div
-        className="px-5 py-4 transition-all"
+        className="px-5 transition-all"
         style={{ borderBottom: "1px solid var(--border)" }}
         onClick={() => { if (hasRawSms) setExpanded(!expanded); }}
       >
-        {/* Row 1: Amount + Date */}
-        <div className="flex items-center justify-between mb-1.5">
-          <span className="text-base font-bold" style={{ color: "var(--text-primary)" }}>
-            {fmtDec(Number(txn.amount))}
+        {/* Single row: Merchant | Date | Amount */}
+        <div className="flex items-center gap-3 py-3">
+          <span className="flex-1 min-w-0 text-sm truncate" style={{ color: "var(--text-primary)" }}>
+            {merchant}
+            {isManual && <span className="text-[9px] ml-1.5 opacity-50">manual</span>}
           </span>
-          <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>
+          <span className="text-xs shrink-0" style={{ color: "var(--text-tertiary)" }}>
             {fmtDate(txn.sms_date)}
           </span>
-        </div>
-
-        {/* Row 2: Merchant + badges */}
-        <div className="flex items-center gap-2">
-          <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
-            {merchant}
+          <span className="text-sm font-semibold shrink-0 min-w-[70px] text-right" style={{ color: "var(--text-primary)" }}>
+            {fmtDec(Number(txn.amount))}
           </span>
-          {isManual && (
-            <span className="badge badge-muted text-[9px] py-0.5 px-1.5">manual</span>
+          {hasRawSms && (
+            <span className="text-[10px] shrink-0" style={{ color: "var(--accent)", opacity: expanded ? 0.4 : 0.7 }}>
+              {expanded ? "▾" : "▸"}
+            </span>
           )}
         </div>
 
-        {/* Row 3: Notes (if any) */}
-        {hasNotes && (
-          <div className="text-xs mt-2" style={{ color: "var(--text-tertiary)" }}>
-            📝 {txn.notes}
-          </div>
-        )}
-
-        {/* Row 4: Tap hint for SMS */}
-        {hasRawSms && !expanded && (
-          <div className="text-[11px] mt-2 font-medium" style={{ color: "var(--accent)" }}>
-            Tap to view SMS ▸
-          </div>
-        )}
-
-        {/* Expanded: Raw SMS body */}
-        {expanded && hasRawSms && (
-          <div className="text-xs mt-3 p-3 rounded-xl leading-relaxed animate-fade-in"
-            style={{ background: "var(--bg-base)", color: "var(--text-tertiary)", border: "1px solid var(--border)" }}>
-            {txn.body}
+        {/* Expandable: notes + raw SMS */}
+        {(hasNotes || (expanded && hasRawSms)) && (
+          <div className="pb-3 -mt-1">
+            {hasNotes && (
+              <div className="text-xs mb-1.5" style={{ color: "var(--text-tertiary)" }}>
+                📝 {txn.notes}
+              </div>
+            )}
+            {expanded && hasRawSms && (
+              <div className="text-xs p-3 rounded-xl leading-relaxed animate-fade-in"
+                style={{ background: "var(--bg-base)", color: "var(--text-tertiary)", border: "1px solid var(--border)" }}>
+                {txn.body}
+              </div>
+            )}
           </div>
         )}
       </div>
