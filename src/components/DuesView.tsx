@@ -52,14 +52,12 @@ export default function DuesView({ dues, transactions, categories, onDuesChange,
 
   function openUpiPay(amount: number, note: string) {
     if (!payeeUpi) return;
-    const params = new URLSearchParams({
-      pa: payeeUpi,
-      pn: payeeName,
-      am: amount.toFixed(2),
-      cu: "INR",
-      tn: note,
-    });
-    window.location.href = `upi://pay?${params.toString()}`;
+    // Build UPI URL manually to avoid encoding @ in UPI ID
+    const url = `upi://pay?pa=${payeeUpi}&pn=${encodeURIComponent(payeeName)}&am=${amount.toFixed(2)}&cu=INR&tn=${encodeURIComponent(note)}`;
+    // Use anchor click to reliably trigger WebView URL interception
+    const a = document.createElement("a");
+    a.href = url;
+    a.click();
   }
 
   async function payAndClear(dueId: number, amount: number, category: string) {

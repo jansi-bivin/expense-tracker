@@ -146,13 +146,13 @@ function HomeInner() {
       setCategorizedTxns((prev) => [{ ...txn, category, notes: notes || null, status: "categorized" as const }, ...prev]);
 
       // If secondary user categorized, create a due
+      // Don't update state here — realtime INSERT listener will add it
       if (currentUser && !currentUser.is_primary && txn.amount) {
-        const { data } = await supabase.from("dues").insert({
+        await supabase.from("dues").insert({
           transaction_id: id,
           category,
           amount: txn.amount,
-        }).select().single();
-        if (data) setDues((prev) => [data, ...prev]);
+        });
       }
     }
   }
