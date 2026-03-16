@@ -50,9 +50,11 @@ export default function DuesView({ dues, transactions, categories, onDuesChange,
     return m;
   }, [transactions]);
 
-  function openUpiPay(amount: number, note: string) {
+  function openUpiPay(amount: number) {
     if (!payeeUpi) return;
-    const url = `upi://pay?pa=${payeeUpi}&pn=${encodeURIComponent(payeeName)}&am=${amount.toFixed(2)}&cu=INR&tn=${encodeURIComponent(note)}`;
+    // Minimal params — some banks reject deep-link payments with extra fields
+    const amt = Number.isInteger(amount) ? String(amount) : amount.toFixed(2);
+    const url = `upi://pay?pa=${payeeUpi}&am=${amt}`;
     // Append anchor to DOM so WebView intercepts the navigation
     const a = document.createElement("a");
     a.href = url;
@@ -99,7 +101,7 @@ export default function DuesView({ dues, transactions, categories, onDuesChange,
           {payeeUpi && (
             <button
               className="w-full mt-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium"
-              onClick={() => openUpiPay(totalOutstanding, "ExpTrack Dues")}
+              onClick={() => openUpiPay(totalOutstanding)}
             >
               Pay {fmt(totalOutstanding)} via UPI
             </button>
@@ -135,7 +137,7 @@ export default function DuesView({ dues, transactions, categories, onDuesChange,
                   {payeeUpi && (
                     <button
                       className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium"
-                      onClick={(e) => { e.stopPropagation(); openUpiPay(catTotal, `Dues: ${category}`); }}
+                      onClick={(e) => { e.stopPropagation(); openUpiPay(catTotal); }}
                     >
                       Pay {fmt(catTotal)}
                     </button>
@@ -163,7 +165,7 @@ export default function DuesView({ dues, transactions, categories, onDuesChange,
                         {payeeUpi && (
                           <button
                             className="px-3 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium"
-                            onClick={() => openUpiPay(Number(due.amount), `Due: ${due.category}`)}
+                            onClick={() => openUpiPay(Number(due.amount))}
                           >
                             Pay
                           </button>
