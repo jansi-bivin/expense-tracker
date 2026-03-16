@@ -41,6 +41,7 @@ export interface User {
   phone_number: string;
   name: string;
   is_primary: boolean;
+  upi_id: string | null;
 }
 
 export interface Due {

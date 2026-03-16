@@ -239,6 +239,8 @@ function HomeInner() {
           transactions={categorizedTxns}
           categories={categories}
           onDuesChange={setDues}
+          payeeUpi={allUsers.find((u) => !u.is_primary)?.upi_id ?? null}
+          payeeName={allUsers.find((u) => !u.is_primary)?.name ?? ""}
         />
       ) : (
         <CategoryBudget

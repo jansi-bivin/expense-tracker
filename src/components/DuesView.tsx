@@ -8,9 +8,11 @@ interface Props {
   transactions: Transaction[];
   categories: Category[];
   onDuesChange: (dues: Due[]) => void;
+  payeeUpi: string | null;
+  payeeName: string;
 }
 
-export default function DuesView({ dues, transactions, categories, onDuesChange }: Props) {
+export default function DuesView({ dues, transactions, categories, onDuesChange, payeeUpi, payeeName }: Props) {
   const [expandedCat, setExpandedCat] = useState<string | null>(null);
   const [showCleared, setShowCleared] = useState(false);
   const [clearing, setClearing] = useState<Set<number>>(new Set());
@@ -48,6 +50,28 @@ export default function DuesView({ dues, transactions, categories, onDuesChange 
     return m;
   }, [transactions]);
 
+  function openUpiPay(amount: number, note: string) {
+    if (!payeeUpi) return;
+    const params = new URLSearchParams({
+      pa: payeeUpi,
+      pn: payeeName,
+      am: amount.toFixed(2),
+      cu: "INR",
+      tn: note,
+    });
+    window.location.href = `upi://pay?${params.toString()}`;
+  }
+
+  async function payAndClear(dueId: number, amount: number, category: string) {
+    openUpiPay(amount, `Due: ${category}`);
+    await clearDue(dueId);
+  }
+
+  async function payAndClearCategory(category: string, amount: number) {
+    openUpiPay(amount, `Dues: ${category}`);
+    await clearCategory(category);
+  }
+
   async function clearDue(dueId: number) {
     setClearing((prev) => new Set(prev).add(dueId));
     await supabase.from("dues").update({ cleared: true, cleared_at: new Date().toISOString() }).eq("id", dueId);
@@ -82,6 +106,14 @@ export default function DuesView({ dues, transactions, categories, onDuesChange 
           <div className="text-sm text-gray-500 mb-1">Outstanding Dues</div>
           <div className="text-2xl font-bold text-red-600">{fmt(totalOutstanding)}</div>
           <div className="text-xs text-gray-400 mt-1">{unclearedDues.length} transaction{unclearedDues.length !== 1 ? "s" : ""} across {byCategory.length} categor{byCategory.length !== 1 ? "ies" : "y"}</div>
+          {payeeUpi && (
+            <button
+              className="w-full mt-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium"
+              onClick={() => openUpiPay(totalOutstanding, "ExpTrack Dues")}
+            >
+              Pay {fmt(totalOutstanding)} via UPI
+            </button>
+          )}
         </div>
       )}
 
@@ -108,14 +140,25 @@ export default function DuesView({ dues, transactions, categories, onDuesChange 
 
             {isExpanded && (
               <div className="border-t px-4 pb-3">
-                {/* Clear All for category */}
-                <button
-                  className="w-full mt-3 mb-2 py-2 bg-green-600 text-white rounded-lg text-sm font-medium disabled:opacity-40"
-                  disabled={categoryDues.some((d) => clearing.has(d.id))}
-                  onClick={(e) => { e.stopPropagation(); clearCategory(category); }}
-                >
-                  Clear All {fmt(catTotal)}
-                </button>
+                {/* Pay & Clear / Clear All for category */}
+                <div className="flex gap-2 mt-3 mb-2">
+                  {payeeUpi && (
+                    <button
+                      className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium disabled:opacity-40"
+                      disabled={categoryDues.some((d) => clearing.has(d.id))}
+                      onClick={(e) => { e.stopPropagation(); payAndClearCategory(category, catTotal); }}
+                    >
+                      Pay {fmt(catTotal)}
+                    </button>
+                  )}
+                  <button
+                    className={`${payeeUpi ? "flex-1" : "w-full"} py-2 bg-green-600 text-white rounded-lg text-sm font-medium disabled:opacity-40`}
+                    disabled={categoryDues.some((d) => clearing.has(d.id))}
+                    onClick={(e) => { e.stopPropagation(); clearCategory(category); }}
+                  >
+                    Clear All
+                  </button>
+                </div>
 
                 {/* Individual items */}
                 {categoryDues.map((due) => {
@@ -128,6 +171,15 @@ export default function DuesView({ dues, transactions, categories, onDuesChange 
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium">{fmt(Number(due.amount))}</span>
+                        {payeeUpi && (
+                          <button
+                            className="px-3 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium disabled:opacity-40"
+                            disabled={clearing.has(due.id)}
+                            onClick={() => payAndClear(due.id, Number(due.amount), due.category)}
+                          >
+                            Pay
+                          </button>
+                        )}
                         <button
                           className="px-3 py-1 bg-green-100 text-green-700 rounded text-xs font-medium disabled:opacity-40"
                           disabled={clearing.has(due.id)}
