@@ -52,22 +52,14 @@ export default function DuesView({ dues, transactions, categories, onDuesChange,
 
   function openUpiPay(amount: number, note: string) {
     if (!payeeUpi) return;
-    // Build UPI URL manually to avoid encoding @ in UPI ID
     const url = `upi://pay?pa=${payeeUpi}&pn=${encodeURIComponent(payeeName)}&am=${amount.toFixed(2)}&cu=INR&tn=${encodeURIComponent(note)}`;
-    // Use anchor click to reliably trigger WebView URL interception
+    // Append anchor to DOM so WebView intercepts the navigation
     const a = document.createElement("a");
     a.href = url;
+    a.style.display = "none";
+    document.body.appendChild(a);
     a.click();
-  }
-
-  async function payAndClear(dueId: number, amount: number, category: string) {
-    openUpiPay(amount, `Due: ${category}`);
-    await clearDue(dueId);
-  }
-
-  async function payAndClearCategory(category: string, amount: number) {
-    openUpiPay(amount, `Dues: ${category}`);
-    await clearCategory(category);
+    setTimeout(() => document.body.removeChild(a), 100);
   }
 
   async function clearDue(dueId: number) {
@@ -138,13 +130,12 @@ export default function DuesView({ dues, transactions, categories, onDuesChange,
 
             {isExpanded && (
               <div className="border-t px-4 pb-3">
-                {/* Pay & Clear / Clear All for category */}
+                {/* Pay / Clear All for category */}
                 <div className="flex gap-2 mt-3 mb-2">
                   {payeeUpi && (
                     <button
-                      className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium disabled:opacity-40"
-                      disabled={categoryDues.some((d) => clearing.has(d.id))}
-                      onClick={(e) => { e.stopPropagation(); payAndClearCategory(category, catTotal); }}
+                      className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium"
+                      onClick={(e) => { e.stopPropagation(); openUpiPay(catTotal, `Dues: ${category}`); }}
                     >
                       Pay {fmt(catTotal)}
                     </button>
@@ -171,9 +162,8 @@ export default function DuesView({ dues, transactions, categories, onDuesChange,
                         <span className="text-sm font-medium">{fmt(Number(due.amount))}</span>
                         {payeeUpi && (
                           <button
-                            className="px-3 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium disabled:opacity-40"
-                            disabled={clearing.has(due.id)}
-                            onClick={() => payAndClear(due.id, Number(due.amount), due.category)}
+                            className="px-3 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium"
+                            onClick={() => openUpiPay(Number(due.amount), `Due: ${due.category}`)}
                           >
                             Pay
                           </button>
