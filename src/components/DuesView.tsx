@@ -52,12 +52,21 @@ export default function DuesView({ dues, transactions, categories, onDuesChange,
 
   function openUpiPay(amount: number) {
     if (!payeeUpi) return;
-    // NPCI spec mandates: pa, pn, tr, am, cu, mode for valid UPI deep links.
-    // Missing 'tr' causes PSP apps to flag txn as suspicious → "bank limit exceeded"
     const amt = amount.toFixed(2);
     const tr = `EXPTRK${Date.now()}${Math.random().toString(36).slice(2, 8)}`;
-    const url = `upi://pay?pa=${payeeUpi}&pn=${encodeURIComponent(payeeName)}&tr=${tr}&am=${amt}&cu=INR&mode=00`;
-    // Append anchor to DOM so WebView intercepts the navigation
+
+    // Use native Android bridge if available (launches UPI via proper
+    // startActivityForResult — UPI apps treat it as a real app, not a web link)
+    const androidUpi = (window as unknown as Record<string, unknown>).AndroidUpi as
+      | { pay: (vpa: string, name: string, amount: string, txnRef: string) => void }
+      | undefined;
+    if (androidUpi?.pay) {
+      androidUpi.pay(payeeUpi, payeeName, amt, tr);
+      return;
+    }
+
+    // Fallback for browser testing — DOM anchor approach
+    const url = `upi://pay?pa=${payeeUpi}&pn=${encodeURIComponent(payeeName)}&tr=${tr}&am=${amt}&cu=INR`;
     const a = document.createElement("a");
     a.href = url;
     a.style.display = "none";
