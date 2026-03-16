@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase, RawSms, Transaction, Category } from "@/lib/supabase";
 import { detectFields } from "@/lib/smsDetector";
 import NewSmsReview from "@/components/NewSmsReview";
@@ -25,6 +25,20 @@ export default function Home() {
   const [categorizedTxns, setCategorizedTxns] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Update PWA badge and page title with new SMS count
+  const updateBadge = useCallback((count: number) => {
+    // PWA app icon badge
+    if ("setAppBadge" in navigator) {
+      if (count > 0) (navigator as any).setAppBadge(count);
+      else (navigator as any).clearAppBadge();
+    }
+    // Browser tab title
+    document.title = count > 0 ? `(${count}) Expense Tracker` : "Expense Tracker";
+  }, []);
+
+  // Keep badge in sync with newTxns count
+  useEffect(() => { updateBadge(newTxns.length); }, [newTxns.length, updateBadge]);
 
   useEffect(() => {
     async function load() {
