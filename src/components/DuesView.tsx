@@ -50,35 +50,29 @@ export default function DuesView({ dues, transactions, categories, onDuesChange,
     return m;
   }, [transactions]);
 
-  const [copiedAmt, setCopiedAmt] = useState<string | null>(null);
+  const [showPaySheet, setShowPaySheet] = useState<number | null>(null);
+
+  const upiApps = [
+    { name: "GPay", pkg: "com.google.android.apps.nbu.paisa.user", color: "bg-white border", text: "text-gray-800" },
+    { name: "PhonePe", pkg: "com.phonepe.app", color: "bg-purple-600", text: "text-white" },
+    { name: "Paytm", pkg: "net.one97.paytm", color: "bg-blue-500", text: "text-white" },
+  ];
 
   function openUpiPay(amount: number) {
     if (!payeeUpi) return;
-    const amt = amount.toFixed(2);
+    // Copy amount + VPA to clipboard
+    navigator.clipboard.writeText(amount.toFixed(2)).catch(() => {});
+    setShowPaySheet(amount);
+  }
 
-    // Copy amount to clipboard, then open UPI app to payee.
-    // UPI apps block prefilled-amount payments from third-party intents
-    // (NPCI risk policy), so we copy the amount and let user paste/type it.
-    navigator.clipboard.writeText(amt).catch(() => {});
-    setCopiedAmt(amt);
-    setTimeout(() => setCopiedAmt(null), 10000);
-
-    // Open UPI app with just the payee (no amount)
-    const androidUpi = (window as unknown as Record<string, unknown>).AndroidUpi as
-      | { pay: (vpa: string, name: string, amount: string, txnRef: string) => void }
+  function launchApp(pkg: string) {
+    const bridge = (window as unknown as Record<string, unknown>).AndroidUpi as
+      | { openApp: (pkg: string) => void }
       | undefined;
-    if (androidUpi?.pay) {
-      androidUpi.pay(payeeUpi, payeeName, "", "");
-      return;
+    if (bridge?.openApp) {
+      bridge.openApp(pkg);
     }
-
-    const url = `upi://pay?pa=${payeeUpi}&pn=${encodeURIComponent(payeeName)}&cu=INR`;
-    const a = document.createElement("a");
-    a.href = url;
-    a.style.display = "none";
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => document.body.removeChild(a), 100);
+    setShowPaySheet(null);
   }
 
   async function clearDue(dueId: number) {
@@ -126,11 +120,30 @@ export default function DuesView({ dues, transactions, categories, onDuesChange,
         </div>
       )}
 
-      {/* Amount copied banner */}
-      {copiedAmt && (
-        <div className="bg-green-50 border border-green-400 rounded-lg p-3 mb-4 text-center">
-          <div className="text-xs text-green-700">₹{copiedAmt} copied to clipboard</div>
-          <div className="text-sm font-semibold text-green-800 mt-1">Paste the amount in the UPI app</div>
+      {/* Pay bottom sheet */}
+      {showPaySheet !== null && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-end" onClick={() => setShowPaySheet(null)}>
+          <div className="bg-white w-full rounded-t-2xl p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="text-center mb-4">
+              <div className="text-xs text-gray-500">Pay {payeeName}</div>
+              <div className="text-3xl font-bold text-gray-900">₹{showPaySheet.toFixed(2)}</div>
+              <div className="text-xs text-green-600 mt-1">✓ Amount copied to clipboard</div>
+            </div>
+            <div className="text-xs text-gray-500 text-center mb-2">UPI ID: {payeeUpi}</div>
+            <div className="text-xs text-gray-400 text-center mb-4">Open an app below → search &quot;{payeeName}&quot; → paste amount</div>
+            <div className="flex gap-3 justify-center mb-3">
+              {upiApps.map((app) => (
+                <button
+                  key={app.name}
+                  className={`flex-1 py-3 rounded-xl text-sm font-semibold ${app.color} ${app.text} border`}
+                  onClick={() => launchApp(app.pkg)}
+                >
+                  {app.name}
+                </button>
+              ))}
+            </div>
+            <button className="w-full py-2 text-sm text-gray-400" onClick={() => setShowPaySheet(null)}>Cancel</button>
+          </div>
         </div>
       )}
 
