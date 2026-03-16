@@ -132,6 +132,56 @@ export default function CategoryBudget({ transactions, categories, isPrimary, sc
     setSavingEdit(false);
   }
 
+  function ExpenseRow({ txn }: { txn: Transaction }) {
+    const [expanded, setExpanded] = useState(false);
+    const isManual = txn.address === "MANUAL";
+    const merchant = txn.merchant || (isManual ? "Manual Entry" : "Unknown");
+    const hasNotes = txn.notes && txn.notes.trim().length > 0;
+    const hasRawSms = !isManual && txn.body && txn.body.length > 0;
+
+    return (
+      <div
+        className="px-4 py-3 transition-all cursor-pointer"
+        style={{ borderBottom: "1px solid var(--border)" }}
+        onClick={() => { if (hasRawSms) setExpanded(!expanded); }}
+      >
+        {/* Main row: merchant + date | amount */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="text-xs font-semibold truncate" style={{ color: "var(--text-primary)" }}>
+              {merchant}
+            </div>
+            <div className="text-[10px] mt-0.5 flex items-center gap-1 flex-wrap" style={{ color: "var(--text-tertiary)" }}>
+              <span>{fmtDate(txn.sms_date)}</span>
+              {isManual && <span className="badge badge-muted text-[8px] py-0 px-1">manual</span>}
+              {hasRawSms && !expanded && (
+                <span style={{ color: "var(--accent)", fontSize: "9px" }}>▸ sms</span>
+              )}
+            </div>
+          </div>
+          <span className="text-sm font-bold shrink-0" style={{ color: "var(--text-primary)" }}>
+            {fmtDec(Number(txn.amount))}
+          </span>
+        </div>
+
+        {/* Notes — shown if present */}
+        {hasNotes && (
+          <div className="text-[10px] mt-1.5 pl-0" style={{ color: "var(--text-secondary)" }}>
+            📝 {txn.notes}
+          </div>
+        )}
+
+        {/* Expanded: raw SMS body */}
+        {expanded && hasRawSms && (
+          <div className="text-[10px] mt-2 p-2.5 rounded-lg leading-relaxed animate-fade-in"
+            style={{ background: "var(--bg-base)", color: "var(--text-tertiary)", border: "1px solid var(--border)" }}>
+            {txn.body}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   function CategoryCard({ cat, index }: { cat: Category; index: number }) {
     const effectiveCap = getEffectiveCap(cat);
     const hasMonthOverride = monthlyOverrides[cat.id] != null;
@@ -235,15 +285,11 @@ export default function CategoryBudget({ transactions, categories, isPrimary, sc
             <div className="flex justify-between items-start mb-2">
               <div>
                 <div className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{cat.name}</div>
-                {!isNoCap && (
-                  <div className="text-xs mt-0.5" style={{ color: "var(--text-tertiary)" }}>
-                    {fmt(spent)} {effectiveCap > 0 ? `/ ${fmt(effectiveCap)}` : ""}
-                    {hasMonthOverride && <span style={{ color: "var(--accent-orange)" }}> (this mo)</span>}
-                  </div>
-                )}
-                {isNoCap && (
-                  <div className="text-xs mt-0.5" style={{ color: "var(--text-tertiary)" }}>{fmt(spent)} spent</div>
-                )}
+                <div className="text-xs mt-0.5" style={{ color: "var(--text-tertiary)" }}>
+                  {isNoCap ? `${fmt(spent)} spent` : `${fmt(spent)}${effectiveCap > 0 ? ` / ${fmt(effectiveCap)}` : ""}`}
+                  {hasMonthOverride && <span style={{ color: "var(--accent-orange)" }}> (this mo)</span>}
+                  <span className="ml-1">· {txnsForCat.length} transaction{txnsForCat.length !== 1 ? "s" : ""}</span>
+                </div>
               </div>
               <div className="flex items-center gap-1.5">
                 {isPrimary && (
@@ -270,7 +316,7 @@ export default function CategoryBudget({ transactions, categories, isPrimary, sc
           </div>
 
           {/* Expense list */}
-          <div className="max-h-64 overflow-y-auto">
+          <div className="max-h-[400px] overflow-y-auto">
             {txnsForCat.length === 0 ? (
               <div className="p-4 text-center text-xs" style={{ color: "var(--text-tertiary)" }}>
                 No expenses yet
@@ -279,21 +325,7 @@ export default function CategoryBudget({ transactions, categories, isPrimary, sc
               txnsForCat
                 .sort((a, b) => b.sms_date - a.sms_date)
                 .map((txn) => (
-                  <div key={txn.id} className="flex items-center justify-between px-4 py-2.5"
-                    style={{ borderBottom: "1px solid var(--border)" }}>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-medium truncate" style={{ color: "var(--text-secondary)" }}>
-                        {txn.merchant || (txn.address === "MANUAL" ? "Manual" : txn.body.substring(0, 40))}
-                      </div>
-                      <div className="text-[10px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>
-                        {fmtDate(txn.sms_date)}
-                        {txn.notes && <span> · {txn.notes}</span>}
-                      </div>
-                    </div>
-                    <span className="text-sm font-semibold ml-3 shrink-0" style={{ color: "var(--text-primary)" }}>
-                      {fmtDec(Number(txn.amount))}
-                    </span>
-                  </div>
+                  <ExpenseRow key={txn.id} txn={txn} />
                 ))
             )}
           </div>
