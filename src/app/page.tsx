@@ -78,12 +78,12 @@ export default function Home() {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  function handleReviewDone(id: number) {
+  function handleReviewDone(id: number, category?: string, comment?: string) {
     const txn = newTxns.find((t) => t.id === id);
     setNewTxns((prev) => prev.filter((t) => t.id !== id));
-    // If categorized, add to budget data
-    if (txn && txn.category) {
-      setCategorizedTxns((prev) => [txn, ...prev]);
+    // If categorized, add to budget data with updated fields
+    if (txn && category) {
+      setCategorizedTxns((prev) => [{ ...txn, category, comment: comment || null, status: "categorized" as const }, ...prev]);
     }
   }
 
