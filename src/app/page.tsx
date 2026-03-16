@@ -199,9 +199,10 @@ function HomeInner() {
     <div className="max-w-2xl mx-auto px-4 py-6">
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">ExpTrack</h1>
-        {currentUser && (
-          <span className="text-xs text-gray-400">{currentUser.name}</span>
-        )}
+        <div className="text-right">
+          {currentUser && <div className="text-xs text-gray-400">{currentUser.name}</div>}
+          <div className="text-[10px] text-gray-300">v4</div>
+        </div>
       </div>
 
       {!showReview && (
