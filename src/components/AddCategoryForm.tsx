@@ -20,7 +20,7 @@ export default function AddCategoryForm({ onSave, onClose }: Props) {
     const trimmedName = name.trim();
     const capNum = Number(cap);
     if (!trimmedName) { setError("Name is required"); return; }
-    if (!capNum || capNum <= 0) { setError("Cap must be > 0"); return; }
+    if (capNum < 0) { setError("Cap cannot be negative"); return; }
 
     setSaving(true);
     setError("");
@@ -65,7 +65,7 @@ export default function AddCategoryForm({ onSave, onClose }: Props) {
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: "var(--text-tertiary)" }}>₹</span>
           <input
             type="number"
-            placeholder="Monthly/Yearly cap"
+            placeholder="Cap (0 = no cap, track only)"
             className="w-full pl-7 pr-3 py-2.5 text-sm rounded-xl"
             value={cap}
             onChange={(e) => setCap(e.target.value)}

@@ -47,6 +47,9 @@ function HomeInner() {
   // Feature 5: Add category
   const [showAddCategory, setShowAddCategory] = useState(false);
 
+  // Monthly cap overrides: { categoryId: overrideCap }
+  const [monthlyOverrides, setMonthlyOverrides] = useState<Record<number, number>>({});
+
   // Compute days in current month & scale factor
   const now = new Date();
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
@@ -115,16 +118,30 @@ function HomeInner() {
       if (cats) setCategories(cats);
 
       // Fetch active days setting
+      const currentMonth = now.getMonth() + 1; // 1-indexed
+      const currentYear = now.getFullYear();
+
       const { data: settingsData } = await supabase.from("settings").select("*").eq("key", "active_days").single();
       if (settingsData) {
         const val = settingsData.value as { days?: number | null; month?: number; year?: number };
-        const currentMonth = now.getMonth() + 1; // 1-indexed
-        const currentYear = now.getFullYear();
-        // Only use stored days if it matches the current month
         if (val.month === currentMonth && val.year === currentYear && val.days != null) {
           setActiveDays(val.days);
         } else {
-          setActiveDays(null); // full month
+          setActiveDays(null);
+        }
+      }
+
+      // Fetch monthly cap overrides
+      const { data: overridesData } = await supabase.from("settings").select("*").eq("key", "category_overrides").single();
+      if (overridesData) {
+        const val = overridesData.value as { overrides?: Record<string, number>; month?: number; year?: number };
+        if (val.month === currentMonth && val.year === currentYear && val.overrides) {
+          // Convert string keys back to numbers
+          const parsed: Record<number, number> = {};
+          for (const [k, v] of Object.entries(val.overrides)) {
+            parsed[Number(k)] = v;
+          }
+          setMonthlyOverrides(parsed);
         }
       }
 
@@ -202,6 +219,25 @@ function HomeInner() {
     await supabase.from("settings").upsert({
       key: "active_days",
       value: { days: days === daysInMonth ? null : days, month: currentMonth, year: currentYear },
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "key" });
+  }
+
+  // Monthly cap override handler
+  async function handleMonthlyOverride(catId: number, cap: number | null) {
+    const updated = { ...monthlyOverrides };
+    if (cap === null) {
+      delete updated[catId];
+    } else {
+      updated[catId] = cap;
+    }
+    setMonthlyOverrides(updated);
+
+    const currentMonth = now.getMonth() + 1;
+    const currentYear = now.getFullYear();
+    await supabase.from("settings").upsert({
+      key: "category_overrides",
+      value: { overrides: updated, month: currentMonth, year: currentYear },
       updated_at: new Date().toISOString(),
     }, { onConflict: "key" });
   }
@@ -435,8 +471,10 @@ function HomeInner() {
               categories={categories}
               isPrimary={isPrimary}
               scaleFactor={scaleFactor}
+              monthlyOverrides={monthlyOverrides}
               onCategoriesChange={setCategories}
               onShowAddCategory={() => setShowAddCategory(true)}
+              onMonthlyOverride={handleMonthlyOverride}
             />
           </>
         )}

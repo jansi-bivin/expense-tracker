@@ -8,17 +8,20 @@ interface Props {
   categories: Category[];
   isPrimary: boolean;
   scaleFactor: number; // active days scaling (1.0 = full month)
+  monthlyOverrides: Record<number, number>; // categoryId → cap override for this month
   onCategoriesChange: (cats: Category[]) => void;
   onShowAddCategory: () => void;
+  onMonthlyOverride: (catId: number, cap: number | null) => void; // null = remove override
 }
 
-export default function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, onCategoriesChange, onShowAddCategory }: Props) {
+export default function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, monthlyOverrides, onCategoriesChange, onShowAddCategory, onMonthlyOverride }: Props) {
   const now = new Date();
   const currentMonth = now.getMonth();
   const currentYear = now.getFullYear();
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editCap, setEditCap] = useState("");
   const [editVisibility, setEditVisibility] = useState<"all" | "primary" | "secondary">("all");
+  const [editMode, setEditMode] = useState<"general" | "month">("general");
   const [savingEdit, setSavingEdit] = useState(false);
 
   const fmt = (n: number) => "\u20B9" + n.toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -55,16 +58,22 @@ export default function CategoryBudget({ transactions, categories, isPrimary, sc
   const yearlyCategories = visibleCategories.filter((c) => c.recurrence === "Yearly");
 
   const totalCap = useMemo(() => {
-    return monthlyCategories.reduce((sum, c) => sum + c.cap * scaleFactor, 0);
-  }, [monthlyCategories, scaleFactor]);
+    return monthlyCategories.reduce((sum, c) => {
+      const baseCap = monthlyOverrides[c.id] != null ? monthlyOverrides[c.id] : c.cap;
+      if (baseCap === 0) return sum; // exclude no-cap from total
+      return sum + baseCap * scaleFactor;
+    }, 0);
+  }, [monthlyCategories, scaleFactor, monthlyOverrides]);
 
   const totalSpent = useMemo(() => {
     let sum = 0;
     for (const cat of monthlyCategories) {
+      const baseCap = monthlyOverrides[cat.id] != null ? monthlyOverrides[cat.id] : cat.cap;
+      if (baseCap === 0) continue; // exclude no-cap from total
       sum += categorySpend.get(cat.name) || 0;
     }
     return sum;
-  }, [monthlyCategories, categorySpend]);
+  }, [monthlyCategories, categorySpend, monthlyOverrides]);
 
   const totalPct = totalCap > 0 ? Math.min((totalSpent / totalCap) * 100, 100) : 0;
   const totalRemainingPct = Math.max(100 - totalPct, 0);
@@ -73,30 +82,53 @@ export default function CategoryBudget({ transactions, categories, isPrimary, sc
   function startEdit(cat: Category) {
     if (!isPrimary) return;
     setEditingId(cat.id);
-    setEditCap(String(cat.cap));
+    const hasOverride = monthlyOverrides[cat.id] != null;
+    setEditMode(hasOverride ? "month" : "general");
+    setEditCap(String(hasOverride ? monthlyOverrides[cat.id] : cat.cap));
     setEditVisibility(cat.visible_to);
   }
 
   async function saveEdit(cat: Category) {
     const newCap = Number(editCap);
-    if (!newCap || newCap <= 0) return;
+    if (newCap < 0) return;
     setSavingEdit(true);
 
-    await supabase.from("categories").update({ cap: newCap, visible_to: editVisibility }).eq("id", cat.id);
-    onCategoriesChange(categories.map((c) => c.id === cat.id ? { ...c, cap: newCap, visible_to: editVisibility } : c));
+    if (editMode === "month") {
+      // Monthly override — save to settings, don't touch categories table
+      // But still save visibility changes to categories
+      if (editVisibility !== cat.visible_to) {
+        await supabase.from("categories").update({ visible_to: editVisibility }).eq("id", cat.id);
+        onCategoriesChange(categories.map((c) => c.id === cat.id ? { ...c, visible_to: editVisibility } : c));
+      }
+      onMonthlyOverride(cat.id, newCap);
+    } else {
+      // General cap — save to categories table, remove any monthly override
+      if (newCap <= 0 && cat.cap > 0) {
+        // Switching to no-cap: allow saving 0
+      }
+      await supabase.from("categories").update({ cap: newCap, visible_to: editVisibility }).eq("id", cat.id);
+      onCategoriesChange(categories.map((c) => c.id === cat.id ? { ...c, cap: newCap, visible_to: editVisibility } : c));
+      // Clear monthly override if exists
+      if (monthlyOverrides[cat.id] != null) {
+        onMonthlyOverride(cat.id, null);
+      }
+    }
 
     setEditingId(null);
     setSavingEdit(false);
   }
 
   function CategoryCard({ cat, index }: { cat: Category; index: number }) {
-    const effectiveCap = cat.recurrence === "Monthly" ? cat.cap * scaleFactor : cat.cap;
+    const baseCap = monthlyOverrides[cat.id] != null ? monthlyOverrides[cat.id] : cat.cap;
+    const isNoCap = baseCap === 0;
+    const effectiveCap = isNoCap ? 0 : (cat.recurrence === "Monthly" ? baseCap * scaleFactor : baseCap);
+    const hasMonthOverride = monthlyOverrides[cat.id] != null;
     const spent = categorySpend.get(cat.name) || 0;
     const remaining = effectiveCap - spent;
     const pct = effectiveCap > 0 ? Math.min((spent / effectiveCap) * 100, 100) : 0;
     const remainingPct = Math.max(100 - pct, 0);
     const fillClass = pct >= 90 ? "progress-fill-red" : pct >= 75 ? "progress-fill-yellow" : "progress-fill-green";
-    const accentColor = pct >= 90 ? "var(--accent-red)" : pct >= 75 ? "var(--accent-orange)" : "var(--accent-green)";
+    const accentColor = isNoCap ? "var(--text-secondary)" : pct >= 90 ? "var(--accent-red)" : pct >= 75 ? "var(--accent-orange)" : "var(--accent-green)";
     const isEditing = editingId === cat.id;
 
     if (isEditing) {
@@ -104,7 +136,36 @@ export default function CategoryBudget({ transactions, categories, isPrimary, sc
         <div className="card p-4 animate-scale-in glow-accent" style={{ animationDelay: `${index * 50}ms` }}>
           <div className="text-sm font-semibold mb-3" style={{ color: "var(--text-primary)" }}>{cat.name}</div>
 
+          {/* Scope toggle: General vs This Month */}
+          {cat.recurrence === "Monthly" && (
+            <>
+              <div className="section-label mb-1.5">Apply to</div>
+              <div className="flex gap-1.5 mb-3">
+                {([
+                  { value: "general" as const, label: "General", desc: "All months" },
+                  { value: "month" as const, label: "This Month", desc: "Temporary" },
+                ]).map((opt) => (
+                  <button
+                    key={opt.value}
+                    className={`flex-1 py-1.5 rounded-lg text-[11px] font-semibold transition-all ${editMode === opt.value ? (opt.value === "month" ? "btn-orange" : "btn-primary") : "btn-ghost"}`}
+                    onClick={() => {
+                      setEditMode(opt.value);
+                      // When switching modes, pre-fill with the right value
+                      if (opt.value === "general") setEditCap(String(cat.cap));
+                      else setEditCap(String(monthlyOverrides[cat.id] ?? cat.cap));
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
           {/* Cap input */}
+          <div className="section-label mb-1.5">
+            {editMode === "month" ? "Cap for this month" : "Cap"} <span className="text-[10px] font-normal" style={{ color: "var(--text-tertiary)" }}>(0 = no cap)</span>
+          </div>
           <div className="relative mb-3">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: "var(--text-tertiary)" }}>₹</span>
             <input
@@ -163,15 +224,27 @@ export default function CategoryBudget({ transactions, categories, isPrimary, sc
               </span>
             )}
           </div>
-          <span className="badge badge-muted text-[10px]">{cat.recurrence === "Monthly" ? "Mo" : "Yr"}</span>
+          <div className="flex items-center gap-1">
+            {hasMonthOverride && <span className="badge badge-orange text-[9px] py-0">This Mo</span>}
+            <span className="badge badge-muted text-[10px]">{cat.recurrence === "Monthly" ? "Mo" : "Yr"}</span>
+          </div>
         </div>
 
-        {isPrimary ? (
+        {isNoCap ? (
+          /* No-cap: track-only — just show spent */
+          <div className="flex justify-between items-baseline mb-2">
+            <span className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>{fmt(spent)}</span>
+            <span className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>no cap</span>
+          </div>
+        ) : isPrimary ? (
           <div className="flex justify-between items-baseline mb-2">
             <div>
               <span className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>{fmt(spent)}</span>
               <span className="text-xs ml-1" style={{ color: "var(--text-tertiary)" }}>/ {fmt(effectiveCap)}</span>
-              {scaleFactor < 1 && cat.recurrence === "Monthly" && (
+              {hasMonthOverride && (
+                <span className="text-[10px] ml-1" style={{ color: "var(--accent-orange)" }}>(gen: {fmt(cat.cap)})</span>
+              )}
+              {!hasMonthOverride && scaleFactor < 1 && cat.recurrence === "Monthly" && (
                 <span className="text-[10px] ml-1" style={{ color: "var(--accent-orange)" }}>({fmt(cat.cap)})</span>
               )}
             </div>
@@ -190,9 +263,11 @@ export default function CategoryBudget({ transactions, categories, isPrimary, sc
           </div>
         )}
 
-        <div className="progress-track">
-          <div className={`progress-fill ${fillClass}`} style={{ width: `${pct}%` }} />
-        </div>
+        {!isNoCap && (
+          <div className="progress-track">
+            <div className={`progress-fill ${fillClass}`} style={{ width: `${pct}%` }} />
+          </div>
+        )}
       </div>
     );
   }
