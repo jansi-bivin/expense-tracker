@@ -52,4 +52,5 @@ export interface Due {
   cleared: boolean;
   cleared_at: string | null;
   created_at: string;
+  settlement_transaction_id: number | null;
 }

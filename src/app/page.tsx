@@ -157,6 +157,37 @@ function HomeInner() {
     }
   }
 
+  // Settlement: primary user marks a debit as payment to wife, clears selected dues
+  async function handleSettle(txnId: number, dueIds: number[]) {
+    const txn = newTxns.find((t) => t.id === txnId);
+    setNewTxns((prev) => prev.filter((t) => t.id !== txnId));
+
+    // Mark transaction as Settlement
+    await supabase.from("transactions").update({ category: "Settlement", status: "categorized" }).eq("id", txnId);
+    if (txn) {
+      setCategorizedTxns((prev) => [{ ...txn, category: "Settlement", status: "categorized" as const }, ...prev]);
+    }
+
+    // Clear selected dues and link settlement
+    const now = new Date().toISOString();
+    await supabase.from("dues").update({
+      cleared: true,
+      cleared_at: now,
+      settlement_transaction_id: txnId,
+    }).in("id", dueIds);
+
+    // Update local dues state
+    setDues((prev) => prev.map((d) =>
+      dueIds.includes(d.id) ? { ...d, cleared: true, cleared_at: now, settlement_transaction_id: txnId } : d
+    ));
+  }
+
+  // Build settlement hints from non-primary user's details
+  const secondaryUser = allUsers.find((u) => !u.is_primary);
+  const settlementHints = secondaryUser
+    ? [secondaryUser.name, secondaryUser.phone_number, secondaryUser.upi_id].filter(Boolean) as string[]
+    : [];
+
   function handleSelectUser(user: User) {
     localStorage.setItem("userPhone", user.phone_number);
     setCurrentUser(user);
@@ -201,7 +232,7 @@ function HomeInner() {
         <h1 className="text-2xl font-bold">ExpTrack</h1>
         <div className="text-right">
           {currentUser && <div className="text-xs text-gray-400">{currentUser.name}</div>}
-          <div className="text-[10px] text-gray-300">v12</div>
+          <div className="text-[10px] text-gray-300">v13</div>
         </div>
       </div>
 
@@ -233,6 +264,10 @@ function HomeInner() {
           categories={categories}
           onDone={handleReviewDone}
           userName={currentUser?.name}
+          isPrimary={currentUser?.is_primary}
+          unclearedDues={unclearedDues}
+          onSettle={handleSettle}
+          settlementHints={settlementHints}
         />
       ) : activeView === "dues" ? (
         <DuesView

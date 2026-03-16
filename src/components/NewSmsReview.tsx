@@ -1,6 +1,6 @@
 "use client";
 
-import { Transaction, Category } from "@/lib/supabase";
+import { Transaction, Category, Due } from "@/lib/supabase";
 import SmsCard from "./SmsCard";
 
 interface Props {
@@ -8,9 +8,13 @@ interface Props {
   categories: Category[];
   onDone: (id: number, category?: string, notes?: string) => void;
   userName?: string;
+  isPrimary?: boolean;
+  unclearedDues?: Due[];
+  onSettle?: (txnId: number, dueIds: number[]) => void;
+  settlementHints?: string[];
 }
 
-export default function NewSmsReview({ transactions, categories, onDone, userName }: Props) {
+export default function NewSmsReview({ transactions, categories, onDone, userName, isPrimary, unclearedDues, onSettle, settlementHints }: Props) {
   return (
     <div>
       <div className="flex justify-between items-center mb-4">
@@ -20,7 +24,16 @@ export default function NewSmsReview({ transactions, categories, onDone, userNam
         </h2>
       </div>
       {transactions.map((txn) => (
-        <SmsCard key={txn.id} txn={txn} categories={categories} onDone={onDone} />
+        <SmsCard
+          key={txn.id}
+          txn={txn}
+          categories={categories}
+          onDone={onDone}
+          isPrimary={isPrimary}
+          unclearedDues={unclearedDues}
+          onSettle={onSettle}
+          settlementHints={settlementHints}
+        />
       ))}
     </div>
   );

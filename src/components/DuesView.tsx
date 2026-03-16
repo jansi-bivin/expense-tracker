@@ -258,7 +258,10 @@ export default function DuesView({ dues, transactions, categories, onDuesChange,
                   <div key={due.id} className="flex justify-between items-center bg-gray-50 rounded-lg px-4 py-2">
                     <div>
                       <div className="text-sm text-gray-400">{txn?.merchant ?? "Transaction #" + due.transaction_id}</div>
-                      <div className="text-xs text-gray-300">{due.category} &middot; {txn ? fmtDate(txn.sms_date) : ""}</div>
+                      <div className="text-xs text-gray-300">
+                        {due.category} &middot; {txn ? fmtDate(txn.sms_date) : ""}
+                        {due.settlement_transaction_id && <span className="ml-1 text-green-500">• Settled via UPI</span>}
+                      </div>
                     </div>
                     <span className="text-sm text-gray-400 line-through">{fmt(Number(due.amount))}</span>
                   </div>
