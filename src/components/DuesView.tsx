@@ -10,9 +10,11 @@ interface Props {
   onDuesChange: (dues: Due[]) => void;
   payeeUpi: string | null;
   payeeName: string;
+  isPrimary: boolean;
+  primaryName: string;
 }
 
-export default function DuesView({ dues, transactions, categories, onDuesChange, payeeUpi, payeeName }: Props) {
+export default function DuesView({ dues, transactions, categories, onDuesChange, payeeUpi, payeeName, isPrimary, primaryName }: Props) {
   const [expandedCat, setExpandedCat] = useState<string | null>(null);
   const [showCleared, setShowCleared] = useState(false);
   const [clearing, setClearing] = useState<Set<number>>(new Set());
@@ -96,7 +98,7 @@ export default function DuesView({ dues, transactions, categories, onDuesChange,
     return (
       <div className="text-center py-16 text-gray-400">
         <div className="text-4xl mb-3">&#10003;</div>
-        <div className="text-lg">No dues</div>
+        <div className="text-lg">{isPrimary ? "No dues to pay" : "No dues pending"}</div>
       </div>
     );
   }
@@ -106,10 +108,12 @@ export default function DuesView({ dues, transactions, categories, onDuesChange,
       {/* Summary card */}
       {totalOutstanding > 0 && (
         <div className="bg-white rounded-xl shadow p-4 mb-4">
-          <div className="text-sm text-gray-500 mb-1">Outstanding Dues</div>
-          <div className="text-2xl font-bold text-red-600">{fmt(totalOutstanding)}</div>
+          <div className="text-sm text-gray-500 mb-1">
+            {isPrimary ? `You owe ${payeeName}` : `${primaryName} owes you`}
+          </div>
+          <div className={`text-2xl font-bold ${isPrimary ? "text-red-600" : "text-green-600"}`}>{fmt(totalOutstanding)}</div>
           <div className="text-xs text-gray-400 mt-1">{unclearedDues.length} transaction{unclearedDues.length !== 1 ? "s" : ""} across {byCategory.length} categor{byCategory.length !== 1 ? "ies" : "y"}</div>
-          {payeeUpi && (
+          {isPrimary && payeeUpi && (
             <button
               className="w-full mt-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium"
               onClick={() => openUpiPay(totalOutstanding)}
@@ -170,24 +174,26 @@ export default function DuesView({ dues, transactions, categories, onDuesChange,
 
             {isExpanded && (
               <div className="border-t px-4 pb-3">
-                {/* Pay / Clear All for category */}
-                <div className="flex gap-2 mt-3 mb-2">
-                  {payeeUpi && (
+                {/* Pay / Clear All for category — primary user only */}
+                {isPrimary && (
+                  <div className="flex gap-2 mt-3 mb-2">
+                    {payeeUpi && (
+                      <button
+                        className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium"
+                        onClick={(e) => { e.stopPropagation(); openUpiPay(catTotal); }}
+                      >
+                        Pay {fmt(catTotal)}
+                      </button>
+                    )}
                     <button
-                      className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium"
-                      onClick={(e) => { e.stopPropagation(); openUpiPay(catTotal); }}
+                      className={`${payeeUpi ? "flex-1" : "w-full"} py-2 bg-green-600 text-white rounded-lg text-sm font-medium disabled:opacity-40`}
+                      disabled={categoryDues.some((d) => clearing.has(d.id))}
+                      onClick={(e) => { e.stopPropagation(); clearCategory(category); }}
                     >
-                      Pay {fmt(catTotal)}
+                      Clear All
                     </button>
-                  )}
-                  <button
-                    className={`${payeeUpi ? "flex-1" : "w-full"} py-2 bg-green-600 text-white rounded-lg text-sm font-medium disabled:opacity-40`}
-                    disabled={categoryDues.some((d) => clearing.has(d.id))}
-                    onClick={(e) => { e.stopPropagation(); clearCategory(category); }}
-                  >
-                    Clear All
-                  </button>
-                </div>
+                  </div>
+                )}
 
                 {/* Individual items */}
                 {categoryDues.map((due) => {
@@ -200,7 +206,7 @@ export default function DuesView({ dues, transactions, categories, onDuesChange,
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium">{fmt(Number(due.amount))}</span>
-                        {payeeUpi && (
+                        {isPrimary && payeeUpi && (
                           <button
                             className="px-3 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium"
                             onClick={() => openUpiPay(Number(due.amount))}
@@ -208,13 +214,15 @@ export default function DuesView({ dues, transactions, categories, onDuesChange,
                             Pay
                           </button>
                         )}
-                        <button
-                          className="px-3 py-1 bg-green-100 text-green-700 rounded text-xs font-medium disabled:opacity-40"
-                          disabled={clearing.has(due.id)}
-                          onClick={() => clearDue(due.id)}
-                        >
-                          {clearing.has(due.id) ? "..." : "Clear"}
-                        </button>
+                        {isPrimary && (
+                          <button
+                            className="px-3 py-1 bg-green-100 text-green-700 rounded text-xs font-medium disabled:opacity-40"
+                            disabled={clearing.has(due.id)}
+                            onClick={() => clearDue(due.id)}
+                          >
+                            {clearing.has(due.id) ? "..." : "Clear"}
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
@@ -228,7 +236,7 @@ export default function DuesView({ dues, transactions, categories, onDuesChange,
       {/* No outstanding */}
       {unclearedDues.length === 0 && (
         <div className="text-center py-8 text-gray-400">
-          <div className="text-lg mb-1">All cleared!</div>
+          <div className="text-lg mb-1">{isPrimary ? "All cleared!" : "All settled!"}</div>
         </div>
       )}
 

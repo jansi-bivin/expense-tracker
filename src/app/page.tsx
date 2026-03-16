@@ -201,7 +201,7 @@ function HomeInner() {
         <h1 className="text-2xl font-bold">ExpTrack</h1>
         <div className="text-right">
           {currentUser && <div className="text-xs text-gray-400">{currentUser.name}</div>}
-          <div className="text-[10px] text-gray-300">v11</div>
+          <div className="text-[10px] text-gray-300">v12</div>
         </div>
       </div>
 
@@ -242,6 +242,8 @@ function HomeInner() {
           onDuesChange={setDues}
           payeeUpi={allUsers.find((u) => !u.is_primary)?.upi_id ?? null}
           payeeName={allUsers.find((u) => !u.is_primary)?.name ?? ""}
+          isPrimary={currentUser?.is_primary ?? false}
+          primaryName={allUsers.find((u) => u.is_primary)?.name ?? ""}
         />
       ) : (
         <CategoryBudget
