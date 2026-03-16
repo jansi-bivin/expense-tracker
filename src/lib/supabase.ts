@@ -12,16 +12,13 @@ export interface RawSms {
   body: string;
   sms_date: number;
   created_at: string;
+  category: string | null;
+  comment: string | null;
+  status: 'new' | 'categorized' | 'ignored';
 }
 
 // Enriched transaction after client-side field detection
-export interface Transaction {
-  id: number;
-  address: string;
-  body: string;
-  sms_date: number;
-  created_at: string;
-  // Detected fields (computed client-side)
+export interface Transaction extends RawSms {
   amount: number | null;
   transaction_type: string | null;
   account_number: string | null;
@@ -29,4 +26,11 @@ export interface Transaction {
   transaction_date: string | null;
   balance: number | null;
   reference_id: string | null;
+}
+
+export interface Category {
+  id: number;
+  name: string;
+  cap: number;
+  recurrence: 'Monthly' | 'Yearly';
 }
