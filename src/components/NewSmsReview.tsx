@@ -6,7 +6,7 @@ import SmsCard from "./SmsCard";
 interface Props {
   transactions: Transaction[];
   categories: Category[];
-  onDone: (id: number, category?: string, comment?: string) => void;
+  onDone: (id: number, category?: string, notes?: string) => void;
 }
 
 export default function NewSmsReview({ transactions, categories, onDone }: Props) {

@@ -13,7 +13,7 @@ const CATEGORY_GROUPS = [
 interface Props {
   txn: Transaction;
   categories: Category[];
-  onDone: (id: number, category?: string, comment?: string) => void;
+  onDone: (id: number, category?: string, notes?: string) => void;
 }
 
 export default function SmsCard({ txn, categories, onDone }: Props) {
@@ -28,7 +28,7 @@ export default function SmsCard({ txn, categories, onDone }: Props) {
   async function handleSave() {
     if (!category) return;
     setSaving(true);
-    await supabase.from("transactions").update({ category, comment: comment || null, status: "categorized" }).eq("id", txn.id);
+    await supabase.from("transactions").update({ category, notes: comment || null, status: "categorized" }).eq("id", txn.id);
     onDone(txn.id, category, comment || undefined);
   }
 

@@ -89,12 +89,12 @@ export default function Home() {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  function handleReviewDone(id: number, category?: string, comment?: string) {
+  function handleReviewDone(id: number, category?: string, notes?: string) {
     const txn = newTxns.find((t) => t.id === id);
     setNewTxns((prev) => prev.filter((t) => t.id !== id));
     // If categorized, add to budget data with updated fields
     if (txn && category) {
-      setCategorizedTxns((prev) => [{ ...txn, category, comment: comment || null, status: "categorized" as const }, ...prev]);
+      setCategorizedTxns((prev) => [{ ...txn, category, notes: notes || null, status: "categorized" as const }, ...prev]);
     }
   }
 

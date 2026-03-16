@@ -13,7 +13,7 @@ export interface RawSms {
   sms_date: number;
   created_at: string;
   category: string | null;
-  comment: string | null;
+  notes: string | null;
   status: 'new' | 'categorized' | 'ignored';
 }
 
