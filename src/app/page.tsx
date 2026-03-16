@@ -64,13 +64,24 @@ export default function Home() {
     }
     load();
 
-    // Realtime: new SMS arrives → add to review queue
+    // Realtime: new SMS arrives → add to review queue; updates sync across devices
     const channel = supabase
       .channel("transactions-realtime")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "transactions" }, (payload) => {
         const enriched = enrichSms(payload.new as RawSms);
         if (enriched.status === "new") {
           setNewTxns((prev) => [enriched, ...prev]);
+        }
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "transactions" }, (payload) => {
+        const updated = payload.new as RawSms;
+        if (updated.status === "categorized" || updated.status === "ignored") {
+          // Remove from review queue (syncs across devices)
+          setNewTxns((prev) => prev.filter((t) => t.id !== updated.id));
+          if (updated.status === "categorized") {
+            const enriched = enrichSms(updated);
+            setCategorizedTxns((prev) => [enriched, ...prev]);
+          }
         }
       })
       .subscribe();
