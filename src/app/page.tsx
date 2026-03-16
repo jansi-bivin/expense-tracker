@@ -345,6 +345,7 @@ function HomeInner() {
           <CategoryBudget
             transactions={categorizedTxns}
             categories={categories}
+            isPrimary={currentUser?.is_primary ?? false}
           />
         )}
       </div>

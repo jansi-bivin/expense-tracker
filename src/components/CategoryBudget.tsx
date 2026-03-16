@@ -6,14 +6,16 @@ import { Transaction, Category } from "@/lib/supabase";
 interface Props {
   transactions: Transaction[];
   categories: Category[];
+  isPrimary: boolean;
 }
 
-export default function CategoryBudget({ transactions, categories }: Props) {
+export default function CategoryBudget({ transactions, categories, isPrimary }: Props) {
   const now = new Date();
   const currentMonth = now.getMonth();
   const currentYear = now.getFullYear();
 
   const fmt = (n: number) => "\u20B9" + n.toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  const pctFmt = (n: number) => Math.round(n) + "%";
 
   const categorySpend = useMemo(() => {
     const spend = new Map<string, number>();
@@ -55,12 +57,14 @@ export default function CategoryBudget({ transactions, categories }: Props) {
   const yearlyCategories = categories.filter((c) => c.recurrence === "Yearly");
 
   const totalPct = totalCap > 0 ? Math.min((totalSpent / totalCap) * 100, 100) : 0;
+  const totalRemainingPct = Math.max(100 - totalPct, 0);
   const totalRemaining = totalCap - totalSpent;
 
   function CategoryCard({ cat, index }: { cat: Category; index: number }) {
     const spent = categorySpend.get(cat.name) || 0;
     const remaining = cat.cap - spent;
     const pct = cat.cap > 0 ? Math.min((spent / cat.cap) * 100, 100) : 0;
+    const remainingPct = Math.max(100 - pct, 0);
     const fillClass = pct >= 90 ? "progress-fill-red" : pct >= 75 ? "progress-fill-yellow" : "progress-fill-green";
     const accentColor = pct >= 90 ? "var(--accent-red)" : pct >= 75 ? "var(--accent-orange)" : "var(--accent-green)";
 
@@ -71,18 +75,30 @@ export default function CategoryBudget({ transactions, categories }: Props) {
           <span className="badge badge-muted text-[10px]">{cat.recurrence === "Monthly" ? "Mo" : "Yr"}</span>
         </div>
 
-        {/* Spend vs Cap */}
-        <div className="flex justify-between items-baseline mb-2">
-          <div>
-            <span className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>{fmt(spent)}</span>
-            <span className="text-xs ml-1" style={{ color: "var(--text-tertiary)" }}>/ {fmt(cat.cap)}</span>
+        {isPrimary ? (
+          /* ── Primary: show ₹ amounts ── */
+          <div className="flex justify-between items-baseline mb-2">
+            <div>
+              <span className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>{fmt(spent)}</span>
+              <span className="text-xs ml-1" style={{ color: "var(--text-tertiary)" }}>/ {fmt(cat.cap)}</span>
+            </div>
+            <span className="text-xs font-semibold" style={{ color: accentColor }}>
+              {remaining >= 0 ? fmt(remaining) + " left" : fmt(-remaining) + " over"}
+            </span>
           </div>
-          <span className="text-xs font-semibold" style={{ color: accentColor }}>
-            {remaining >= 0 ? fmt(remaining) + " left" : fmt(-remaining) + " over"}
-          </span>
-        </div>
+        ) : (
+          /* ── Secondary: show % remaining — focus on what's left ── */
+          <div className="flex justify-between items-baseline mb-2">
+            <span className="text-lg font-bold" style={{ color: accentColor }}>
+              {remainingPct > 0 ? pctFmt(remainingPct) + " left" : "Budget exceeded"}
+            </span>
+            <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>
+              {pctFmt(pct)} used
+            </span>
+          </div>
+        )}
 
-        {/* Progress bar */}
+        {/* Progress bar — inverted for secondary (shows remaining) */}
         <div className="progress-track">
           <div className={`progress-fill ${fillClass}`} style={{ width: `${pct}%` }} />
         </div>
@@ -101,19 +117,39 @@ export default function CategoryBudget({ transactions, categories }: Props) {
           </span>
         </div>
 
-        <div className="flex justify-between items-end mb-4">
-          <div>
-            <div className="text-[11px] font-medium mb-1" style={{ color: "var(--text-tertiary)" }}>Total Spent</div>
-            <div className="amount-large amount-debit">{fmt(totalSpent)}</div>
-            <div className="text-xs mt-1" style={{ color: "var(--text-tertiary)" }}>of {fmt(totalCap)} budget</div>
-          </div>
-          <div className="text-right">
-            <div className="text-[11px] font-medium mb-1" style={{ color: "var(--text-tertiary)" }}>Remaining</div>
-            <div className="text-2xl font-extrabold" style={{ color: totalRemaining >= 0 ? "var(--accent-green)" : "var(--accent-red)" }}>
-              {totalRemaining >= 0 ? fmt(totalRemaining) : "-" + fmt(-totalRemaining)}
+        {isPrimary ? (
+          /* ── Primary hero: ₹ spent + ₹ remaining ── */
+          <div className="flex justify-between items-end mb-4">
+            <div>
+              <div className="text-[11px] font-medium mb-1" style={{ color: "var(--text-tertiary)" }}>Total Spent</div>
+              <div className="amount-large amount-debit">{fmt(totalSpent)}</div>
+              <div className="text-xs mt-1" style={{ color: "var(--text-tertiary)" }}>of {fmt(totalCap)} budget</div>
+            </div>
+            <div className="text-right">
+              <div className="text-[11px] font-medium mb-1" style={{ color: "var(--text-tertiary)" }}>Remaining</div>
+              <div className="text-2xl font-extrabold" style={{ color: totalRemaining >= 0 ? "var(--accent-green)" : "var(--accent-red)" }}>
+                {totalRemaining >= 0 ? fmt(totalRemaining) : "-" + fmt(-totalRemaining)}
+              </div>
             </div>
           </div>
-        </div>
+        ) : (
+          /* ── Secondary hero: % remaining — encouraging tone ── */
+          <div className="text-center mb-4">
+            <div className="text-[11px] font-medium mb-2" style={{ color: "var(--text-tertiary)" }}>Monthly Budget Remaining</div>
+            <div className="text-4xl font-extrabold tracking-tight" style={{ color: totalRemainingPct > 25 ? "var(--accent-green)" : totalRemainingPct > 10 ? "var(--accent-orange)" : "var(--accent-red)" }}>
+              {pctFmt(totalRemainingPct)}
+            </div>
+            <div className="text-xs mt-2" style={{ color: "var(--text-tertiary)" }}>
+              {totalRemainingPct > 50
+                ? "Going great! Plenty of budget left 👍"
+                : totalRemainingPct > 25
+                ? "Past halfway — spend wisely"
+                : totalRemainingPct > 10
+                ? "Running low — be careful"
+                : "⚠️ Almost out of budget"}
+            </div>
+          </div>
+        )}
 
         {/* Overall progress */}
         <div className="progress-track" style={{ height: "8px" }}>
@@ -121,7 +157,7 @@ export default function CategoryBudget({ transactions, categories }: Props) {
             style={{ width: `${totalPct}%`, height: "8px" }} />
         </div>
         <div className="text-[11px] mt-2 text-right font-medium" style={{ color: "var(--text-tertiary)" }}>
-          {Math.round(totalPct)}% used
+          {isPrimary ? `${Math.round(totalPct)}% used` : `${pctFmt(totalPct)} used`}
         </div>
       </div>
 
