@@ -50,23 +50,27 @@ export default function DuesView({ dues, transactions, categories, onDuesChange,
     return m;
   }, [transactions]);
 
+  const [payHint, setPayHint] = useState<number | null>(null);
+
   function openUpiPay(amount: number) {
     if (!payeeUpi) return;
-    const amt = amount.toFixed(2);
-    const tr = `EXPTRK${Date.now()}${Math.random().toString(36).slice(2, 8)}`;
+    // Show amount hint so user knows what to enter in UPI app
+    setPayHint(amount);
+    setTimeout(() => setPayHint(null), 8000);
 
-    // Use native Android bridge if available (launches UPI via proper
-    // startActivityForResult — UPI apps treat it as a real app, not a web link)
+    // Open UPI app with ONLY payee — no amount, no tr.
+    // Prefilled amounts on P2P trigger NPCI risk policy blocks.
+    // User enters the amount manually in the UPI app.
     const androidUpi = (window as unknown as Record<string, unknown>).AndroidUpi as
       | { pay: (vpa: string, name: string, amount: string, txnRef: string) => void }
       | undefined;
     if (androidUpi?.pay) {
-      androidUpi.pay(payeeUpi, payeeName, amt, tr);
+      androidUpi.pay(payeeUpi, payeeName, "", "");
       return;
     }
 
-    // Fallback for browser testing — DOM anchor approach
-    const url = `upi://pay?pa=${payeeUpi}&pn=${encodeURIComponent(payeeName)}&tr=${tr}&am=${amt}&cu=INR`;
+    // Fallback for browser testing
+    const url = `upi://pay?pa=${payeeUpi}&pn=${encodeURIComponent(payeeName)}&cu=INR`;
     const a = document.createElement("a");
     a.href = url;
     a.style.display = "none";
@@ -117,6 +121,14 @@ export default function DuesView({ dues, transactions, categories, onDuesChange,
               Pay {fmt(totalOutstanding)} via UPI
             </button>
           )}
+        </div>
+      )}
+
+      {/* Amount hint — shown after Pay is tapped */}
+      {payHint !== null && (
+        <div className="bg-yellow-100 border border-yellow-400 rounded-lg p-3 mb-4 text-center animate-pulse">
+          <div className="text-sm text-yellow-800 font-medium">Enter this amount in UPI app:</div>
+          <div className="text-2xl font-bold text-yellow-900">{fmt(payHint)}</div>
         </div>
       )}
 
