@@ -50,22 +50,29 @@ export default function DuesView({ dues, transactions, categories, onDuesChange,
     return m;
   }, [transactions]);
 
+  const [copiedAmt, setCopiedAmt] = useState<string | null>(null);
+
   function openUpiPay(amount: number) {
     if (!payeeUpi) return;
     const amt = amount.toFixed(2);
 
-    // Use native Android bridge — builds raw URI (no @-encoding issues)
-    // and launches via startActivityForResult with chooser
+    // Copy amount to clipboard, then open UPI app to payee.
+    // UPI apps block prefilled-amount payments from third-party intents
+    // (NPCI risk policy), so we copy the amount and let user paste/type it.
+    navigator.clipboard.writeText(amt).catch(() => {});
+    setCopiedAmt(amt);
+    setTimeout(() => setCopiedAmt(null), 10000);
+
+    // Open UPI app with just the payee (no amount)
     const androidUpi = (window as unknown as Record<string, unknown>).AndroidUpi as
       | { pay: (vpa: string, name: string, amount: string, txnRef: string) => void }
       | undefined;
     if (androidUpi?.pay) {
-      androidUpi.pay(payeeUpi, payeeName, amt, "");
+      androidUpi.pay(payeeUpi, payeeName, "", "");
       return;
     }
 
-    // Fallback for browser testing
-    const url = `upi://pay?pa=${payeeUpi}&pn=${encodeURIComponent(payeeName)}&am=${amt}&cu=INR`;
+    const url = `upi://pay?pa=${payeeUpi}&pn=${encodeURIComponent(payeeName)}&cu=INR`;
     const a = document.createElement("a");
     a.href = url;
     a.style.display = "none";
@@ -116,6 +123,14 @@ export default function DuesView({ dues, transactions, categories, onDuesChange,
               Pay {fmt(totalOutstanding)} via UPI
             </button>
           )}
+        </div>
+      )}
+
+      {/* Amount copied banner */}
+      {copiedAmt && (
+        <div className="bg-green-50 border border-green-400 rounded-lg p-3 mb-4 text-center">
+          <div className="text-xs text-green-700">₹{copiedAmt} copied to clipboard</div>
+          <div className="text-sm font-semibold text-green-800 mt-1">Paste the amount in the UPI app</div>
         </div>
       )}
 

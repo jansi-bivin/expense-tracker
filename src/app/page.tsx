@@ -201,7 +201,7 @@ function HomeInner() {
         <h1 className="text-2xl font-bold">ExpTrack</h1>
         <div className="text-right">
           {currentUser && <div className="text-xs text-gray-400">{currentUser.name}</div>}
-          <div className="text-[10px] text-gray-300">v9</div>
+          <div className="text-[10px] text-gray-300">v10</div>
         </div>
       </div>
 
