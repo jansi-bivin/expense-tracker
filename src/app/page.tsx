@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, Suspense } from "react";
+import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase, RawSms, Transaction, Category, User, Due } from "@/lib/supabase";
 import { detectFields } from "@/lib/smsDetector";
@@ -32,6 +32,29 @@ function HomeInner() {
   const [dues, setDues] = useState<Due[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"review" | "budget" | "dues">("budget");
+  const [resetting, setResetting] = useState(false);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Secret reset: long-press logo for 3 seconds
+  function startLongPress() {
+    longPressTimer.current = setTimeout(() => {
+      if (confirm("🗑️ RESET ALL DATA?\n\nThis will delete all transactions & dues.\nUsers and categories will be kept.\n\nAre you sure?")) {
+        resetAllData();
+      }
+    }, 3000);
+  }
+  function cancelLongPress() {
+    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+  }
+  async function resetAllData() {
+    setResetting(true);
+    await supabase.from("dues").delete().gt("id", 0);
+    await supabase.from("transactions").delete().gt("id", 0);
+    setNewTxns([]);
+    setCategorizedTxns([]);
+    setDues([]);
+    setResetting(false);
+  }
 
   const updateBadge = useCallback((count: number) => {
     if ("setAppBadge" in navigator) {
@@ -249,8 +272,10 @@ function HomeInner() {
       {/* Header */}
       <div className="flex justify-between items-center mb-5">
         <div>
-          <div className="text-xl font-extrabold tracking-tight">
-            Exp<span style={{ color: "var(--accent)" }}>Track</span>
+          <div className="text-xl font-extrabold tracking-tight select-none"
+            onTouchStart={startLongPress} onTouchEnd={cancelLongPress} onTouchCancel={cancelLongPress}
+            onMouseDown={startLongPress} onMouseUp={cancelLongPress} onMouseLeave={cancelLongPress}>
+            {resetting ? <span style={{ color: "var(--accent-red)" }}>Resetting...</span> : <>Exp<span style={{ color: "var(--accent)" }}>Track</span></>}
           </div>
         </div>
         <div className="flex items-center gap-2">
