@@ -198,16 +198,17 @@ function HomeInner() {
   if (!loading && !currentUser && allUsers.length > 0) {
     return (
       <div className="max-w-sm mx-auto px-4 py-16 text-center">
-        <h1 className="text-2xl font-bold mb-2">ExpTrack</h1>
-        <p className="text-gray-500 mb-8">Who are you?</p>
+        <h1 className="text-2xl font-bold mb-2" style={{ color: "var(--text-primary)" }}>ExpTrack</h1>
+        <p className="mb-8" style={{ color: "var(--text-secondary)" }}>Who are you?</p>
         <div className="space-y-3">
           {allUsers.map((u) => (
             <button
               key={u.id}
               onClick={() => handleSelectUser(u)}
-              className="w-full py-4 px-6 bg-white rounded-xl shadow text-lg font-medium hover:bg-gray-50"
+              className="glass w-full py-4 px-6 rounded-xl text-lg font-medium transition-all hover:scale-[1.02]"
+              style={{ color: "var(--text-primary)" }}
             >
-              {u.name} {u.is_primary && <span className="text-xs text-gray-400">(primary)</span>}
+              {u.name} {u.is_primary && <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>(primary)</span>}
             </button>
           ))}
         </div>
@@ -217,7 +218,7 @@ function HomeInner() {
 
   if (loading) return (
     <div className="flex items-center justify-center min-h-screen">
-      <div className="text-lg text-gray-500">Loading...</div>
+      <div className="text-lg" style={{ color: "var(--text-secondary)" }}>Loading...</div>
     </div>
   );
 
@@ -228,11 +229,11 @@ function HomeInner() {
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6">
-      <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-bold">ExpTrack</h1>
+      <div className="flex justify-between items-center mb-4 pb-3" style={{ borderBottom: "1px solid var(--border)" }}>
+        <h1 className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>ExpTrack</h1>
         <div className="text-right">
-          {currentUser && <div className="text-xs text-gray-400">{currentUser.name}</div>}
-          <div className="text-[10px] text-gray-300">v14 {currentUser?.is_primary ? "P" : "S"}</div>
+          {currentUser && <div className="text-xs" style={{ color: "var(--text-secondary)" }}>{currentUser.name}</div>}
+          <div className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>v15</div>
         </div>
       </div>
 
@@ -240,17 +241,19 @@ function HomeInner() {
         <div className="flex gap-2 mb-4">
           <button
             onClick={() => setView("budget")}
-            className={`px-4 py-2 rounded-lg text-sm font-medium ${activeView === "budget" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600"}`}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeView === "budget" ? "btn-gradient text-white glow-accent" : "glass"}`}
+            style={activeView !== "budget" ? { color: "var(--text-secondary)" } : undefined}
           >
             Budget
           </button>
           <button
             onClick={() => setView("dues")}
-            className={`px-4 py-2 rounded-lg text-sm font-medium relative ${activeView === "dues" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600"}`}
+            className={`px-4 py-2 rounded-lg text-sm font-medium relative transition-all ${activeView === "dues" ? "btn-gradient text-white glow-accent" : "glass"}`}
+            style={activeView !== "dues" ? { color: "var(--text-secondary)" } : undefined}
           >
             Dues
             {duesTotal > 0 && (
-              <span className="ml-1.5 px-1.5 py-0.5 bg-red-500 text-white text-xs rounded-full">
+              <span className="ml-1.5 px-1.5 py-0.5 text-white text-xs rounded-full" style={{ background: "var(--accent-red)" }}>
                 {"\u20B9"}{duesTotal.toLocaleString("en-IN")}
               </span>
             )}
@@ -292,7 +295,7 @@ function HomeInner() {
 
 export default function Home() {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><div className="text-lg text-gray-500">Loading...</div></div>}>
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><div className="text-lg" style={{ color: "var(--text-secondary)" }}>Loading...</div></div>}>
       <HomeInner />
     </Suspense>
   );

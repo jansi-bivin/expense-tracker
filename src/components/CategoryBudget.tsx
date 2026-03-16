@@ -54,24 +54,29 @@ export default function CategoryBudget({ transactions, categories }: Props) {
   const monthlyCategories = categories.filter((c) => c.recurrence === "Monthly");
   const yearlyCategories = categories.filter((c) => c.recurrence === "Yearly");
 
+  const totalPct = totalCap > 0 ? Math.min((totalSpent / totalCap) * 100, 100) : 0;
+
   function CategoryCard({ cat }: { cat: Category }) {
     const spent = categorySpend.get(cat.name) || 0;
     const remaining = cat.cap - spent;
     const pct = cat.cap > 0 ? Math.min((spent / cat.cap) * 100, 100) : 0;
-    const barColor = pct >= 90 ? "bg-red-500" : pct >= 75 ? "bg-yellow-500" : "bg-green-500";
+    const barGradient = pct >= 90 ? "linear-gradient(90deg, #ff4757, #e84141)" : pct >= 75 ? "linear-gradient(90deg, #ff9f43, #e67e22)" : "linear-gradient(90deg, #00c896, #00a67d)";
+    const glowClass = pct >= 90 ? "progress-glow-red" : pct >= 75 ? "progress-glow-yellow" : "progress-glow-green";
 
     return (
-      <div className="bg-white rounded-xl shadow p-4">
+      <div className="glass rounded-xl p-4 transition-all hover:scale-[1.01]">
         <div className="flex justify-between items-start mb-2">
-          <div className="text-sm font-medium text-gray-800 leading-tight">{cat.name}</div>
-          <div className="text-xs text-gray-400 whitespace-nowrap ml-2">{cat.recurrence}</div>
+          <div className="text-sm font-medium leading-tight" style={{ color: "var(--text-primary)" }}>{cat.name}</div>
+          <div className="text-xs whitespace-nowrap ml-2" style={{ color: "var(--text-tertiary)" }}>{cat.recurrence}</div>
         </div>
-        <div className="flex justify-between text-xs text-gray-500 mb-1">
-          <span>{fmt(spent)} / {fmt(cat.cap)}</span>
-          <span className={remaining >= 0 ? "text-green-600" : "text-red-600"}>{remaining >= 0 ? fmt(remaining) + " left" : fmt(-remaining) + " over"}</span>
+        <div className="flex justify-between text-xs mb-1.5">
+          <span style={{ color: "var(--text-secondary)" }}>{fmt(spent)} / {fmt(cat.cap)}</span>
+          <span style={{ color: remaining >= 0 ? "var(--accent-green)" : "var(--accent-red)" }}>
+            {remaining >= 0 ? fmt(remaining) + " left" : fmt(-remaining) + " over"}
+          </span>
         </div>
-        <div className="w-full bg-gray-200 rounded-full h-2">
-          <div className={`h-2 rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
+        <div className="w-full rounded-full h-2" style={{ background: "var(--bg-base)" }}>
+          <div className={`h-2 rounded-full ${glowClass} transition-all`} style={{ width: `${pct}%`, background: barGradient }} />
         </div>
       </div>
     );
@@ -80,23 +85,28 @@ export default function CategoryBudget({ transactions, categories }: Props) {
   return (
     <div>
       {/* Monthly summary */}
-      <div className="bg-white rounded-xl shadow p-4 mb-4">
-        <div className="text-sm text-gray-500 mb-1">
+      <div className="glass-elevated rounded-xl p-4 mb-4 glow-accent">
+        <div className="text-sm mb-1" style={{ color: "var(--text-secondary)" }}>
           {now.toLocaleDateString("en-IN", { month: "long", year: "numeric" })} — Monthly Budget
         </div>
-        <div className="flex justify-between items-end">
+        <div className="flex justify-between items-end mb-3">
           <div>
-            <span className="text-2xl font-bold text-red-600">{fmt(totalSpent)}</span>
-            <span className="text-gray-400 text-sm"> / {fmt(totalCap)}</span>
+            <span className="text-2xl font-bold" style={{ color: "var(--accent-red)" }}>{fmt(totalSpent)}</span>
+            <span className="text-sm" style={{ color: "var(--text-tertiary)" }}> / {fmt(totalCap)}</span>
           </div>
-          <div className={`text-lg font-semibold ${totalCap - totalSpent >= 0 ? "text-green-600" : "text-red-600"}`}>
+          <div className="text-lg font-semibold" style={{ color: totalCap - totalSpent >= 0 ? "var(--accent-green)" : "var(--accent-red)" }}>
             {totalCap - totalSpent >= 0 ? fmt(totalCap - totalSpent) + " left" : fmt(totalSpent - totalCap) + " over"}
           </div>
+        </div>
+        {/* Overall progress bar */}
+        <div className="w-full rounded-full h-2" style={{ background: "var(--bg-base)" }}>
+          <div className={`h-2 rounded-full transition-all ${totalPct >= 90 ? "progress-glow-red" : totalPct >= 75 ? "progress-glow-yellow" : "progress-glow-green"}`}
+            style={{ width: `${totalPct}%`, background: totalPct >= 90 ? "linear-gradient(90deg, #ff4757, #e84141)" : totalPct >= 75 ? "linear-gradient(90deg, #ff9f43, #e67e22)" : "linear-gradient(90deg, #00c896, #00a67d)" }} />
         </div>
       </div>
 
       {/* Monthly categories */}
-      <h3 className="text-sm font-semibold text-gray-500 mb-2 uppercase tracking-wide">Monthly</h3>
+      <h3 className="text-xs font-semibold mb-2 uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>Monthly</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
         {monthlyCategories.map((cat) => (
           <CategoryCard key={cat.id} cat={cat} />
@@ -106,7 +116,7 @@ export default function CategoryBudget({ transactions, categories }: Props) {
       {/* Yearly categories */}
       {yearlyCategories.length > 0 && (
         <>
-          <h3 className="text-sm font-semibold text-gray-500 mb-2 uppercase tracking-wide">Yearly</h3>
+          <h3 className="text-xs font-semibold mb-2 uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>Yearly</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {yearlyCategories.map((cat) => (
               <CategoryCard key={cat.id} cat={cat} />

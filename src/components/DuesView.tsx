@@ -55,9 +55,9 @@ export default function DuesView({ dues, transactions, categories, onDuesChange,
   const [showPaySheet, setShowPaySheet] = useState<number | null>(null);
 
   const upiApps = [
-    { name: "GPay", pkg: "com.google.android.apps.nbu.paisa.user", color: "bg-white border", text: "text-gray-800" },
-    { name: "PhonePe", pkg: "com.phonepe.app", color: "bg-purple-600", text: "text-white" },
-    { name: "Paytm", pkg: "net.one97.paytm", color: "bg-blue-500", text: "text-white" },
+    { name: "GPay", pkg: "com.google.android.apps.nbu.paisa.user", gradient: "linear-gradient(135deg, #ffffff, #f0f0f0)", text: "var(--bg-base)" },
+    { name: "PhonePe", pkg: "com.phonepe.app", gradient: "linear-gradient(135deg, #5f259f, #4a1d80)", text: "#fff" },
+    { name: "Paytm", pkg: "net.one97.paytm", gradient: "linear-gradient(135deg, #00b9f1, #0091c8)", text: "#fff" },
   ];
 
   function openUpiPay(amount: number) {
@@ -96,7 +96,7 @@ export default function DuesView({ dues, transactions, categories, onDuesChange,
 
   if (unclearedDues.length === 0 && clearedDues.length === 0) {
     return (
-      <div className="text-center py-16 text-gray-400">
+      <div className="text-center py-16" style={{ color: "var(--text-tertiary)" }}>
         <div className="text-4xl mb-3">&#10003;</div>
         <div className="text-lg">{isPrimary ? "No dues to pay" : "No dues pending"}</div>
       </div>
@@ -107,15 +107,17 @@ export default function DuesView({ dues, transactions, categories, onDuesChange,
     <div>
       {/* Summary card */}
       {totalOutstanding > 0 && (
-        <div className="bg-white rounded-xl shadow p-4 mb-4">
-          <div className="text-sm text-gray-500 mb-1">
+        <div className={`glass-elevated rounded-xl p-4 mb-4 ${isPrimary ? "glow-red" : "glow-green"}`}>
+          <div className="text-sm mb-1" style={{ color: "var(--text-secondary)" }}>
             {isPrimary ? `You owe ${payeeName}` : `${primaryName} owes you`}
           </div>
-          <div className={`text-2xl font-bold ${isPrimary ? "text-red-600" : "text-green-600"}`}>{fmt(totalOutstanding)}</div>
-          <div className="text-xs text-gray-400 mt-1">{unclearedDues.length} transaction{unclearedDues.length !== 1 ? "s" : ""} across {byCategory.length} categor{byCategory.length !== 1 ? "ies" : "y"}</div>
+          <div className="text-2xl font-bold" style={{ color: isPrimary ? "var(--accent-red)" : "var(--accent-green)" }}>{fmt(totalOutstanding)}</div>
+          <div className="text-xs mt-1" style={{ color: "var(--text-tertiary)" }}>
+            {unclearedDues.length} transaction{unclearedDues.length !== 1 ? "s" : ""} across {byCategory.length} categor{byCategory.length !== 1 ? "ies" : "y"}
+          </div>
           {isPrimary && payeeUpi && (
             <button
-              className="w-full mt-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium"
+              className="w-full mt-3 py-2 btn-gradient text-white rounded-lg text-sm font-medium"
               onClick={() => openUpiPay(totalOutstanding)}
             >
               Pay {fmt(totalOutstanding)} via UPI
@@ -126,27 +128,28 @@ export default function DuesView({ dues, transactions, categories, onDuesChange,
 
       {/* Pay bottom sheet */}
       {showPaySheet !== null && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-end" onClick={() => setShowPaySheet(null)}>
-          <div className="bg-white w-full rounded-t-2xl p-5" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-end backdrop-blur-sm" onClick={() => setShowPaySheet(null)}>
+          <div className="w-full rounded-t-2xl p-5" style={{ background: "var(--bg-card)", borderTop: "1px solid var(--border)" }} onClick={(e) => e.stopPropagation()}>
             <div className="text-center mb-4">
-              <div className="text-xs text-gray-500">Pay {payeeName}</div>
-              <div className="text-3xl font-bold text-gray-900">₹{showPaySheet.toFixed(2)}</div>
-              <div className="text-xs text-green-600 mt-1">✓ Amount copied to clipboard</div>
+              <div className="text-xs" style={{ color: "var(--text-secondary)" }}>Pay {payeeName}</div>
+              <div className="text-3xl font-bold" style={{ color: "var(--text-primary)" }}>₹{showPaySheet.toFixed(2)}</div>
+              <div className="text-xs mt-1" style={{ color: "var(--accent-green)" }}>✓ Amount copied to clipboard</div>
             </div>
-            <div className="text-xs text-gray-500 text-center mb-2">UPI ID: {payeeUpi}</div>
-            <div className="text-xs text-gray-400 text-center mb-4">Open an app below → search &quot;{payeeName}&quot; → paste amount</div>
+            <div className="text-xs text-center mb-2" style={{ color: "var(--text-secondary)" }}>UPI ID: {payeeUpi}</div>
+            <div className="text-xs text-center mb-4" style={{ color: "var(--text-tertiary)" }}>Open an app below → search &quot;{payeeName}&quot; → paste amount</div>
             <div className="flex gap-3 justify-center mb-3">
               {upiApps.map((app) => (
                 <button
                   key={app.name}
-                  className={`flex-1 py-3 rounded-xl text-sm font-semibold ${app.color} ${app.text} border`}
+                  className="flex-1 py-3 rounded-xl text-sm font-semibold transition-all hover:scale-105"
+                  style={{ background: app.gradient, color: app.text, border: "1px solid var(--border)" }}
                   onClick={() => launchApp(app.pkg)}
                 >
                   {app.name}
                 </button>
               ))}
             </div>
-            <button className="w-full py-2 text-sm text-gray-400" onClick={() => setShowPaySheet(null)}>Cancel</button>
+            <button className="w-full py-2 text-sm" style={{ color: "var(--text-tertiary)" }} onClick={() => setShowPaySheet(null)}>Cancel</button>
           </div>
         </div>
       )}
@@ -157,36 +160,36 @@ export default function DuesView({ dues, transactions, categories, onDuesChange,
         const isExpanded = expandedCat === category;
 
         return (
-          <div key={category} className="bg-white rounded-xl shadow mb-3 overflow-hidden">
+          <div key={category} className="glass rounded-xl mb-3 overflow-hidden">
             <div
-              className="flex justify-between items-center p-4 cursor-pointer"
+              className="flex justify-between items-center p-4 cursor-pointer transition-all"
               onClick={() => setExpandedCat(isExpanded ? null : category)}
             >
               <div>
-                <div className="text-sm font-medium text-gray-800">{category}</div>
-                <div className="text-xs text-gray-400">{categoryDues.length} item{categoryDues.length !== 1 ? "s" : ""}</div>
+                <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>{category}</div>
+                <div className="text-xs" style={{ color: "var(--text-tertiary)" }}>{categoryDues.length} item{categoryDues.length !== 1 ? "s" : ""}</div>
               </div>
               <div className="flex items-center gap-3">
-                <span className="text-lg font-semibold text-red-600">{fmt(catTotal)}</span>
-                <span className="text-gray-300 text-sm">{isExpanded ? "\u25B2" : "\u25BC"}</span>
+                <span className="text-lg font-semibold" style={{ color: "var(--accent-red)" }}>{fmt(catTotal)}</span>
+                <span className="text-sm" style={{ color: "var(--text-tertiary)" }}>{isExpanded ? "\u25B2" : "\u25BC"}</span>
               </div>
             </div>
 
             {isExpanded && (
-              <div className="border-t px-4 pb-3">
+              <div className="px-4 pb-3" style={{ borderTop: "1px solid var(--border)" }}>
                 {/* Pay / Clear All for category — primary user only */}
                 {isPrimary && (
                   <div className="flex gap-2 mt-3 mb-2">
                     {payeeUpi && (
                       <button
-                        className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium"
+                        className="flex-1 py-2 btn-gradient text-white rounded-lg text-sm font-medium"
                         onClick={(e) => { e.stopPropagation(); openUpiPay(catTotal); }}
                       >
                         Pay {fmt(catTotal)}
                       </button>
                     )}
                     <button
-                      className={`${payeeUpi ? "flex-1" : "w-full"} py-2 bg-green-600 text-white rounded-lg text-sm font-medium disabled:opacity-40`}
+                      className={`${payeeUpi ? "flex-1" : "w-full"} py-2 btn-gradient-green text-white rounded-lg text-sm font-medium disabled:opacity-40`}
                       disabled={categoryDues.some((d) => clearing.has(d.id))}
                       onClick={(e) => { e.stopPropagation(); clearCategory(category); }}
                     >
@@ -199,16 +202,17 @@ export default function DuesView({ dues, transactions, categories, onDuesChange,
                 {categoryDues.map((due) => {
                   const txn = txnMap.get(due.transaction_id);
                   return (
-                    <div key={due.id} className="flex justify-between items-center py-2 border-b last:border-0">
+                    <div key={due.id} className="flex justify-between items-center py-2" style={{ borderBottom: "1px solid var(--border)" }}>
                       <div>
-                        <div className="text-sm text-gray-700">{txn?.merchant ?? "Transaction #" + due.transaction_id}</div>
-                        <div className="text-xs text-gray-400">{txn ? fmtDate(txn.sms_date) : ""}</div>
+                        <div className="text-sm" style={{ color: "var(--text-secondary)" }}>{txn?.merchant ?? "Transaction #" + due.transaction_id}</div>
+                        <div className="text-xs" style={{ color: "var(--text-tertiary)" }}>{txn ? fmtDate(txn.sms_date) : ""}</div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">{fmt(Number(due.amount))}</span>
+                        <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>{fmt(Number(due.amount))}</span>
                         {isPrimary && payeeUpi && (
                           <button
-                            className="px-3 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium"
+                            className="px-3 py-1 rounded text-xs font-medium transition-all"
+                            style={{ background: "rgba(108, 99, 255, 0.12)", color: "var(--accent)", border: "1px solid rgba(108, 99, 255, 0.25)" }}
                             onClick={() => openUpiPay(Number(due.amount))}
                           >
                             Pay
@@ -216,7 +220,8 @@ export default function DuesView({ dues, transactions, categories, onDuesChange,
                         )}
                         {isPrimary && (
                           <button
-                            className="px-3 py-1 bg-green-100 text-green-700 rounded text-xs font-medium disabled:opacity-40"
+                            className="px-3 py-1 rounded text-xs font-medium disabled:opacity-40 transition-all"
+                            style={{ background: "rgba(0, 200, 150, 0.12)", color: "var(--accent-green)", border: "1px solid rgba(0, 200, 150, 0.25)" }}
                             disabled={clearing.has(due.id)}
                             onClick={() => clearDue(due.id)}
                           >
@@ -235,7 +240,7 @@ export default function DuesView({ dues, transactions, categories, onDuesChange,
 
       {/* No outstanding */}
       {unclearedDues.length === 0 && (
-        <div className="text-center py-8 text-gray-400">
+        <div className="text-center py-8" style={{ color: "var(--text-tertiary)" }}>
           <div className="text-lg mb-1">{isPrimary ? "All cleared!" : "All settled!"}</div>
         </div>
       )}
@@ -244,7 +249,8 @@ export default function DuesView({ dues, transactions, categories, onDuesChange,
       {clearedDues.length > 0 && (
         <div className="mt-6">
           <button
-            className="text-sm text-gray-400 mb-2"
+            className="text-sm mb-2"
+            style={{ color: "var(--text-tertiary)" }}
             onClick={() => setShowCleared(!showCleared)}
           >
             {showCleared ? "\u25B2" : "\u25BC"} {clearedDues.length} cleared due{clearedDues.length !== 1 ? "s" : ""}
@@ -255,15 +261,15 @@ export default function DuesView({ dues, transactions, categories, onDuesChange,
               {clearedDues.map((due) => {
                 const txn = txnMap.get(due.transaction_id);
                 return (
-                  <div key={due.id} className="flex justify-between items-center bg-gray-50 rounded-lg px-4 py-2">
+                  <div key={due.id} className="flex justify-between items-center rounded-lg px-4 py-2" style={{ background: "rgba(15, 15, 26, 0.5)", border: "1px solid var(--border)" }}>
                     <div>
-                      <div className="text-sm text-gray-400">{txn?.merchant ?? "Transaction #" + due.transaction_id}</div>
-                      <div className="text-xs text-gray-300">
+                      <div className="text-sm" style={{ color: "var(--text-tertiary)" }}>{txn?.merchant ?? "Transaction #" + due.transaction_id}</div>
+                      <div className="text-xs" style={{ color: "var(--text-tertiary)" }}>
                         {due.category} &middot; {txn ? fmtDate(txn.sms_date) : ""}
-                        {due.settlement_transaction_id && <span className="ml-1 text-green-500">• Settled via UPI</span>}
+                        {due.settlement_transaction_id && <span className="ml-1" style={{ color: "var(--accent-green)" }}>• Settled via UPI</span>}
                       </div>
                     </div>
-                    <span className="text-sm text-gray-400 line-through">{fmt(Number(due.amount))}</span>
+                    <span className="text-sm line-through" style={{ color: "var(--text-tertiary)" }}>{fmt(Number(due.amount))}</span>
                   </div>
                 );
               })}

@@ -18,9 +18,9 @@ export default function NewSmsReview({ transactions, categories, onDone, userNam
   return (
     <div>
       <div className="flex justify-between items-center mb-4">
-        <h2 className="text-lg font-bold">
+        <h2 className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>
           {transactions.length} new transaction{transactions.length !== 1 ? "s" : ""} to review
-          {userName && <span className="text-sm font-normal text-gray-400 ml-2">({userName}&apos;s phone)</span>}
+          {userName && <span className="text-sm font-normal ml-2" style={{ color: "var(--text-tertiary)" }}>({userName}&apos;s phone)</span>}
         </h2>
       </div>
       {transactions.map((txn) => (

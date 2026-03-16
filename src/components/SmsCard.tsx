@@ -97,30 +97,37 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
   }
 
   return (
-    <div className="bg-white rounded-xl shadow p-4 mb-3">
+    <div className="glass rounded-xl p-4 mb-3 transition-all">
       {/* Top row: amount + date */}
       <div className="flex justify-between items-start mb-2">
         <div>
-          <span className={`text-2xl font-bold ${txn.transaction_type === "CREDIT" ? "text-green-600" : "text-red-600"}`}>
+          <span className={`text-2xl font-bold ${txn.transaction_type === "CREDIT" ? "glow-green" : "glow-red"}`}
+            style={{ color: txn.transaction_type === "CREDIT" ? "var(--accent-green)" : "var(--accent-red)" }}>
             {txn.transaction_type === "DEBIT" ? "-" : "+"}{fmt(txnAmount)}
           </span>
-          <span className={`ml-2 px-2 py-0.5 rounded text-xs font-medium ${
-            txn.transaction_type === "CREDIT" ? "bg-green-100 text-green-700" :
-            txn.transaction_type === "DEBIT" ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-700"
-          }`}>
+          <span className={`ml-2 px-2 py-0.5 rounded text-xs font-medium`}
+            style={{
+              background: txn.transaction_type === "CREDIT" ? "rgba(0, 200, 150, 0.15)" :
+                txn.transaction_type === "DEBIT" ? "rgba(255, 71, 87, 0.15)" : "rgba(90, 94, 115, 0.2)",
+              color: txn.transaction_type === "CREDIT" ? "var(--accent-green)" :
+                txn.transaction_type === "DEBIT" ? "var(--accent-red)" : "var(--text-secondary)",
+              border: `1px solid ${txn.transaction_type === "CREDIT" ? "rgba(0, 200, 150, 0.3)" :
+                txn.transaction_type === "DEBIT" ? "rgba(255, 71, 87, 0.3)" : "var(--border)"}`
+            }}>
             {txn.transaction_type ?? "?"}
           </span>
         </div>
-        <span className="text-sm text-gray-400">{fmtDate(txn.sms_date)}</span>
+        <span className="text-sm" style={{ color: "var(--text-tertiary)" }}>{fmtDate(txn.sms_date)}</span>
       </div>
 
       {/* Merchant + Account */}
-      <div className="text-sm text-gray-700 mb-1">{txn.merchant ?? "Unknown merchant"}</div>
-      {txn.account_number && <div className="text-xs text-gray-400 font-mono mb-2">{txn.account_number}</div>}
+      <div className="text-sm mb-1" style={{ color: "var(--text-secondary)" }}>{txn.merchant ?? "Unknown merchant"}</div>
+      {txn.account_number && <div className="text-xs font-mono mb-2" style={{ color: "var(--text-tertiary)" }}>{txn.account_number}</div>}
 
       {/* Raw SMS (expandable) */}
       <div
-        className="text-xs text-gray-400 bg-gray-50 rounded p-2 mb-3 cursor-pointer"
+        className="text-xs rounded p-2 mb-3 cursor-pointer transition-colors"
+        style={{ background: "var(--bg-base)", color: "var(--text-tertiary)", border: "1px solid var(--border)" }}
         onClick={() => setExpanded(!expanded)}
       >
         {expanded ? txn.body : txn.body.substring(0, 80) + (txn.body.length > 80 ? "..." : "")}
@@ -129,7 +136,7 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
       {/* Settle Dues — prominent if auto-detected */}
       {isPrimary && hasDues && !settleMode && isLikelySettlement && (
         <button
-          className="w-full mb-3 py-2.5 bg-orange-500 text-white rounded-lg text-sm font-semibold"
+          className="w-full mb-3 py-2.5 btn-gradient-orange text-white rounded-lg text-sm font-semibold transition-all hover:shadow-lg"
           onClick={enterSettleMode}
         >
           ⚡ Settle Dues ({fmtShort(unclearedDues!.reduce((s, d) => s + Number(d.amount), 0))} outstanding)
@@ -138,8 +145,8 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
 
       {settleMode ? (
         /* ── Dues Picker (inline) ── */
-        <div className="border rounded-lg p-3 mb-3 bg-orange-50">
-          <div className="text-sm font-semibold text-gray-800 mb-2">Select dues to settle</div>
+        <div className="rounded-lg p-3 mb-3" style={{ background: "rgba(255, 159, 67, 0.08)", border: "1px solid rgba(255, 159, 67, 0.25)" }}>
+          <div className="text-sm font-semibold mb-2" style={{ color: "var(--accent-orange)" }}>Select dues to settle</div>
 
           <div className="space-y-2 max-h-48 overflow-y-auto mb-3">
             {unclearedDues!.map((due) => (
@@ -148,20 +155,21 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
                   type="checkbox"
                   checked={selectedDues.has(due.id)}
                   onChange={() => toggleDue(due.id)}
-                  className="w-4 h-4 rounded accent-orange-500"
+                  className="w-4 h-4 rounded"
                 />
-                <span className="text-sm text-gray-700 flex-1">{due.category}</span>
-                <span className="text-sm font-medium">{fmtShort(Number(due.amount))}</span>
+                <span className="text-sm flex-1" style={{ color: "var(--text-secondary)" }}>{due.category}</span>
+                <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>{fmtShort(Number(due.amount))}</span>
               </label>
             ))}
           </div>
 
           {/* Running total */}
-          <div className={`text-xs px-2 py-1 rounded mb-3 ${
-            Math.abs(selectedTotal - txnAmount) < 0.01
-              ? "bg-green-100 text-green-700"
-              : "bg-yellow-100 text-yellow-700"
-          }`}>
+          <div className="text-xs px-2 py-1 rounded mb-3"
+            style={{
+              background: Math.abs(selectedTotal - txnAmount) < 0.01 ? "rgba(0, 200, 150, 0.15)" : "rgba(255, 159, 67, 0.15)",
+              color: Math.abs(selectedTotal - txnAmount) < 0.01 ? "var(--accent-green)" : "var(--accent-orange)",
+              border: `1px solid ${Math.abs(selectedTotal - txnAmount) < 0.01 ? "rgba(0, 200, 150, 0.3)" : "rgba(255, 159, 67, 0.3)"}`
+            }}>
             Selected: {fmtShort(selectedTotal)} / Payment: {fmtShort(txnAmount)}
             {Math.abs(selectedTotal - txnAmount) >= 0.01 && selectedTotal > 0 && (
               <span> — {selectedTotal > txnAmount ? "over" : "under"} by {fmtShort(Math.abs(selectedTotal - txnAmount))}</span>
@@ -170,14 +178,15 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
 
           <div className="flex gap-2">
             <button
-              className="flex-1 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium disabled:opacity-40"
+              className="flex-1 py-2 btn-gradient-orange text-white rounded-lg text-sm font-medium disabled:opacity-40"
               disabled={selectedDues.size === 0 || saving}
               onClick={handleConfirmSettle}
             >
               {saving ? "Settling..." : "Confirm Settlement"}
             </button>
             <button
-              className="px-4 py-2 bg-gray-200 text-gray-600 rounded-lg text-sm"
+              className="px-4 py-2 glass rounded-lg text-sm transition-all"
+              style={{ color: "var(--text-secondary)" }}
               onClick={() => setSettleMode(false)}
             >
               Cancel
@@ -189,7 +198,8 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
         <>
           {/* Category dropdown */}
           <select
-            className="w-full border rounded-lg px-3 py-2 mb-2 text-sm"
+            className="w-full rounded-lg px-3 py-2 mb-2 text-sm"
+            style={{ background: "var(--bg-elevated)", color: "var(--text-primary)", border: "1px solid var(--border)" }}
             value={category}
             onChange={(e) => setCategory(e.target.value)}
           >
@@ -213,7 +223,8 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
           <input
             type="text"
             placeholder="Comment (optional)"
-            className="w-full border rounded-lg px-3 py-2 mb-3 text-sm"
+            className="w-full rounded-lg px-3 py-2 mb-3 text-sm"
+            style={{ background: "var(--bg-elevated)", color: "var(--text-primary)", border: "1px solid var(--border)" }}
             value={comment}
             onChange={(e) => setComment(e.target.value)}
           />
@@ -221,14 +232,15 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
           {/* Action buttons */}
           <div className="flex gap-2">
             <button
-              className="flex-1 bg-blue-600 text-white rounded-lg py-2 text-sm font-medium disabled:opacity-40"
+              className="flex-1 btn-gradient text-white rounded-lg py-2 text-sm font-medium disabled:opacity-40"
               disabled={!category || saving}
               onClick={handleSave}
             >
               {saving ? "Saving..." : "Save"}
             </button>
             <button
-              className="flex-1 bg-gray-200 text-gray-700 rounded-lg py-2 text-sm font-medium disabled:opacity-40"
+              className="flex-1 glass rounded-lg py-2 text-sm font-medium disabled:opacity-40 transition-all"
+              style={{ color: "var(--text-secondary)" }}
               disabled={saving}
               onClick={handleIgnore}
             >
@@ -237,7 +249,8 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
             {/* Subtle settle dues link when not auto-detected */}
             {isPrimary && hasDues && !isLikelySettlement && (
               <button
-                className="px-3 bg-orange-100 text-orange-700 rounded-lg py-2 text-xs font-medium"
+                className="px-3 rounded-lg py-2 text-xs font-medium transition-all"
+                style={{ background: "rgba(255, 159, 67, 0.12)", color: "var(--accent-orange)", border: "1px solid rgba(255, 159, 67, 0.25)" }}
                 onClick={enterSettleMode}
               >
                 Settle
