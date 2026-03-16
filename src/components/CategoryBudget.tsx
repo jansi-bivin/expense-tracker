@@ -2,8 +2,6 @@
 
 import { useMemo, useState } from "react";
 import { supabase, Transaction, Category } from "@/lib/supabase";
-import ActiveDaysControl from "./ActiveDaysControl";
-
 interface Props {
   transactions: Transaction[];
   categories: Category[];
@@ -28,6 +26,8 @@ export default function CategoryBudget({ transactions, categories, isPrimary, sc
   const [editVisibility, setEditVisibility] = useState<"all" | "primary" | "secondary">("all");
   const [editMode, setEditMode] = useState<"general" | "month">("general");
   const [savingEdit, setSavingEdit] = useState(false);
+  const [showActiveDays, setShowActiveDays] = useState(false);
+  const isScaled = activeDays !== daysInMonth;
 
   const fmt = (n: number) => "\u20B9" + n.toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
   const fmtDec = (n: number) => "\u20B9" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -442,12 +442,53 @@ export default function CategoryBudget({ transactions, categories, isPrimary, sc
 
       {/* ═══ Monthly Hero Card ═══ */}
       <div className="card-gradient-purple shimmer p-5 mb-6 animate-slide-up">
-        <div className="flex items-center gap-2 mb-3">
-          <span className="text-base">💰</span>
-          <span className="section-label" style={{ color: "var(--accent-bright)" }}>
-            {now.toLocaleDateString("en-IN", { month: "long", year: "numeric" })}
-          </span>
+        <div className="flex items-center justify-between mb-3">
+          <button
+            className="flex items-center gap-2"
+            onClick={() => { if (isPrimary) setShowActiveDays(!showActiveDays); }}
+          >
+            <span className="text-base">💰</span>
+            <span className="section-label" style={{ color: "var(--accent-bright)" }}>
+              {now.toLocaleDateString("en-IN", { month: "long", year: "numeric" })}
+            </span>
+            {isScaled && (
+              <span className="text-[10px] font-bold" style={{ color: "var(--accent-orange)" }}>
+                {activeDays}d
+              </span>
+            )}
+          </button>
         </div>
+
+        {/* Active days — hidden by default, tap month to reveal */}
+        {showActiveDays && isPrimary && (
+          <div className="flex items-center justify-between px-3 py-2 mb-3 rounded-xl animate-fade-in"
+            style={{ background: isScaled ? "rgba(255,179,71,0.08)" : "rgba(255,255,255,0.03)", border: `1px solid ${isScaled ? "rgba(255,179,71,0.15)" : "var(--border)"}` }}>
+            <span className="text-xs font-medium" style={{ color: isScaled ? "var(--accent-orange)" : "var(--text-tertiary)" }}>
+              Active Days
+            </span>
+            <div className="flex items-center gap-2">
+              <button className="w-7 h-7 rounded-lg flex items-center justify-center text-sm font-bold btn-ghost"
+                onClick={() => onActiveDaysUpdate(Math.max(1, activeDays - 1))}>−</button>
+              <span className="text-sm font-bold min-w-[3ch] text-center" style={{ color: isScaled ? "var(--accent-orange)" : "var(--text-primary)" }}>
+                {activeDays}
+              </span>
+              <span className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>/ {daysInMonth}</span>
+              <button className="w-7 h-7 rounded-lg flex items-center justify-center text-sm font-bold btn-ghost"
+                onClick={() => onActiveDaysUpdate(Math.min(daysInMonth, activeDays + 1))}>+</button>
+              {isScaled && (
+                <button className="text-[10px] font-semibold px-2 py-1 rounded-lg"
+                  style={{ color: "var(--accent-orange)", background: "rgba(255,179,71,0.1)" }}
+                  onClick={() => { onActiveDaysUpdate(daysInMonth); setShowActiveDays(false); }}>
+                  Reset
+                </button>
+              )}
+              <button className="text-[10px] font-semibold px-2 py-1 rounded-lg btn-ghost"
+                onClick={() => setShowActiveDays(false)}>
+                Done
+              </button>
+            </div>
+          </div>
+        )}
 
         {isPrimary ? (
           <div className="flex justify-between items-end mb-4">
@@ -482,16 +523,8 @@ export default function CategoryBudget({ transactions, categories, isPrimary, sc
           <div className={`progress-fill ${totalPct >= 90 ? "progress-fill-red" : totalPct >= 75 ? "progress-fill-yellow" : "progress-fill-green"}`}
             style={{ width: `${totalPct}%`, height: "8px" }} />
         </div>
-        <div className="flex items-center justify-between mt-2">
-          <ActiveDaysControl
-            activeDays={activeDays}
-            daysInMonth={daysInMonth}
-            isPrimary={isPrimary}
-            onUpdate={onActiveDaysUpdate}
-          />
-          <span className="text-[11px] font-medium" style={{ color: "var(--text-tertiary)" }}>
-            {pctFmt(totalPct)} used
-          </span>
+        <div className="text-[11px] mt-2 text-right font-medium" style={{ color: "var(--text-tertiary)" }}>
+          {pctFmt(totalPct)} used
         </div>
       </div>
 
