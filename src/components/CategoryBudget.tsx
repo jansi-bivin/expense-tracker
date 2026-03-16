@@ -108,6 +108,22 @@ export default function CategoryBudget({ transactions, categories, isPrimary, sc
   const totalRemainingPct = Math.max(100 - totalPct, 0);
   const totalRemaining = totalCap - totalSpent;
 
+  // Yearly totals
+  const yearlyTotalCap = useMemo(() => {
+    return yearlyCategories.reduce((sum, c) => c.cap > 0 ? sum + c.cap : sum, 0);
+  }, [yearlyCategories]);
+  const yearlyTotalSpent = useMemo(() => {
+    return yearlyCategories.reduce((sum, c) => sum + (categorySpend.get(c.name) || 0), 0);
+  }, [yearlyCategories, categorySpend]);
+  // Proportional: by month N of 12, expected spend = cap × (N / 12)
+  const monthsElapsed = currentMonth + 1; // 0-indexed → 1-indexed
+  const yearlyExpectedSpend = yearlyTotalCap * (monthsElapsed / 12);
+  const yearlyPct = yearlyTotalCap > 0 ? Math.min((yearlyTotalSpent / yearlyTotalCap) * 100, 100) : 0;
+  const yearlyExpectedPct = (monthsElapsed / 12) * 100;
+  const yearlyRemaining = yearlyTotalCap - yearlyTotalSpent;
+  const yearlyProportionalRemaining = yearlyExpectedSpend - yearlyTotalSpent;
+  const yearlyOnTrack = yearlyTotalSpent <= yearlyExpectedSpend;
+
   function startEdit(cat: Category) {
     if (!isPrimary) return;
     setEditingId(cat.id);
@@ -546,10 +562,75 @@ export default function CategoryBudget({ transactions, categories, isPrimary, sc
         )}
       </div>
 
-      {/* ═══ Yearly Categories — sorted by spend ═══ */}
+      {/* ═══ Yearly Categories ═══ */}
       {yearlyCategories.length > 0 && (
         <>
-          <div className="section-label mb-3">Yearly</div>
+          {/* Yearly Hero Card */}
+          <div className="card-gradient-purple shimmer p-5 mb-4 animate-slide-up" style={{ opacity: 0.9 }}>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-base">📅</span>
+              <span className="section-label" style={{ color: "var(--accent-bright)" }}>
+                {currentYear}
+              </span>
+            </div>
+
+            {isPrimary ? (
+              <div className="flex justify-between items-end mb-4">
+                <div>
+                  <div className="text-[11px] font-medium mb-1" style={{ color: "var(--text-tertiary)" }}>Yearly Spent</div>
+                  <div className="text-xl font-extrabold" style={{ color: "var(--text-primary)" }}>{fmt(yearlyTotalSpent)}</div>
+                  <div className="text-xs mt-1" style={{ color: "var(--text-tertiary)" }}>of {fmt(yearlyTotalCap)} budget</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-[11px] font-medium mb-1" style={{ color: "var(--text-tertiary)" }}>
+                    By month {monthsElapsed}
+                  </div>
+                  <div className="text-lg font-extrabold" style={{ color: yearlyOnTrack ? "var(--accent-green)" : "var(--accent-red)" }}>
+                    {yearlyOnTrack
+                      ? fmt(Math.abs(yearlyProportionalRemaining)) + " under"
+                      : fmt(Math.abs(yearlyProportionalRemaining)) + " over"
+                    }
+                  </div>
+                  <div className="text-[10px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>
+                    expected: {fmt(Math.round(yearlyExpectedSpend))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center mb-4">
+                <div className="text-[11px] font-medium mb-2" style={{ color: "var(--text-tertiary)" }}>Yearly Budget</div>
+                <div className="text-2xl font-extrabold" style={{ color: yearlyOnTrack ? "var(--accent-green)" : "var(--accent-red)" }}>
+                  {yearlyOnTrack ? "On Track" : "Over Pace"}
+                </div>
+                <div className="text-xs mt-1" style={{ color: "var(--text-tertiary)" }}>
+                  {pctFmt(yearlyPct)} used · expected {pctFmt(yearlyExpectedPct)} by now
+                </div>
+              </div>
+            )}
+
+            {/* Progress bar with expected marker */}
+            <div className="relative">
+              <div className="progress-track" style={{ height: "8px" }}>
+                <div className={`progress-fill ${yearlyPct > yearlyExpectedPct ? "progress-fill-red" : yearlyPct > yearlyExpectedPct * 0.8 ? "progress-fill-yellow" : "progress-fill-green"}`}
+                  style={{ width: `${yearlyPct}%`, height: "8px" }} />
+              </div>
+              {/* Expected pace marker */}
+              <div className="absolute top-0 h-2 w-0.5" style={{
+                left: `${yearlyExpectedPct}%`,
+                background: "var(--text-tertiary)",
+                opacity: 0.6,
+              }} />
+            </div>
+            <div className="flex justify-between mt-2">
+              <span className="text-[10px] font-medium" style={{ color: "var(--text-tertiary)" }}>
+                {pctFmt(yearlyPct)} used
+              </span>
+              <span className="text-[10px]" style={{ color: "var(--text-tertiary)", opacity: 0.6 }}>
+                ▏pace: {pctFmt(yearlyExpectedPct)}
+              </span>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 gap-3 mb-6">
             {yearlyCategories.map((cat, i) => (
               <CategoryCard key={cat.id} cat={cat} index={i} />
