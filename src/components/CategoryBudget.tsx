@@ -146,34 +146,47 @@ export default function CategoryBudget({ transactions, categories, isPrimary, sc
 
     return (
       <div
-        className="px-4 py-3 transition-all cursor-pointer"
+        className="px-5 py-4 transition-all"
         style={{ borderBottom: "1px solid var(--border)" }}
         onClick={() => { if (hasRawSms) setExpanded(!expanded); }}
       >
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex-1 min-w-0">
-            <div className="text-xs font-semibold truncate" style={{ color: "var(--text-primary)" }}>
-              {merchant}
-            </div>
-            <div className="text-[10px] mt-0.5 flex items-center gap-1 flex-wrap" style={{ color: "var(--text-tertiary)" }}>
-              <span>{fmtDate(txn.sms_date)}</span>
-              {isManual && <span className="badge badge-muted text-[8px] py-0 px-1">manual</span>}
-              {hasRawSms && !expanded && (
-                <span style={{ color: "var(--accent)", fontSize: "9px" }}>▸ sms</span>
-              )}
-            </div>
-          </div>
-          <span className="text-sm font-bold shrink-0" style={{ color: "var(--text-primary)" }}>
+        {/* Row 1: Amount + Date */}
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-base font-bold" style={{ color: "var(--text-primary)" }}>
             {fmtDec(Number(txn.amount))}
           </span>
+          <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>
+            {fmtDate(txn.sms_date)}
+          </span>
         </div>
+
+        {/* Row 2: Merchant + badges */}
+        <div className="flex items-center gap-2">
+          <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
+            {merchant}
+          </span>
+          {isManual && (
+            <span className="badge badge-muted text-[9px] py-0.5 px-1.5">manual</span>
+          )}
+        </div>
+
+        {/* Row 3: Notes (if any) */}
         {hasNotes && (
-          <div className="text-[10px] mt-1.5" style={{ color: "var(--text-secondary)" }}>
+          <div className="text-xs mt-2" style={{ color: "var(--text-tertiary)" }}>
             📝 {txn.notes}
           </div>
         )}
+
+        {/* Row 4: Tap hint for SMS */}
+        {hasRawSms && !expanded && (
+          <div className="text-[11px] mt-2 font-medium" style={{ color: "var(--accent)" }}>
+            Tap to view SMS ▸
+          </div>
+        )}
+
+        {/* Expanded: Raw SMS body */}
         {expanded && hasRawSms && (
-          <div className="text-[10px] mt-2 p-2.5 rounded-lg leading-relaxed animate-fade-in"
+          <div className="text-xs mt-3 p-3 rounded-xl leading-relaxed animate-fade-in"
             style={{ background: "var(--bg-base)", color: "var(--text-tertiary)", border: "1px solid var(--border)" }}>
             {txn.body}
           </div>
@@ -203,11 +216,11 @@ export default function CategoryBudget({ transactions, categories, isPrimary, sc
     return (
       <div className="fixed inset-0 z-50 flex flex-col animate-fade-in" style={{ background: "var(--bg-base)" }}>
         {/* ── Sticky Header ── */}
-        <div className="shrink-0 px-4 pt-4 pb-3" style={{ background: "var(--bg-elevated)", borderBottom: "1px solid var(--border)" }}>
+        <div className="shrink-0 px-5 pt-5 pb-4" style={{ background: "var(--bg-elevated)", borderBottom: "1px solid var(--border)" }}>
           {/* Top bar */}
-          <div className="flex justify-between items-center mb-3">
+          <div className="flex justify-between items-center mb-4">
             <button
-              className="flex items-center gap-1.5 text-xs font-medium"
+              className="flex items-center gap-1.5 text-sm font-medium"
               style={{ color: "var(--accent)" }}
               onClick={() => setDrillDownId(null)}
             >
@@ -215,7 +228,7 @@ export default function CategoryBudget({ transactions, categories, isPrimary, sc
             </button>
             {isPrimary && (
               <button
-                className="text-[11px] font-semibold px-3 py-1.5 rounded-lg btn-ghost"
+                className="text-xs font-semibold px-3 py-1.5 rounded-lg btn-ghost"
                 onClick={() => { startEdit(cat); setDrillDownId(null); }}
               >
                 ✎ Edit
@@ -223,37 +236,37 @@ export default function CategoryBudget({ transactions, categories, isPrimary, sc
             )}
           </div>
 
-          {/* Category summary */}
-          <div className="text-base font-bold mb-1" style={{ color: "var(--text-primary)" }}>{cat.name}</div>
+          {/* Category name */}
+          <div className="text-lg font-bold mb-3" style={{ color: "var(--text-primary)" }}>{cat.name}</div>
 
           {isNoCap ? (
-            <div className="flex justify-between items-baseline mb-2">
-              <span className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>{fmt(spent)}</span>
-              <span className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>
+            <div className="flex justify-between items-baseline mb-1">
+              <span className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>{fmt(spent)}</span>
+              <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>
                 no cap · {txnsForCat.length} txn{txnsForCat.length !== 1 ? "s" : ""}
               </span>
             </div>
           ) : (
             <>
-              <div className="flex justify-between items-baseline mb-2">
+              <div className="flex justify-between items-baseline mb-3">
                 <div>
-                  <span className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>{fmt(spent)}</span>
-                  <span className="text-xs ml-1" style={{ color: "var(--text-tertiary)" }}>/ {fmt(effectiveCap)}</span>
+                  <span className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>{fmt(spent)}</span>
+                  <span className="text-sm ml-1.5" style={{ color: "var(--text-tertiary)" }}>/ {fmt(effectiveCap)}</span>
                   {hasMonthOverride && (
-                    <span className="text-[10px] ml-1" style={{ color: "var(--accent-orange)" }}>(this mo)</span>
+                    <span className="text-xs ml-1.5" style={{ color: "var(--accent-orange)" }}>(this mo)</span>
                   )}
                 </div>
-                <span className="text-xs font-semibold" style={{ color: accentColor }}>
+                <span className="text-sm font-semibold" style={{ color: accentColor }}>
                   {remaining >= 0 ? fmt(remaining) + " left" : fmt(-remaining) + " over"}
                 </span>
               </div>
-              <div className="progress-track">
-                <div className={`progress-fill ${fillClass}`} style={{ width: `${pct}%` }} />
+              <div className="progress-track" style={{ height: "6px" }}>
+                <div className={`progress-fill ${fillClass}`} style={{ width: `${pct}%`, height: "6px" }} />
               </div>
             </>
           )}
 
-          <div className="text-[10px] mt-2 font-medium" style={{ color: "var(--text-tertiary)" }}>
+          <div className="text-xs mt-3 font-medium" style={{ color: "var(--text-tertiary)" }}>
             {txnsForCat.length} transaction{txnsForCat.length !== 1 ? "s" : ""}
           </div>
         </div>
