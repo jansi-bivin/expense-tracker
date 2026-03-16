@@ -52,9 +52,11 @@ export default function DuesView({ dues, transactions, categories, onDuesChange,
 
   function openUpiPay(amount: number) {
     if (!payeeUpi) return;
-    // Minimal params — some banks reject deep-link payments with extra fields
-    const amt = Number.isInteger(amount) ? String(amount) : amount.toFixed(2);
-    const url = `upi://pay?pa=${payeeUpi}&am=${amt}`;
+    // NPCI spec mandates: pa, pn, tr, am, cu, mode for valid UPI deep links.
+    // Missing 'tr' causes PSP apps to flag txn as suspicious → "bank limit exceeded"
+    const amt = amount.toFixed(2);
+    const tr = `EXPTRK${Date.now()}${Math.random().toString(36).slice(2, 8)}`;
+    const url = `upi://pay?pa=${payeeUpi}&pn=${encodeURIComponent(payeeName)}&tr=${tr}&am=${amt}&cu=INR&mode=00`;
     // Append anchor to DOM so WebView intercepts the navigation
     const a = document.createElement("a");
     a.href = url;
