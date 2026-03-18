@@ -48,6 +48,9 @@ function HomeInner() {
   // Feature 5: Add category
   const [showAddCategory, setShowAddCategory] = useState(false);
 
+  // Overlay: navigate through pending txns
+  const [overlayIdx, setOverlayIdx] = useState(0);
+
   // Monthly cap overrides: { categoryId: overrideCap }
   const [monthlyOverrides, setMonthlyOverrides] = useState<Record<number, number>>({});
 
@@ -520,8 +523,7 @@ function HomeInner() {
   const unclearedDues = dues.filter((d) => !d.cleared);
   const duesTotal = unclearedDues.reduce((sum, d) => sum + Number(d.amount), 0);
   const activeView = view === "review" ? "budget" : view;
-  // Overlay: show first new txn as overlay card on any view
-  const overlayTxn = newTxns.length > 0 ? newTxns[0] : null;
+  const overlayTxn = newTxns.length > 0 ? newTxns[Math.min(overlayIdx, newTxns.length - 1)] : null;
 
   return (
     <div className="max-w-2xl mx-auto px-4 pt-5 pb-24 animate-fade-in">
@@ -604,45 +606,62 @@ function HomeInner() {
         )}
       </div>
 
-      {/* ═══ Debit Overlay — full-screen review of pending transactions ═══ */}
-      {newTxns.length > 0 && (
-        <div className="fixed inset-0 z-40 flex flex-col animate-fade-in" style={{ background: "var(--bg-base)" }}>
-          {/* Header */}
-          <div className="shrink-0 px-5 pt-5 pb-3 flex justify-between items-center" style={{ borderBottom: "1px solid var(--border)" }}>
-            <div>
-              <div className="text-base font-bold" style={{ color: "var(--text-primary)" }}>
-                {newTxns.length} new transaction{newTxns.length !== 1 ? "s" : ""}
+      {/* ═══ Debit Overlay — scrim + card pinned at bottom ═══ */}
+      {overlayTxn && (
+        <>
+          {/* Dim scrim so budget fades back */}
+          <div className="fixed inset-0 z-30" style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(2px)" }}
+            onClick={() => newTxns.forEach((t) => handleSnooze(t.id))} />
+          <div className="fixed bottom-0 left-0 right-0 z-40 animate-slide-up">
+            <div className="max-w-2xl mx-auto px-3 pb-4">
+              {/* Nav: counter + prev/next + dismiss */}
+              <div className="flex justify-between items-center mb-2 px-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-bold px-2.5 py-1 rounded-full"
+                    style={{ background: "rgba(255,90,110,0.15)", color: "var(--accent-red)" }}>
+                    {Math.min(overlayIdx, newTxns.length - 1) + 1} / {newTxns.length}
+                  </span>
+                  {newTxns.length > 1 && (
+                    <div className="flex gap-1">
+                      <button className="text-xs px-2 py-0.5 rounded-lg"
+                        style={{ background: "rgba(255,255,255,0.08)", color: overlayIdx > 0 ? "var(--text-primary)" : "var(--text-tertiary)" }}
+                        disabled={overlayIdx <= 0}
+                        onClick={() => setOverlayIdx((i) => Math.max(0, i - 1))}>
+                        ‹
+                      </button>
+                      <button className="text-xs px-2 py-0.5 rounded-lg"
+                        style={{ background: "rgba(255,255,255,0.08)", color: overlayIdx < newTxns.length - 1 ? "var(--text-primary)" : "var(--text-tertiary)" }}
+                        disabled={overlayIdx >= newTxns.length - 1}
+                        onClick={() => setOverlayIdx((i) => Math.min(newTxns.length - 1, i + 1))}>
+                        ›
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <button className="text-[11px] font-medium px-3 py-1 rounded-full"
+                  style={{ background: "rgba(255,255,255,0.08)", color: "var(--text-secondary)" }}
+                  onClick={() => { newTxns.forEach((t) => handleSnooze(t.id)); setOverlayIdx(0); }}>
+                  Dismiss all
+                </button>
               </div>
-              <div className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>{currentUser?.name}&apos;s phone</div>
-            </div>
-            <button
-              className="text-xs font-semibold px-4 py-2 rounded-xl btn-ghost"
-              onClick={() => newTxns.forEach((t) => handleSnooze(t.id))}
-            >
-              Dismiss all
-            </button>
-          </div>
-
-          {/* Scrollable transaction list */}
-          <div className="flex-1 overflow-y-auto px-4 pt-4 pb-6">
-            <div className="max-w-2xl mx-auto space-y-4">
-              {newTxns.map((txn) => (
+              {/* Card — solid elevated background */}
+              <div className="rounded-2xl overflow-hidden"
+                style={{ background: "var(--bg-elevated)", border: "1.5px solid rgba(255,255,255,0.1)", boxShadow: "0 -4px 30px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.05)" }}>
                 <SmsCard
-                  key={txn.id}
-                  txn={txn}
+                  txn={overlayTxn}
                   categories={categories}
-                  onDone={handleReviewDone}
+                  onDone={(txn, cat, notes) => { handleReviewDone(txn, cat, notes); setOverlayIdx((i) => Math.max(0, i - 1)); }}
                   isPrimary={isPrimary}
                   unclearedDues={unclearedDues}
                   onSettle={handleSettle}
                   settlementHints={settlementHints}
-                  onSnooze={handleSnooze}
+                  onSnooze={(id) => { handleSnooze(id); setOverlayIdx((i) => Math.max(0, i - 1)); }}
                   merchantCategoryMap={merchantCategoryMap}
                 />
-              ))}
+              </div>
             </div>
           </div>
-        </div>
+        </>
       )}
 
       {/* Version footer — tap to open feature ideas */}
