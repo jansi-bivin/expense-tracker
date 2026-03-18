@@ -13,9 +13,10 @@ interface Props {
   onSettle?: (txnId: number, dueIds: number[]) => void;
   settlementHints?: string[];
   onSnooze?: (id: number) => void;
+  merchantCategoryMap?: Map<string, string>;
 }
 
-export default function NewSmsReview({ transactions, categories, onDone, userName, isPrimary, unclearedDues, onSettle, settlementHints, onSnooze }: Props) {
+export default function NewSmsReview({ transactions, categories, onDone, userName, isPrimary, unclearedDues, onSettle, settlementHints, onSnooze, merchantCategoryMap }: Props) {
   return (
     <div className="animate-fade-in">
       <div className="flex items-center gap-3 mb-5">
@@ -44,6 +45,7 @@ export default function NewSmsReview({ transactions, categories, onDone, userNam
             onSettle={onSettle}
             settlementHints={settlementHints}
             onSnooze={onSnooze}
+            merchantCategoryMap={merchantCategoryMap}
           />
         ))}
       </div>

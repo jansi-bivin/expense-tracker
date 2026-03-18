@@ -19,10 +19,17 @@ interface Props {
   onSettle?: (txnId: number, dueIds: number[]) => void;
   settlementHints?: string[];
   onSnooze?: (id: number) => void;
+  merchantCategoryMap?: Map<string, string>;
 }
 
-export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedDues, onSettle, settlementHints, onSnooze }: Props) {
-  const [category, setCategory] = useState("");
+export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedDues, onSettle, settlementHints, onSnooze, merchantCategoryMap }: Props) {
+  // Auto-detect category from merchant history
+  const suggestedCategory = useMemo(() => {
+    if (!merchantCategoryMap || !txn.merchant) return "";
+    return merchantCategoryMap.get(txn.merchant.toLowerCase().trim()) || "";
+  }, [merchantCategoryMap, txn.merchant]);
+
+  const [category, setCategory] = useState(suggestedCategory);
   const [comment, setComment] = useState("");
   const [saving, setSaving] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -224,10 +231,16 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
         ) : (
           /* ── Normal categorization flow ── */
           <>
+            {suggestedCategory && category === suggestedCategory && (
+              <div className="text-[10px] mb-1 px-1 font-medium" style={{ color: "var(--accent-green)" }}>
+                ✦ Auto-detected: {suggestedCategory}
+              </div>
+            )}
             <select
               className="w-full px-3 py-2.5 mb-2 text-sm rounded-xl"
               value={category}
               onChange={(e) => setCategory(e.target.value)}
+              style={suggestedCategory && category === suggestedCategory ? { borderColor: "rgba(0,212,161,0.3)" } : undefined}
             >
               <option value="">Select category...</option>
               {CATEGORY_GROUPS.map((group) => {
