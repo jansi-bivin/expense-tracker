@@ -12,6 +12,68 @@ import AddCategoryForm from "@/components/AddCategoryForm";
 import ManualExpenseForm from "@/components/ManualExpenseForm";
 import FeatureIdeas from "@/components/FeatureIdeas";
 
+/* ── DebitOverlay: self-contained so overlayIdx doesn't re-render parent ── */
+function DebitOverlay({ txns, categories, isPrimary, unclearedDues, settlementHints, merchantCategoryMap, onDone, onSnooze, onSettle, onDismissAll }: {
+  txns: Transaction[]; categories: Category[]; isPrimary: boolean;
+  unclearedDues: Due[]; settlementHints: Record<number, { txnId: number; amount: number }>;
+  merchantCategoryMap: Record<string, string>;
+  onDone: (txn: Transaction, cat: string, notes?: string) => void;
+  onSnooze: (id: number) => void;
+  onSettle: (dueId: number, txnId: number) => void;
+  onDismissAll: () => void;
+}) {
+  const [idx, setIdx] = useState(0);
+  const safeIdx = Math.min(idx, txns.length - 1);
+  const txn = txns[safeIdx];
+  return (
+    <>
+      <div className="fixed inset-0 z-30" style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(2px)" }}
+        onClick={onDismissAll} />
+      <div className="fixed bottom-0 left-0 right-0 z-40 animate-slide-up">
+        <div className="max-w-2xl mx-auto px-3 pb-4">
+          <div className="flex justify-between items-center mb-2 px-1">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-bold px-2.5 py-1 rounded-full"
+                style={{ background: "rgba(255,90,110,0.15)", color: "var(--accent-red)" }}>
+                {safeIdx + 1} / {txns.length}
+              </span>
+              {txns.length > 1 && (
+                <div className="flex gap-1">
+                  <button className="text-xs px-2 py-0.5 rounded-lg"
+                    style={{ background: "rgba(255,255,255,0.08)", color: idx > 0 ? "var(--text-primary)" : "var(--text-tertiary)" }}
+                    disabled={idx <= 0} onClick={() => setIdx((i) => Math.max(0, i - 1))}>‹</button>
+                  <button className="text-xs px-2 py-0.5 rounded-lg"
+                    style={{ background: "rgba(255,255,255,0.08)", color: idx < txns.length - 1 ? "var(--text-primary)" : "var(--text-tertiary)" }}
+                    disabled={idx >= txns.length - 1} onClick={() => setIdx((i) => Math.min(txns.length - 1, i + 1))}>›</button>
+                </div>
+              )}
+            </div>
+            <button className="text-[11px] font-medium px-3 py-1 rounded-full"
+              style={{ background: "rgba(255,255,255,0.08)", color: "var(--text-secondary)" }}
+              onClick={() => { onDismissAll(); setIdx(0); }}>
+              Dismiss all
+            </button>
+          </div>
+          <div className="rounded-2xl overflow-hidden"
+            style={{ background: "var(--bg-elevated)", border: "1.5px solid rgba(255,255,255,0.1)", boxShadow: "0 -4px 30px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.05)" }}>
+            <SmsCard
+              txn={txn}
+              categories={categories}
+              onDone={(t, cat, notes) => { onDone(t, cat, notes); setIdx((i) => Math.max(0, i - 1)); }}
+              isPrimary={isPrimary}
+              unclearedDues={unclearedDues}
+              onSettle={onSettle}
+              settlementHints={settlementHints}
+              onSnooze={(id) => { onSnooze(id); setIdx((i) => Math.max(0, i - 1)); }}
+              merchantCategoryMap={merchantCategoryMap}
+            />
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 function enrichSms(raw: RawSms): Transaction {
   const fields = detectFields(raw.body);
   return {
@@ -48,8 +110,7 @@ function HomeInner() {
   // Feature 5: Add category
   const [showAddCategory, setShowAddCategory] = useState(false);
 
-  // Overlay: navigate through pending txns
-  const [overlayIdx, setOverlayIdx] = useState(0);
+  // overlayIdx moved into DebitOverlay component
 
   // Monthly cap overrides: { categoryId: overrideCap }
   const [monthlyOverrides, setMonthlyOverrides] = useState<Record<number, number>>({});
@@ -525,7 +586,7 @@ function HomeInner() {
   const unclearedDues = dues.filter((d) => !d.cleared);
   const duesTotal = unclearedDues.reduce((sum, d) => sum + Number(d.amount), 0);
   const activeView = view === "review" ? "budget" : view;
-  const overlayTxn = newTxns.length > 0 ? newTxns[Math.min(overlayIdx, newTxns.length - 1)] : null;
+  const hasOverlay = newTxns.length > 0;
 
   return (
     <div className="max-w-2xl mx-auto px-4 pt-5 pb-24 animate-fade-in">
@@ -608,62 +669,20 @@ function HomeInner() {
         )}
       </div>
 
-      {/* ═══ Debit Overlay — scrim + card pinned at bottom ═══ */}
-      {overlayTxn && (
-        <>
-          {/* Dim scrim so budget fades back */}
-          <div className="fixed inset-0 z-30" style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(2px)" }}
-            onClick={() => newTxns.forEach((t) => handleSnooze(t.id))} />
-          <div className="fixed bottom-0 left-0 right-0 z-40 animate-slide-up">
-            <div className="max-w-2xl mx-auto px-3 pb-4">
-              {/* Nav: counter + prev/next + dismiss */}
-              <div className="flex justify-between items-center mb-2 px-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-bold px-2.5 py-1 rounded-full"
-                    style={{ background: "rgba(255,90,110,0.15)", color: "var(--accent-red)" }}>
-                    {Math.min(overlayIdx, newTxns.length - 1) + 1} / {newTxns.length}
-                  </span>
-                  {newTxns.length > 1 && (
-                    <div className="flex gap-1">
-                      <button className="text-xs px-2 py-0.5 rounded-lg"
-                        style={{ background: "rgba(255,255,255,0.08)", color: overlayIdx > 0 ? "var(--text-primary)" : "var(--text-tertiary)" }}
-                        disabled={overlayIdx <= 0}
-                        onClick={() => setOverlayIdx((i) => Math.max(0, i - 1))}>
-                        ‹
-                      </button>
-                      <button className="text-xs px-2 py-0.5 rounded-lg"
-                        style={{ background: "rgba(255,255,255,0.08)", color: overlayIdx < newTxns.length - 1 ? "var(--text-primary)" : "var(--text-tertiary)" }}
-                        disabled={overlayIdx >= newTxns.length - 1}
-                        onClick={() => setOverlayIdx((i) => Math.min(newTxns.length - 1, i + 1))}>
-                        ›
-                      </button>
-                    </div>
-                  )}
-                </div>
-                <button className="text-[11px] font-medium px-3 py-1 rounded-full"
-                  style={{ background: "rgba(255,255,255,0.08)", color: "var(--text-secondary)" }}
-                  onClick={() => { newTxns.forEach((t) => handleSnooze(t.id)); setOverlayIdx(0); }}>
-                  Dismiss all
-                </button>
-              </div>
-              {/* Card — solid elevated background */}
-              <div className="rounded-2xl overflow-hidden"
-                style={{ background: "var(--bg-elevated)", border: "1.5px solid rgba(255,255,255,0.1)", boxShadow: "0 -4px 30px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.05)" }}>
-                <SmsCard
-                  txn={overlayTxn}
-                  categories={categories}
-                  onDone={(txn, cat, notes) => { handleReviewDone(txn, cat, notes); setOverlayIdx((i) => Math.max(0, i - 1)); }}
-                  isPrimary={isPrimary}
-                  unclearedDues={unclearedDues}
-                  onSettle={handleSettle}
-                  settlementHints={settlementHints}
-                  onSnooze={(id) => { handleSnooze(id); setOverlayIdx((i) => Math.max(0, i - 1)); }}
-                  merchantCategoryMap={merchantCategoryMap}
-                />
-              </div>
-            </div>
-          </div>
-        </>
+      {/* ═══ Debit Overlay — own component so overlayIdx doesn't re-render parent ═══ */}
+      {hasOverlay && (
+        <DebitOverlay
+          txns={newTxns}
+          categories={categories}
+          isPrimary={isPrimary}
+          unclearedDues={unclearedDues}
+          settlementHints={settlementHints}
+          merchantCategoryMap={merchantCategoryMap}
+          onDone={handleReviewDone}
+          onSnooze={handleSnooze}
+          onSettle={handleSettle}
+          onDismissAll={() => newTxns.forEach((t) => handleSnooze(t.id))}
+        />
       )}
 
       {/* Version footer — tap to open feature ideas */}
@@ -678,7 +697,7 @@ function HomeInner() {
       </div>
 
       {/* Add Expense button — fixed bottom bar, budget view only */}
-      {activeView === "budget" && !showManualExpense && !showAddCategory && !overlayTxn && (
+      {activeView === "budget" && !showManualExpense && !showAddCategory && !hasOverlay && (
         <div className="fixed bottom-0 left-0 right-0 z-40 px-4 pb-5 pt-3"
           style={{ background: "linear-gradient(to top, var(--bg-base) 70%, transparent)" }}>
           <button
