@@ -2,13 +2,14 @@
 
 import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { supabase, RawSms, Transaction, Category, User, Due } from "@/lib/supabase";
+import { supabase, RawSms, Transaction, Category, User, Due, FeatureIdea } from "@/lib/supabase";
 import { detectFields } from "@/lib/smsDetector";
 import NewSmsReview from "@/components/NewSmsReview";
 import CategoryBudget from "@/components/CategoryBudget";
 import DuesView from "@/components/DuesView";
 import AddCategoryForm from "@/components/AddCategoryForm";
 import ManualExpenseForm from "@/components/ManualExpenseForm";
+import FeatureIdeas from "@/components/FeatureIdeas";
 
 function enrichSms(raw: RawSms): Transaction {
   const fields = detectFields(raw.body);
@@ -48,6 +49,14 @@ function HomeInner() {
 
   // Monthly cap overrides: { categoryId: overrideCap }
   const [monthlyOverrides, setMonthlyOverrides] = useState<Record<number, number>>({});
+
+  // Snooze: client-side only, resets on reload
+  const [snoozedTxns, setSnoozedTxns] = useState<Transaction[]>([]);
+  const [showSnoozed, setShowSnoozed] = useState(false);
+
+  // Feature ideas
+  const [featureIdeas, setFeatureIdeas] = useState<FeatureIdea[]>([]);
+  const [showFeatureIdeas, setShowFeatureIdeas] = useState(false);
 
   // Compute days in current month & scale factor
   const now = new Date();
@@ -142,6 +151,13 @@ function HomeInner() {
           }
           setMonthlyOverrides(parsed);
         }
+      }
+
+      // Fetch feature ideas
+      const { data: ideasData } = await supabase.from("settings").select("*").eq("key", "feature_ideas").single();
+      if (ideasData) {
+        const val = ideasData.value as { ideas?: FeatureIdea[] };
+        if (val.ideas) setFeatureIdeas(val.ideas);
       }
 
       // Fetch new SMS for this user
@@ -289,6 +305,54 @@ function HomeInner() {
     setShowAddCategory(false);
   }
 
+  // Snooze: move from newTxns to snoozedTxns (client-side only)
+  function handleSnooze(id: number) {
+    const txn = newTxns.find((t) => t.id === id);
+    if (txn) {
+      setNewTxns((prev) => prev.filter((t) => t.id !== id));
+      setSnoozedTxns((prev) => [txn, ...prev]);
+    }
+  }
+
+  function handleUnsnooze(id: number) {
+    const txn = snoozedTxns.find((t) => t.id === id);
+    if (txn) {
+      setSnoozedTxns((prev) => prev.filter((t) => t.id !== id));
+      setNewTxns((prev) => [txn, ...prev]);
+    }
+  }
+
+  // Reclassify: change category of an already-categorized transaction
+  async function handleReclassify(txnId: number, newCategory: string) {
+    await supabase.from("transactions").update({ category: newCategory }).eq("id", txnId);
+    setCategorizedTxns((prev) => prev.map((t) => t.id === txnId ? { ...t, category: newCategory } : t));
+    // Update associated due if any
+    await supabase.from("dues").update({ category: newCategory }).eq("transaction_id", txnId);
+    setDues((prev) => prev.map((d) => d.transaction_id === txnId ? { ...d, category: newCategory } : d));
+  }
+
+  // Feature ideas
+  async function handleAddIdea(text: string) {
+    const idea: FeatureIdea = { id: crypto.randomUUID(), text, created_at: new Date().toISOString() };
+    const updated = [idea, ...featureIdeas];
+    setFeatureIdeas(updated);
+    await supabase.from("settings").upsert({
+      key: "feature_ideas",
+      value: { ideas: updated },
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "key" });
+  }
+
+  async function handleDeleteIdea(id: string) {
+    const updated = featureIdeas.filter((i) => i.id !== id);
+    setFeatureIdeas(updated);
+    await supabase.from("settings").upsert({
+      key: "feature_ideas",
+      value: { ideas: updated },
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "key" });
+  }
+
   async function handleReviewDone(id: number, category?: string, notes?: string) {
     const txn = newTxns.find((t) => t.id === id);
     setNewTxns((prev) => prev.filter((t) => t.id !== id));
@@ -424,6 +488,11 @@ function HomeInner() {
             style={activeView !== "budget" ? { color: "var(--text-tertiary)" } : undefined}
           >
             💰 Budget
+            {snoozedTxns.length > 0 && (
+              <span className="badge badge-purple ml-1.5 text-[9px] py-0">
+                💤{snoozedTxns.length}
+              </span>
+            )}
           </button>
           <button
             onClick={() => setView("dues")}
@@ -445,16 +514,54 @@ function HomeInner() {
       {/* Content */}
       <div className="animate-fade-in">
         {activeView === "review" ? (
-          <NewSmsReview
-            transactions={newTxns}
-            categories={categories}
-            onDone={handleReviewDone}
-            userName={currentUser?.name}
-            isPrimary={isPrimary}
-            unclearedDues={unclearedDues}
-            onSettle={handleSettle}
-            settlementHints={settlementHints}
-          />
+          <>
+            <NewSmsReview
+              transactions={newTxns}
+              categories={categories}
+              onDone={handleReviewDone}
+              userName={currentUser?.name}
+              isPrimary={isPrimary}
+              unclearedDues={unclearedDues}
+              onSettle={handleSettle}
+              settlementHints={settlementHints}
+              onSnooze={handleSnooze}
+            />
+            {/* Snoozed badge */}
+            {snoozedTxns.length > 0 && (
+              <div className="mt-4">
+                <button
+                  className="w-full py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all"
+                  style={{ background: "rgba(123, 108, 246, 0.06)", color: "var(--accent)", border: "1px solid rgba(123, 108, 246, 0.15)" }}
+                  onClick={() => setShowSnoozed(!showSnoozed)}
+                >
+                  <span>💤</span>
+                  <span>{snoozedTxns.length} snoozed</span>
+                  <span style={{ opacity: 0.5 }}>{showSnoozed ? "▾" : "▸"}</span>
+                </button>
+                {showSnoozed && (
+                  <div className="mt-2 space-y-1 animate-fade-in">
+                    {snoozedTxns.map((txn) => (
+                      <div key={txn.id} className="card p-3 flex items-center gap-3 cursor-pointer"
+                        onClick={() => handleUnsnooze(txn.id)}>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm truncate" style={{ color: "var(--text-primary)" }}>
+                            {txn.merchant || "Unknown"}
+                          </div>
+                          <div className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>
+                            {new Date(txn.sms_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}
+                            {" · tap to un-snooze"}
+                          </div>
+                        </div>
+                        <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                          {"\u20B9"}{Number(txn.amount || 0).toLocaleString("en-IN")}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </>
         ) : activeView === "dues" ? (
           <DuesView
             dues={dues}
@@ -480,14 +587,21 @@ function HomeInner() {
               activeDays={effectiveActiveDays}
               daysInMonth={daysInMonth}
               onActiveDaysUpdate={handleActiveDaysUpdate}
+              onReclassify={handleReclassify}
             />
           </>
         )}
       </div>
 
-      {/* Version footer */}
+      {/* Version footer — tap to open feature ideas */}
       <div className="text-center mt-8 mb-2">
-        <span className="text-[10px]" style={{ color: "var(--text-tertiary)", opacity: 0.4 }}>v{process.env.APP_VERSION}</span>
+        <button
+          className="text-[10px] bg-transparent border-0 cursor-pointer"
+          style={{ color: "var(--text-tertiary)", opacity: 0.4 }}
+          onClick={() => setShowFeatureIdeas(true)}
+        >
+          v{process.env.APP_VERSION}
+        </button>
       </div>
 
       {/* Add Expense button — fixed bottom bar, budget view only */}
@@ -524,6 +638,16 @@ function HomeInner() {
         <AddCategoryForm
           onSave={handleAddCategory}
           onClose={() => setShowAddCategory(false)}
+        />
+      )}
+
+      {/* Feature Ideas overlay */}
+      {showFeatureIdeas && (
+        <FeatureIdeas
+          ideas={featureIdeas}
+          onAdd={handleAddIdea}
+          onDelete={handleDeleteIdea}
+          onClose={() => setShowFeatureIdeas(false)}
         />
       )}
     </div>

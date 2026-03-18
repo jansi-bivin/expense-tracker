@@ -62,3 +62,9 @@ export interface Due {
   created_at: string;
   settlement_transaction_id: number | null;
 }
+
+export interface FeatureIdea {
+  id: string;
+  text: string;
+  created_at: string;
+}

@@ -14,9 +14,10 @@ interface Props {
   activeDays: number;
   daysInMonth: number;
   onActiveDaysUpdate: (days: number) => void;
+  onReclassify?: (txnId: number, newCategory: string) => void;
 }
 
-export default function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, monthlyOverrides, onCategoriesChange, onShowAddCategory, onMonthlyOverride, activeDays, daysInMonth, onActiveDaysUpdate }: Props) {
+export default function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, monthlyOverrides, onCategoriesChange, onShowAddCategory, onMonthlyOverride, activeDays, daysInMonth, onActiveDaysUpdate, onReclassify }: Props) {
   const now = new Date();
   const currentMonth = now.getMonth();
   const currentYear = now.getFullYear();
@@ -157,8 +158,9 @@ export default function CategoryBudget({ transactions, categories, isPrimary, sc
   // ═══════════════════════════════════
   // Expense row inside drill-down
   // ═══════════════════════════════════
-  function ExpenseRow({ txn }: { txn: Transaction }) {
+  function ExpenseRow({ txn, currentCatName }: { txn: Transaction; currentCatName?: string }) {
     const [expanded, setExpanded] = useState(false);
+    const [showReclassify, setShowReclassify] = useState(false);
     const isManual = txn.address === "MANUAL";
     const merchant = txn.merchant || (isManual ? "Manual Entry" : "Unknown");
     const hasNotes = txn.notes && txn.notes.trim().length > 0;
@@ -168,10 +170,10 @@ export default function CategoryBudget({ transactions, categories, isPrimary, sc
       <div
         className="px-5 transition-all"
         style={{ borderBottom: "1px solid var(--border)" }}
-        onClick={() => { if (hasRawSms) setExpanded(!expanded); }}
       >
-        {/* Single row: Merchant | Date | Amount */}
-        <div className="flex items-center gap-3 py-3">
+        {/* Single row: Merchant | Date | Amount | Reclassify */}
+        <div className="flex items-center gap-3 py-3"
+          onClick={() => { if (hasRawSms) setExpanded(!expanded); }}>
           <span className="flex-1 min-w-0 text-sm truncate" style={{ color: "var(--text-primary)" }}>
             {merchant}
             {isManual && <span className="text-[9px] ml-1.5 opacity-50">manual</span>}
@@ -182,12 +184,44 @@ export default function CategoryBudget({ transactions, categories, isPrimary, sc
           <span className="text-sm font-semibold shrink-0 min-w-[70px] text-right" style={{ color: "var(--text-primary)" }}>
             {fmtDec(Number(txn.amount))}
           </span>
+          {isPrimary && onReclassify && (
+            <button
+              className="text-[10px] shrink-0 px-1.5 py-0.5 rounded-md"
+              style={{ color: "var(--accent)", background: "rgba(123,108,246,0.08)" }}
+              onClick={(e) => { e.stopPropagation(); setShowReclassify(!showReclassify); }}
+            >
+              ↔
+            </button>
+          )}
           {hasRawSms && (
             <span className="text-[10px] shrink-0" style={{ color: "var(--accent)", opacity: expanded ? 0.4 : 0.7 }}>
               {expanded ? "▾" : "▸"}
             </span>
           )}
         </div>
+
+        {/* Reclassify picker */}
+        {showReclassify && onReclassify && (
+          <div className="pb-3 animate-fade-in" onClick={(e) => e.stopPropagation()}>
+            <select
+              className="w-full px-3 py-2 text-xs rounded-xl"
+              defaultValue=""
+              onChange={(e) => {
+                if (e.target.value) {
+                  onReclassify(txn.id, e.target.value);
+                  setShowReclassify(false);
+                }
+              }}
+            >
+              <option value="">Move to category...</option>
+              {categories
+                .filter((c) => c.name !== currentCatName)
+                .map((c) => (
+                  <option key={c.id} value={c.name}>{c.name}</option>
+                ))}
+            </select>
+          </div>
+        )}
 
         {/* Expandable: notes + raw SMS */}
         {(hasNotes || (expanded && hasRawSms)) && (
@@ -293,7 +327,7 @@ export default function CategoryBudget({ transactions, categories, isPrimary, sc
             </div>
           ) : (
             txnsForCat.map((txn) => (
-              <ExpenseRow key={txn.id} txn={txn} />
+              <ExpenseRow key={txn.id} txn={txn} currentCatName={cat.name} />
             ))
           )}
         </div>

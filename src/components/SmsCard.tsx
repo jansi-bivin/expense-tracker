@@ -18,9 +18,10 @@ interface Props {
   unclearedDues?: Due[];
   onSettle?: (txnId: number, dueIds: number[]) => void;
   settlementHints?: string[];
+  onSnooze?: (id: number) => void;
 }
 
-export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedDues, onSettle, settlementHints }: Props) {
+export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedDues, onSettle, settlementHints, onSnooze }: Props) {
   const [category, setCategory] = useState("");
   const [comment, setComment] = useState("");
   const [saving, setSaving] = useState(false);
@@ -267,6 +268,16 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
               >
                 Skip
               </button>
+              {onSnooze && (
+                <button
+                  className="px-4 py-2.5 text-xs font-semibold rounded-xl transition-all"
+                  style={{ background: "rgba(123, 108, 246, 0.1)", color: "var(--accent)", border: "1px solid rgba(123, 108, 246, 0.2)" }}
+                  disabled={saving}
+                  onClick={() => onSnooze(txn.id)}
+                >
+                  💤
+                </button>
+              )}
               {isPrimary && hasDues && !isLikelySettlement && (
                 <button
                   className="px-4 py-2.5 text-xs font-semibold rounded-xl transition-all"
