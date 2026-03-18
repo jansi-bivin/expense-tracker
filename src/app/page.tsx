@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { supabase, RawSms, Transaction, Category, User, Due, FeatureIdea } from "@/lib/supabase";
 import { detectFields } from "@/lib/smsDetector";
 import NewSmsReview from "@/components/NewSmsReview";
+import SmsCard from "@/components/SmsCard";
 import CategoryBudget from "@/components/CategoryBudget";
 import DuesView from "@/components/DuesView";
 import AddCategoryForm from "@/components/AddCategoryForm";
@@ -516,10 +517,11 @@ function HomeInner() {
     </div>
   );
 
-  const showReview = newTxns.length > 0;
   const unclearedDues = dues.filter((d) => !d.cleared);
   const duesTotal = unclearedDues.reduce((sum, d) => sum + Number(d.amount), 0);
-  const activeView = showReview ? "review" : view === "review" ? "budget" : view;
+  const activeView = view === "review" ? "budget" : view;
+  // Overlay: show first new txn as overlay card on any view
+  const overlayTxn = newTxns.length > 0 ? newTxns[0] : null;
 
   return (
     <div className="max-w-2xl mx-auto px-4 pt-5 pb-24 animate-fade-in">
@@ -542,93 +544,36 @@ function HomeInner() {
         </div>
       </div>
 
-      {/* Tab bar */}
-      {!showReview && (
-        <div className="flex gap-1.5 mb-5 p-1 rounded-2xl" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)" }}>
-          <button
-            onClick={() => setView("budget")}
-            className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-              activeView === "budget" ? "btn-primary" : ""
-            }`}
-            style={activeView !== "budget" ? { color: "var(--text-tertiary)" } : undefined}
-          >
-            💰 Budget
-            {snoozedTxns.length > 0 && (
-              <span className="badge badge-purple ml-1.5 text-[9px] py-0">
-                💤{snoozedTxns.length}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setView("dues")}
-            className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all relative ${
-              activeView === "dues" ? "btn-primary" : ""
-            }`}
-            style={activeView !== "dues" ? { color: "var(--text-tertiary)" } : undefined}
-          >
-            📋 Dues
-            {duesTotal > 0 && (
-              <span className="badge badge-red ml-1.5 text-[10px] py-0">
-                {"\u20B9"}{duesTotal.toLocaleString("en-IN")}
-              </span>
-            )}
-          </button>
-        </div>
-      )}
+      {/* Tab bar — always visible */}
+      <div className="flex gap-1.5 mb-5 p-1 rounded-2xl" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)" }}>
+        <button
+          onClick={() => setView("budget")}
+          className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+            activeView === "budget" ? "btn-primary" : ""
+          }`}
+          style={activeView !== "budget" ? { color: "var(--text-tertiary)" } : undefined}
+        >
+          💰 Budget
+        </button>
+        <button
+          onClick={() => setView("dues")}
+          className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all relative ${
+            activeView === "dues" ? "btn-primary" : ""
+          }`}
+          style={activeView !== "dues" ? { color: "var(--text-tertiary)" } : undefined}
+        >
+          📋 Dues
+          {duesTotal > 0 && (
+            <span className="badge badge-red ml-1.5 text-[10px] py-0">
+              {"\u20B9"}{duesTotal.toLocaleString("en-IN")}
+            </span>
+          )}
+        </button>
+      </div>
 
       {/* Content */}
       <div className="animate-fade-in">
-        {activeView === "review" ? (
-          <>
-            <NewSmsReview
-              transactions={newTxns}
-              categories={categories}
-              onDone={handleReviewDone}
-              userName={currentUser?.name}
-              isPrimary={isPrimary}
-              unclearedDues={unclearedDues}
-              onSettle={handleSettle}
-              settlementHints={settlementHints}
-              onSnooze={handleSnooze}
-              merchantCategoryMap={merchantCategoryMap}
-            />
-            {/* Snoozed badge */}
-            {snoozedTxns.length > 0 && (
-              <div className="mt-4">
-                <button
-                  className="w-full py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all"
-                  style={{ background: "rgba(123, 108, 246, 0.06)", color: "var(--accent)", border: "1px solid rgba(123, 108, 246, 0.15)" }}
-                  onClick={() => setShowSnoozed(!showSnoozed)}
-                >
-                  <span>💤</span>
-                  <span>{snoozedTxns.length} snoozed</span>
-                  <span style={{ opacity: 0.5 }}>{showSnoozed ? "▾" : "▸"}</span>
-                </button>
-                {showSnoozed && (
-                  <div className="mt-2 space-y-1 animate-fade-in">
-                    {snoozedTxns.map((txn) => (
-                      <div key={txn.id} className="card p-3 flex items-center gap-3 cursor-pointer"
-                        onClick={() => handleUnsnooze(txn.id)}>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm truncate" style={{ color: "var(--text-primary)" }}>
-                            {txn.merchant || "Unknown"}
-                          </div>
-                          <div className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>
-                            {new Date(txn.sms_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}
-                            {" · tap to un-snooze"}
-                          </div>
-                        </div>
-                        <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-                          {"\u20B9"}{Number(txn.amount || 0).toLocaleString("en-IN")}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </>
-        ) : activeView === "dues" ? (
+        {activeView === "dues" ? (
           <DuesView
             dues={dues}
             transactions={categorizedTxns}
@@ -659,6 +604,36 @@ function HomeInner() {
         )}
       </div>
 
+      {/* ═══ Debit Overlay — new transactions as overlay card ═══ */}
+      {overlayTxn && (
+        <div className="fixed inset-0 z-40 flex items-end animate-fade-in" style={{ background: "rgba(0,0,0,0.5)" }}
+          onClick={() => handleSnooze(overlayTxn.id)}>
+          <div className="w-full max-w-2xl mx-auto px-4 pb-6 animate-slide-up" onClick={(e) => e.stopPropagation()}>
+            {/* Pending count */}
+            {newTxns.length > 1 && (
+              <div className="text-center mb-3">
+                <span className="text-xs font-medium px-3 py-1 rounded-full" style={{ background: "rgba(123,108,246,0.15)", color: "var(--accent)" }}>
+                  {newTxns.length} pending
+                </span>
+              </div>
+            )}
+            <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>
+              <SmsCard
+                txn={overlayTxn}
+                categories={categories}
+                onDone={handleReviewDone}
+                isPrimary={isPrimary}
+                unclearedDues={unclearedDues}
+                onSettle={handleSettle}
+                settlementHints={settlementHints}
+                onSnooze={handleSnooze}
+                merchantCategoryMap={merchantCategoryMap}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Version footer — tap to open feature ideas */}
       <div className="text-center mt-8 mb-2">
         <button
@@ -671,7 +646,7 @@ function HomeInner() {
       </div>
 
       {/* Add Expense button — fixed bottom bar, budget view only */}
-      {activeView === "budget" && !showManualExpense && !showAddCategory && (
+      {activeView === "budget" && !showManualExpense && !showAddCategory && !overlayTxn && (
         <div className="fixed bottom-0 left-0 right-0 z-40 px-4 pb-5 pt-3"
           style={{ background: "linear-gradient(to top, var(--bg-base) 70%, transparent)" }}>
           <button

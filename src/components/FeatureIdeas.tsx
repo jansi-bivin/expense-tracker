@@ -92,7 +92,7 @@ export default function FeatureIdeas({ ideas, onAdd, onDelete, onClose }: Props)
         ) : (
           <>
             {pending.map((idea) => {
-              const shortId = `${idea.type === 'bug' ? 'B' : 'F'}-${idea.seq || '?'}`;
+              const shortId = `${idea.type === 'bug' ? 'B' : 'F'}${idea.seq || '?'}`;
               return (
               <div key={idea.id} className="px-5 py-3 flex items-start gap-3" style={{ borderBottom: "1px solid var(--border)" }}>
                 <div className="flex-1 min-w-0">
@@ -122,7 +122,7 @@ export default function FeatureIdeas({ ideas, onAdd, onDelete, onClose }: Props)
                   Implemented
                 </div>
                 {implemented.map((idea) => {
-                  const shortId = `${idea.type === 'bug' ? 'B' : 'F'}-${idea.seq || '?'}`;
+                  const shortId = `${idea.type === 'bug' ? 'B' : 'F'}${idea.seq || '?'}`;
                   return (
                   <div key={idea.id} className="px-5 py-3 flex items-start gap-3" style={{ borderBottom: "1px solid var(--border)", opacity: 0.5 }}>
                     <div className="flex-1 min-w-0">
