@@ -361,8 +361,8 @@ function HomeInner() {
   }
 
   // Feature ideas
-  async function handleAddIdea(text: string) {
-    const idea: FeatureIdea = { id: crypto.randomUUID(), text, created_at: new Date().toISOString() };
+  async function handleAddIdea(text: string, type: 'feature' | 'bug' = 'feature') {
+    const idea: FeatureIdea = { id: crypto.randomUUID(), text, type, status: 'pending', created_at: new Date().toISOString() };
     const updated = [idea, ...featureIdeas];
     setFeatureIdeas(updated);
     await supabase.from("settings").upsert({
@@ -399,9 +399,10 @@ function HomeInner() {
     }
   }
 
-  // Settlement: primary user marks a debit as payment to wife, clears selected dues
+  // Settlement: primary user marks a debit as payment, partially settles dues
   async function handleSettle(txnId: number, dueIds: number[]) {
     const txn = newTxns.find((t) => t.id === txnId);
+    const paymentAmount = txn?.amount || 0;
     setNewTxns((prev) => prev.filter((t) => t.id !== txnId));
 
     await supabase.from("transactions").update({ category: "Settlement", status: "categorized" }).eq("id", txnId);
@@ -410,15 +411,49 @@ function HomeInner() {
     }
 
     const nowIso = new Date().toISOString();
-    await supabase.from("dues").update({
-      cleared: true,
-      cleared_at: nowIso,
-      settlement_transaction_id: txnId,
-    }).in("id", dueIds);
+    const selectedDues = dues.filter((d) => dueIds.includes(d.id));
+    let remaining = paymentAmount;
+    const fullyCleared: number[] = [];
+    let partialDue: { id: number; newAmount: number } | null = null;
 
-    setDues((prev) => prev.map((d) =>
-      dueIds.includes(d.id) ? { ...d, cleared: true, cleared_at: nowIso, settlement_transaction_id: txnId } : d
-    ));
+    for (const due of selectedDues) {
+      const dueAmt = Number(due.amount);
+      if (remaining >= dueAmt) {
+        fullyCleared.push(due.id);
+        remaining -= dueAmt;
+      } else if (remaining > 0) {
+        // Partial: reduce the due amount by what's left
+        partialDue = { id: due.id, newAmount: dueAmt - remaining };
+        remaining = 0;
+      }
+      // remaining === 0 and more dues selected? leave them untouched
+    }
+
+    // Clear fully covered dues
+    if (fullyCleared.length > 0) {
+      await supabase.from("dues").update({
+        cleared: true,
+        cleared_at: nowIso,
+        settlement_transaction_id: txnId,
+      }).in("id", fullyCleared);
+    }
+
+    // Reduce partially covered due
+    if (partialDue) {
+      await supabase.from("dues").update({
+        amount: partialDue.newAmount,
+      }).eq("id", partialDue.id);
+    }
+
+    setDues((prev) => prev.map((d) => {
+      if (fullyCleared.includes(d.id)) {
+        return { ...d, cleared: true, cleared_at: nowIso, settlement_transaction_id: txnId };
+      }
+      if (partialDue && d.id === partialDue.id) {
+        return { ...d, amount: partialDue.newAmount };
+      }
+      return d;
+    }));
   }
 
   // Build settlement hints from non-primary user's details

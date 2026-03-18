@@ -66,5 +66,7 @@ export interface Due {
 export interface FeatureIdea {
   id: string;
   text: string;
+  type: 'feature' | 'bug';
+  status: 'pending' | 'implemented';
   created_at: string;
 }
