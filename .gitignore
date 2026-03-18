@@ -3,3 +3,10 @@ node_modules/
 .env.local
 src/lib/sms_data.json
 .claude/
+
+# Android
+android/local.properties
+android/release-keystore.jks
+android/.gradle/
+android/build/
+android/app/build/

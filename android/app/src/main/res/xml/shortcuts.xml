@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="tools"
+        android:enabled="true"
+        android:shortcutShortLabel="@string/shortcut_tools"
+        android:shortcutLongLabel="@string/shortcut_tools_long"
+        android:icon="@android:drawable/ic_menu_manage">
+        <intent
+            android:action="com.example.smsreader.TOOLS"
+            android:targetPackage="com.example.smsreader"
+            android:targetClass="com.example.smsreader.PermissionActivity" />
+    </shortcut>
+</shortcuts>
