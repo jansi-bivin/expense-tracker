@@ -93,8 +93,8 @@ function HomeInner() {
     document.title = count > 0 ? `(${count}) ExpTrack` : "ExpTrack";
   }, []);
 
-  // Badge counts all uncategorized: new + snoozed
-  useEffect(() => { updateBadge(newTxns.length + snoozedTxns.length); }, [newTxns.length, snoozedTxns.length, updateBadge]);
+  // Badge counts all uncategorized: new + snoozed (only update after data loaded)
+  useEffect(() => { if (!loading) updateBadge(newTxns.length + snoozedTxns.length); }, [loading, newTxns.length, snoozedTxns.length, updateBadge]);
 
   // Merchant → category auto-detect: build map from past categorized transactions
   const merchantCategoryMap = useMemo(() => {
