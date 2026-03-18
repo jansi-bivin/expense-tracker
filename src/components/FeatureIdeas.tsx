@@ -91,10 +91,13 @@ export default function FeatureIdeas({ ideas, onAdd, onDelete, onClose }: Props)
           </div>
         ) : (
           <>
-            {pending.map((idea) => (
+            {pending.map((idea) => {
+              const shortId = `${idea.type === 'bug' ? 'B' : 'F'}-${idea.seq || '?'}`;
+              return (
               <div key={idea.id} className="px-5 py-3 flex items-start gap-3" style={{ borderBottom: "1px solid var(--border)" }}>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5 mb-0.5">
+                    <span className="text-[10px] font-mono font-bold" style={{ color: "var(--text-tertiary)" }}>{shortId}</span>
                     <span className={`badge text-[9px] py-0 ${idea.type === 'bug' ? 'badge-red' : 'badge-purple'}`}>
                       {idea.type === 'bug' ? 'bug' : 'feature'}
                     </span>
@@ -110,17 +113,21 @@ export default function FeatureIdeas({ ideas, onAdd, onDelete, onClose }: Props)
                   ×
                 </button>
               </div>
-            ))}
+              );
+            })}
 
             {implemented.length > 0 && (
               <>
                 <div className="px-5 py-2 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-tertiary)", background: "rgba(255,255,255,0.02)" }}>
                   Implemented
                 </div>
-                {implemented.map((idea) => (
+                {implemented.map((idea) => {
+                  const shortId = `${idea.type === 'bug' ? 'B' : 'F'}-${idea.seq || '?'}`;
+                  return (
                   <div key={idea.id} className="px-5 py-3 flex items-start gap-3" style={{ borderBottom: "1px solid var(--border)", opacity: 0.5 }}>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className="text-[10px] font-mono font-bold" style={{ color: "var(--text-tertiary)" }}>{shortId}</span>
                         <span className="badge badge-green text-[9px] py-0">done</span>
                         <span className={`badge text-[9px] py-0 ${idea.type === 'bug' ? 'badge-red' : 'badge-purple'}`}>
                           {idea.type === 'bug' ? 'bug' : 'feature'}
@@ -137,7 +144,8 @@ export default function FeatureIdeas({ ideas, onAdd, onDelete, onClose }: Props)
                       ×
                     </button>
                   </div>
-                ))}
+                  );
+                })}
               </>
             )}
           </>

@@ -362,7 +362,8 @@ function HomeInner() {
 
   // Feature ideas
   async function handleAddIdea(text: string, type: 'feature' | 'bug' = 'feature') {
-    const idea: FeatureIdea = { id: crypto.randomUUID(), text, type, status: 'pending', created_at: new Date().toISOString() };
+    const maxSeq = featureIdeas.filter((i) => i.type === type).reduce((max, i) => Math.max(max, i.seq || 0), 0);
+    const idea: FeatureIdea = { id: crypto.randomUUID(), seq: maxSeq + 1, text, type, status: 'pending', created_at: new Date().toISOString() };
     const updated = [idea, ...featureIdeas];
     setFeatureIdeas(updated);
     await supabase.from("settings").upsert({

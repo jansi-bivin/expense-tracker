@@ -65,6 +65,7 @@ export interface Due {
 
 export interface FeatureIdea {
   id: string;
+  seq: number; // Sequential ID for display (F-1, B-2, etc.)
   text: string;
   type: 'feature' | 'bug';
   status: 'pending' | 'implemented';
