@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import { supabase, Transaction, Category, Due } from "@/lib/supabase";
 
 interface Props {
@@ -14,7 +14,7 @@ interface Props {
   primaryName: string;
 }
 
-export default function DuesView({ dues, transactions, categories, onDuesChange, payeeUpi, payeeName, isPrimary, primaryName }: Props) {
+function DuesView({ dues, transactions, categories, onDuesChange, payeeUpi, payeeName, isPrimary, primaryName }: Props) {
   const [expandedCat, setExpandedCat] = useState<string | null>(null);
   const [showCleared, setShowCleared] = useState(false);
   const [clearing, setClearing] = useState<Set<number>>(new Set());
@@ -313,3 +313,5 @@ export default function DuesView({ dues, transactions, categories, onDuesChange,
     </div>
   );
 }
+
+export default React.memo(DuesView);

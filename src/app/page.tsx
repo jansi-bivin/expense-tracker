@@ -89,6 +89,8 @@ function HomeInner() {
     setResetting(false);
   }
 
+  const handleShowAddCategory = useCallback(() => setShowAddCategory(true), []);
+
   const updateBadge = useCallback((count: number) => {
     if ("setAppBadge" in navigator) {
       if (count > 0) (navigator as any).setAppBadge(count);
@@ -595,7 +597,7 @@ function HomeInner() {
               scaleFactor={scaleFactor}
               monthlyOverrides={monthlyOverrides}
               onCategoriesChange={setCategories}
-              onShowAddCategory={() => setShowAddCategory(true)}
+              onShowAddCategory={handleShowAddCategory}
               onMonthlyOverride={handleMonthlyOverride}
               activeDays={effectiveActiveDays}
               daysInMonth={daysInMonth}

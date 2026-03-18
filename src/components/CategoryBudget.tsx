@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { supabase, Transaction, Category } from "@/lib/supabase";
 interface Props {
   transactions: Transaction[];
@@ -17,7 +17,7 @@ interface Props {
   onReclassify?: (txnId: number, newCategory: string) => void;
 }
 
-export default function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, monthlyOverrides, onCategoriesChange, onShowAddCategory, onMonthlyOverride, activeDays, daysInMonth, onActiveDaysUpdate, onReclassify }: Props) {
+function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, monthlyOverrides, onCategoriesChange, onShowAddCategory, onMonthlyOverride, activeDays, daysInMonth, onActiveDaysUpdate, onReclassify }: Props) {
   const now = new Date();
   const currentMonth = now.getMonth();
   const currentYear = now.getFullYear();
@@ -677,3 +677,5 @@ export default function CategoryBudget({ transactions, categories, isPrimary, sc
     </div>
   );
 }
+
+export default React.memo(CategoryBudget);
