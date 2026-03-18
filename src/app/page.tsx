@@ -96,6 +96,34 @@ function HomeInner() {
   // Badge counts all uncategorized: new + snoozed
   useEffect(() => { updateBadge(newTxns.length + snoozedTxns.length); }, [newTxns.length, snoozedTxns.length, updateBadge]);
 
+  // Merchant → category auto-detect: build map from past categorized transactions
+  const merchantCategoryMap = useMemo(() => {
+    const counts = new Map<string, Map<string, number>>();
+    for (const txn of categorizedTxns) {
+      if (!txn.merchant || !txn.category) continue;
+      const merchant = txn.merchant.toLowerCase().trim();
+      if (!merchant) continue;
+      if (!counts.has(merchant)) counts.set(merchant, new Map());
+      const catMap = counts.get(merchant)!;
+      catMap.set(txn.category, (catMap.get(txn.category) || 0) + 1);
+    }
+    const result = new Map<string, string>();
+    const entries = Array.from(counts.entries())
+      .map(([m, catMap]) => {
+        const totalCount = Array.from(catMap.values()).reduce((a, b) => a + b, 0);
+        let bestCat = "";
+        let bestCount = 0;
+        for (const [cat, count] of catMap) {
+          if (count > bestCount) { bestCat = cat; bestCount = count; }
+        }
+        return { merchant: m, category: bestCat, totalCount };
+      })
+      .sort((a, b) => b.totalCount - a.totalCount)
+      .slice(0, 20);
+    for (const e of entries) result.set(e.merchant, e.category);
+    return result;
+  }, [categorizedTxns]);
+
   // Store phone from URL param
   useEffect(() => {
     const phoneFromUrl = searchParams.get("phone");
@@ -451,35 +479,6 @@ function HomeInner() {
       <div className="text-sm" style={{ color: "var(--text-tertiary)" }}>Loading...</div>
     </div>
   );
-
-  // Merchant → category auto-detect: build map from past categorized transactions
-  const merchantCategoryMap = useMemo(() => {
-    const counts = new Map<string, Map<string, number>>();
-    for (const txn of categorizedTxns) {
-      if (!txn.merchant || !txn.category) continue;
-      const merchant = txn.merchant.toLowerCase().trim();
-      if (!merchant) continue;
-      if (!counts.has(merchant)) counts.set(merchant, new Map());
-      const catMap = counts.get(merchant)!;
-      catMap.set(txn.category, (catMap.get(txn.category) || 0) + 1);
-    }
-    // Pick the most frequent category per merchant, keep top 20 by total txn count
-    const result = new Map<string, string>();
-    const entries = Array.from(counts.entries())
-      .map(([m, catMap]) => {
-        const totalCount = Array.from(catMap.values()).reduce((a, b) => a + b, 0);
-        let bestCat = "";
-        let bestCount = 0;
-        for (const [cat, count] of catMap) {
-          if (count > bestCount) { bestCat = cat; bestCount = count; }
-        }
-        return { merchant: m, category: bestCat, totalCount };
-      })
-      .sort((a, b) => b.totalCount - a.totalCount)
-      .slice(0, 20);
-    for (const e of entries) result.set(e.merchant, e.category);
-    return result;
-  }, [categorizedTxns]);
 
   const showReview = newTxns.length > 0;
   const unclearedDues = dues.filter((d) => !d.cleared);
