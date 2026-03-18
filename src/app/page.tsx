@@ -15,11 +15,11 @@ import FeatureIdeas from "@/components/FeatureIdeas";
 /* ── DebitOverlay: self-contained so overlayIdx doesn't re-render parent ── */
 function DebitOverlay({ txns, categories, isPrimary, unclearedDues, settlementHints, merchantCategoryMap, onDone, onSnooze, onSettle, onDismissAll }: {
   txns: Transaction[]; categories: Category[]; isPrimary: boolean;
-  unclearedDues: Due[]; settlementHints: Record<number, { txnId: number; amount: number }>;
+  unclearedDues: Due[]; settlementHints: string[];
   merchantCategoryMap: Record<string, string>;
-  onDone: (txn: Transaction, cat: string, notes?: string) => void;
+  onDone: (id: number, cat?: string, notes?: string) => void;
   onSnooze: (id: number) => void;
-  onSettle: (dueId: number, txnId: number) => void;
+  onSettle: (txnId: number, dueIds: number[]) => void;
   onDismissAll: () => void;
 }) {
   const [idx, setIdx] = useState(0);
