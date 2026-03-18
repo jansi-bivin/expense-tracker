@@ -604,31 +604,42 @@ function HomeInner() {
         )}
       </div>
 
-      {/* ═══ Debit Overlay — new transactions as overlay card ═══ */}
-      {overlayTxn && (
-        <div className="fixed inset-0 z-40 flex items-end animate-fade-in" style={{ background: "rgba(0,0,0,0.5)" }}
-          onClick={() => handleSnooze(overlayTxn.id)}>
-          <div className="w-full max-w-2xl mx-auto px-4 pb-6 animate-slide-up" onClick={(e) => e.stopPropagation()}>
-            {/* Pending count */}
-            {newTxns.length > 1 && (
-              <div className="text-center mb-3">
-                <span className="text-xs font-medium px-3 py-1 rounded-full" style={{ background: "rgba(123,108,246,0.15)", color: "var(--accent)" }}>
-                  {newTxns.length} pending
-                </span>
+      {/* ═══ Debit Overlay — full-screen review of pending transactions ═══ */}
+      {newTxns.length > 0 && (
+        <div className="fixed inset-0 z-40 flex flex-col animate-fade-in" style={{ background: "var(--bg-base)" }}>
+          {/* Header */}
+          <div className="shrink-0 px-5 pt-5 pb-3 flex justify-between items-center" style={{ borderBottom: "1px solid var(--border)" }}>
+            <div>
+              <div className="text-base font-bold" style={{ color: "var(--text-primary)" }}>
+                {newTxns.length} new transaction{newTxns.length !== 1 ? "s" : ""}
               </div>
-            )}
-            <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>
-              <SmsCard
-                txn={overlayTxn}
-                categories={categories}
-                onDone={handleReviewDone}
-                isPrimary={isPrimary}
-                unclearedDues={unclearedDues}
-                onSettle={handleSettle}
-                settlementHints={settlementHints}
-                onSnooze={handleSnooze}
-                merchantCategoryMap={merchantCategoryMap}
-              />
+              <div className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>{currentUser?.name}&apos;s phone</div>
+            </div>
+            <button
+              className="text-xs font-semibold px-4 py-2 rounded-xl btn-ghost"
+              onClick={() => newTxns.forEach((t) => handleSnooze(t.id))}
+            >
+              Dismiss all
+            </button>
+          </div>
+
+          {/* Scrollable transaction list */}
+          <div className="flex-1 overflow-y-auto px-4 pt-4 pb-6">
+            <div className="max-w-2xl mx-auto space-y-4">
+              {newTxns.map((txn) => (
+                <SmsCard
+                  key={txn.id}
+                  txn={txn}
+                  categories={categories}
+                  onDone={handleReviewDone}
+                  isPrimary={isPrimary}
+                  unclearedDues={unclearedDues}
+                  onSettle={handleSettle}
+                  settlementHints={settlementHints}
+                  onSnooze={handleSnooze}
+                  merchantCategoryMap={merchantCategoryMap}
+                />
+              ))}
             </div>
           </div>
         </div>
