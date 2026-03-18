@@ -151,6 +151,12 @@ function HomeInner() {
   }
 
   const handleShowAddCategory = useCallback(() => setShowAddCategory(true), []);
+  const handleDismissAll = useCallback(() => {
+    setNewTxns((prev) => {
+      setSnoozedTxns((sp) => [...prev, ...sp]);
+      return [];
+    });
+  }, []);
 
   const updateBadge = useCallback((count: number) => {
     if ("setAppBadge" in navigator) {
@@ -402,13 +408,13 @@ function HomeInner() {
   }
 
   // Snooze: move from newTxns to snoozedTxns (client-side only)
-  function handleSnooze(id: number) {
-    const txn = newTxns.find((t) => t.id === id);
-    if (txn) {
-      setNewTxns((prev) => prev.filter((t) => t.id !== id));
-      setSnoozedTxns((prev) => [txn, ...prev]);
-    }
-  }
+  const handleSnooze = useCallback((id: number) => {
+    setNewTxns((prev) => {
+      const txn = prev.find((t) => t.id === id);
+      if (txn) setSnoozedTxns((sp) => [txn, ...sp]);
+      return prev.filter((t) => t.id !== id);
+    });
+  }, []);
 
   function handleUnsnooze(id: number) {
     const txn = snoozedTxns.find((t) => t.id === id);
@@ -450,22 +456,27 @@ function HomeInner() {
     }, { onConflict: "key" });
   }
 
-  async function handleReviewDone(id: number, category?: string, notes?: string) {
-    const txn = newTxns.find((t) => t.id === id);
-    setNewTxns((prev) => prev.filter((t) => t.id !== id));
-    if (txn && category) {
-      setCategorizedTxns((prev) => [{ ...txn, category, notes: notes || null, status: "categorized" as const }, ...prev]);
-
+  const handleReviewDone = useCallback(async (id: number, category?: string, notes?: string) => {
+    let foundTxn: Transaction | undefined;
+    setNewTxns((prev) => {
+      foundTxn = prev.find((t) => t.id === id);
+      return prev.filter((t) => t.id !== id);
+    });
+    // Wait a tick so foundTxn is set from the updater
+    await new Promise((r) => setTimeout(r, 0));
+    if (foundTxn && category) {
+      setCategorizedTxns((prev) => [{ ...foundTxn!, category, notes: notes || null, status: "categorized" as const }, ...prev]);
       // If secondary user categorized, create a due
-      if (currentUser && !currentUser.is_primary && txn.amount) {
+      const user = currentUser;
+      if (user && !user.is_primary && foundTxn.amount) {
         await supabase.from("dues").insert({
           transaction_id: id,
           category,
-          amount: txn.amount,
+          amount: foundTxn.amount,
         });
       }
     }
-  }
+  }, [currentUser]);
 
   // Settlement: primary user marks a debit as payment, partially settles dues
   async function handleSettle(txnId: number, dueIds: number[]) {
@@ -523,6 +534,10 @@ function HomeInner() {
       return d;
     }));
   }
+
+  // Memoize derived data (must be before early returns for Rules of Hooks)
+  const unclearedDues = useMemo(() => dues.filter((d) => !d.cleared), [dues]);
+  const duesTotal = useMemo(() => unclearedDues.reduce((sum, d) => sum + Number(d.amount), 0), [unclearedDues]);
 
   // Build settlement hints from non-primary user's details
   const secondaryUser = allUsers.find((u) => !u.is_primary);
@@ -583,8 +598,6 @@ function HomeInner() {
     </div>
   );
 
-  const unclearedDues = dues.filter((d) => !d.cleared);
-  const duesTotal = unclearedDues.reduce((sum, d) => sum + Number(d.amount), 0);
   const activeView = view === "review" ? "budget" : view;
   const hasOverlay = newTxns.length > 0;
 
@@ -681,7 +694,7 @@ function HomeInner() {
           onDone={handleReviewDone}
           onSnooze={handleSnooze}
           onSettle={handleSettle}
-          onDismissAll={() => newTxns.forEach((t) => handleSnooze(t.id))}
+          onDismissAll={handleDismissAll}
         />
       )}
 
