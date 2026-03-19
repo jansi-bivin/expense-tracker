@@ -57,6 +57,7 @@ function DebitOverlay({ txns, categories, isPrimary, unclearedDues, settlementHi
           <div className="rounded-2xl overflow-hidden"
             style={{ background: "var(--bg-elevated)", border: "1.5px solid rgba(255,255,255,0.1)", boxShadow: "0 -4px 30px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.05)" }}>
             <SmsCard
+              key={txn.id}
               txn={txn}
               categories={categories}
               onDone={(t, cat, notes) => { onDone(t, cat, notes); setIdx((i) => Math.max(0, i - 1)); }}
