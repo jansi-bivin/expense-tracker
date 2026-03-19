@@ -38,6 +38,14 @@ jobs:
       - name: Install Claude Code
         run: npm install -g @anthropic-ai/claude-code
 
+      - name: Test Claude CLI
+        run: |
+          echo "=== Claude version ==="
+          claude --version || echo "VERSION FAILED"
+          echo "=== Quick test ==="
+          claude -p "Say hello" 2>&1 || echo "CLI TEST FAILED with exit code $?"
+          echo "=== Test done ==="
+
       - name: Fetch and process ideas
         run: |
           export IDEA_ID="${{ github.event.inputs.idea_id }}"
