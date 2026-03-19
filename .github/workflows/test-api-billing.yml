@@ -1,0 +1,19 @@
+name: Test API Billing
+
+on:
+  workflow_dispatch: # Manual trigger only
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Test API key
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          echo "Testing if API key works in CI..."
+          claude -p "Say hello in one word" --max-turns 1 2>&1 || echo "FAILED - API billing not set up"
