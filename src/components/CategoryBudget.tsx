@@ -616,13 +616,95 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
         </div>
       </div>
 
-      {/* ═══ Monthly Categories — sorted by spend ═══ */}
-      <div className="section-label mb-3">Monthly</div>
-      <div className="grid grid-cols-1 gap-3 mb-6">
-        {monthlyCategories.map((cat, i) => (
-          <CategoryCard key={cat.id} cat={cat} index={i} />
-        ))}
-      </div>
+      {/* ═══ Stacked Overview ═══ */}
+      {(() => {
+        const activeCats = monthlyCategories.filter((c) => (categorySpend.get(c.name) || 0) > 0);
+        const zeroCats = monthlyCategories.filter((c) => (categorySpend.get(c.name) || 0) === 0);
+        const COLORS = ["#f87171", "#fb923c", "#a78bfa", "#4ade80", "#38bdf8", "#fbbf24", "#818cf8", "#f472b6", "#34d399", "#c084fc"];
+        const maxSpent = activeCats.length > 0 ? Math.max(...activeCats.map((c) => categorySpend.get(c.name) || 0)) : 0;
+        return (
+          <>
+            {activeCats.length > 0 && (
+              <div className="card p-4 mb-4 animate-slide-up">
+                <div className="section-label mb-2.5">Monthly</div>
+                {/* Stacked bar */}
+                <div className="flex h-6 rounded-xl overflow-hidden gap-px">
+                  {activeCats.map((c, i) => (
+                    <div key={c.name} style={{ flex: categorySpend.get(c.name) || 0, background: COLORS[i % COLORS.length], height: "100%", minWidth: 3 }}
+                      onClick={() => setDrillDownId(c.id)} className="cursor-pointer transition-opacity hover:opacity-80" />
+                  ))}
+                </div>
+                {/* Legend */}
+                <div className="flex flex-wrap gap-x-3.5 gap-y-1.5 mt-3">
+                  {activeCats.map((c, i) => (
+                    <div key={c.name} className="flex items-center gap-1.5 text-[11px] cursor-pointer" style={{ color: "var(--text-secondary)" }}
+                      onClick={() => setDrillDownId(c.id)}>
+                      <div className="w-2 h-2 rounded-full shrink-0" style={{ background: COLORS[i % COLORS.length] }} />
+                      {c.name} {fmt(categorySpend.get(c.name) || 0)}
+                    </div>
+                  ))}
+                </div>
+                {/* Individual breakdown rows */}
+                <div className="mt-4 pt-3" style={{ borderTop: "1px solid var(--border)" }}>
+                  {activeCats.map((c, i) => {
+                    const spent = categorySpend.get(c.name) || 0;
+                    const eCap = getEffectiveCap(c);
+                    const isNoCap = eCap === 0 && c.cap === 0 && monthlyOverrides[c.id] == null;
+                    const remaining = eCap - spent;
+                    const pct = eCap > 0 ? Math.min((spent / eCap) * 100, 100) : 0;
+                    const accentColor = isNoCap ? "var(--text-tertiary)" : pct >= 90 ? "var(--accent-red)" : pct >= 75 ? "var(--accent-orange)" : "var(--accent-green)";
+                    return (
+                      <div key={c.name} className="mb-3 last:mb-0 cursor-pointer" onClick={() => setDrillDownId(c.id)}>
+                        <div className="flex justify-between items-baseline text-[11px] mb-1">
+                          <span className="font-medium" style={{ color: "var(--text-primary)" }}>{c.name}</span>
+                          <div className="flex items-center gap-2">
+                            {!isNoCap && (
+                              <span style={{ color: accentColor, fontWeight: 600 }}>
+                                {remaining >= 0 ? fmt(remaining) + " left" : fmt(-remaining) + " over"}
+                              </span>
+                            )}
+                            <span style={{ color: "var(--text-tertiary)" }}>{fmt(spent)}{!isNoCap && ` / ${fmt(eCap)}`}</span>
+                          </div>
+                        </div>
+                        <div className="h-1.5 rounded-sm" style={{ background: "var(--border)" }}>
+                          <div className="h-full rounded-sm transition-all" style={{
+                            width: isNoCap ? `${((spent / maxSpent) * 100)}%` : `${pct}%`,
+                            background: COLORS[i % COLORS.length],
+                          }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {/* Zero-spend categories */}
+            {zeroCats.length > 0 && (
+              <div className="card p-4 mb-6 animate-slide-up">
+                <div className="text-[11px] font-medium mb-2" style={{ color: "var(--text-tertiary)" }}>No activity</div>
+                <div className="flex flex-wrap gap-2">
+                  {zeroCats.map((c) => (
+                    <button key={c.id} className="text-[11px] px-2.5 py-1 rounded-lg"
+                      style={{ color: "var(--text-tertiary)", background: "var(--bg-elevated)", border: "1px solid var(--border)" }}
+                      onClick={() => setDrillDownId(c.id)}>
+                      {c.name}{c.cap > 0 ? ` · ${fmt(getEffectiveCap(c))}` : ""}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        );
+      })()}
+
+      {/* ═══ Monthly Categories — edit cards (only when editing) ═══ */}
+      {editingId !== null && monthlyCategories.some((c) => c.id === editingId) && (
+        <div className="grid grid-cols-1 gap-3 mb-6">
+          {monthlyCategories.filter((c) => c.id === editingId).map((cat, i) => (
+            <CategoryCard key={cat.id} cat={cat} index={i} />
+          ))}
+        </div>
+      )}
 
       {/* ═══ Yearly Categories ═══ */}
       {yearlyCategories.length > 0 && (
@@ -693,11 +775,93 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 mb-6">
-            {yearlyCategories.map((cat, i) => (
-              <CategoryCard key={cat.id} cat={cat} index={i} />
-            ))}
-          </div>
+          {/* Yearly Stacked Overview */}
+          {(() => {
+            const activeYearly = yearlyCategories.filter((c) => (categorySpend.get(c.name) || 0) > 0);
+            const zeroYearly = yearlyCategories.filter((c) => (categorySpend.get(c.name) || 0) === 0);
+            const COLORS = ["#f87171", "#fb923c", "#a78bfa", "#4ade80", "#38bdf8", "#fbbf24", "#818cf8", "#f472b6", "#34d399", "#c084fc"];
+            const maxSpent = activeYearly.length > 0 ? Math.max(...activeYearly.map((c) => categorySpend.get(c.name) || 0)) : 0;
+            return (
+              <>
+                {activeYearly.length > 0 && (
+                  <div className="card p-4 mb-4 animate-slide-up">
+                    {/* Stacked bar */}
+                    <div className="flex h-6 rounded-xl overflow-hidden gap-px">
+                      {activeYearly.map((c, i) => (
+                        <div key={c.name} style={{ flex: categorySpend.get(c.name) || 0, background: COLORS[i % COLORS.length], height: "100%", minWidth: 3 }}
+                          onClick={() => setDrillDownId(c.id)} className="cursor-pointer transition-opacity hover:opacity-80" />
+                      ))}
+                    </div>
+                    {/* Legend */}
+                    <div className="flex flex-wrap gap-x-3.5 gap-y-1.5 mt-3">
+                      {activeYearly.map((c, i) => (
+                        <div key={c.name} className="flex items-center gap-1.5 text-[11px] cursor-pointer" style={{ color: "var(--text-secondary)" }}
+                          onClick={() => setDrillDownId(c.id)}>
+                          <div className="w-2 h-2 rounded-full shrink-0" style={{ background: COLORS[i % COLORS.length] }} />
+                          {c.name} {fmt(categorySpend.get(c.name) || 0)}
+                        </div>
+                      ))}
+                    </div>
+                    {/* Individual breakdown rows */}
+                    <div className="mt-4 pt-3" style={{ borderTop: "1px solid var(--border)" }}>
+                      {activeYearly.map((c, i) => {
+                        const spent = categorySpend.get(c.name) || 0;
+                        const isNoCap = c.cap === 0;
+                        const remaining = c.cap - spent;
+                        const pct = c.cap > 0 ? Math.min((spent / c.cap) * 100, 100) : 0;
+                        const accentColor = isNoCap ? "var(--text-tertiary)" : pct >= 90 ? "var(--accent-red)" : pct >= 75 ? "var(--accent-orange)" : "var(--accent-green)";
+                        return (
+                          <div key={c.name} className="mb-3 last:mb-0 cursor-pointer" onClick={() => setDrillDownId(c.id)}>
+                            <div className="flex justify-between items-baseline text-[11px] mb-1">
+                              <span className="font-medium" style={{ color: "var(--text-primary)" }}>{c.name}</span>
+                              <div className="flex items-center gap-2">
+                                {!isNoCap && (
+                                  <span style={{ color: accentColor, fontWeight: 600 }}>
+                                    {remaining >= 0 ? fmt(remaining) + " left" : fmt(-remaining) + " over"}
+                                  </span>
+                                )}
+                                <span style={{ color: "var(--text-tertiary)" }}>{fmt(spent)}{!isNoCap && ` / ${fmt(c.cap)}`}</span>
+                              </div>
+                            </div>
+                            <div className="h-1.5 rounded-sm" style={{ background: "var(--border)" }}>
+                              <div className="h-full rounded-sm transition-all" style={{
+                                width: isNoCap ? `${((spent / maxSpent) * 100)}%` : `${pct}%`,
+                                background: COLORS[i % COLORS.length],
+                              }} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                {/* Zero-spend yearly categories */}
+                {zeroYearly.length > 0 && (
+                  <div className="card p-4 mb-6 animate-slide-up">
+                    <div className="text-[11px] font-medium mb-2" style={{ color: "var(--text-tertiary)" }}>No activity</div>
+                    <div className="flex flex-wrap gap-2">
+                      {zeroYearly.map((c) => (
+                        <button key={c.id} className="text-[11px] px-2.5 py-1 rounded-lg"
+                          style={{ color: "var(--text-tertiary)", background: "var(--bg-elevated)", border: "1px solid var(--border)" }}
+                          onClick={() => setDrillDownId(c.id)}>
+                          {c.name}{c.cap > 0 ? ` · ${fmt(c.cap)}` : ""}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            );
+          })()}
+
+          {/* Yearly edit card (only when editing) */}
+          {editingId !== null && yearlyCategories.some((c) => c.id === editingId) && (
+            <div className="grid grid-cols-1 gap-3 mb-6">
+              {yearlyCategories.filter((c) => c.id === editingId).map((cat, i) => (
+                <CategoryCard key={cat.id} cat={cat} index={i} />
+              ))}
+            </div>
+          )}
         </>
       )}
 
