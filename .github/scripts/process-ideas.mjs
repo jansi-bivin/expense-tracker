@@ -154,10 +154,11 @@ for (const idea of ideas) {
       results.push({ id: shortId, status: 'needs-input' });
     }
   } catch (err) {
-    console.error(`Error processing ${shortId}:`, err.message);
+    const errDetail = err.stderr?.toString() || err.stdout?.toString() || err.message;
+    console.error(`Error processing ${shortId}:`, errDetail);
     await updateIdea(idea.id, {
       status: 'needs-input',
-      resolution_note: `Automation error: ${err.message.slice(0, 300)}`,
+      resolution_note: `Automation error: ${errDetail.slice(0, 300)}`,
     });
     results.push({ id: shortId, status: 'error' });
   }
