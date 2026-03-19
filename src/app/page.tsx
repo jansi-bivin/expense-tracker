@@ -255,12 +255,9 @@ function HomeInner() {
         }
       }
 
-      // Fetch feature ideas
-      const { data: ideasData } = await supabase.from("settings").select("*").eq("key", "feature_ideas").single();
-      if (ideasData) {
-        const val = ideasData.value as { ideas?: FeatureIdea[] };
-        if (val.ideas) setFeatureIdeas(val.ideas);
-      }
+      // Fetch feature ideas from dedicated table
+      const { data: ideasData } = await supabase.from("feature_ideas").select("*").order("created_at", { ascending: false });
+      if (ideasData) setFeatureIdeas(ideasData);
 
       // Fetch new SMS for this user
       let newQuery = supabase.from("transactions").select("*").eq("status", "new").order("sms_date", { ascending: false });
@@ -441,37 +438,22 @@ function HomeInner() {
     setDues((prev) => prev.map((d) => d.transaction_id === txnId ? { ...d, category: newCategory } : d));
   }
 
-  // Feature ideas
+  // Feature ideas — now uses dedicated feature_ideas table
   async function handleAddIdea(text: string, type: 'feature' | 'bug' = 'feature') {
     const maxSeq = featureIdeas.filter((i) => i.type === type).reduce((max, i) => Math.max(max, i.seq || 0), 0);
-    const idea: FeatureIdea = { id: crypto.randomUUID(), seq: maxSeq + 1, text, type, status: 'pending', created_at: new Date().toISOString() };
-    const updated = [idea, ...featureIdeas];
-    setFeatureIdeas(updated);
-    await supabase.from("settings").upsert({
-      key: "feature_ideas",
-      value: { ideas: updated },
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "key" });
+    const newIdea = { id: crypto.randomUUID(), seq: maxSeq + 1, text, type, status: 'pending' as const };
+    const { data } = await supabase.from("feature_ideas").insert(newIdea).select().single();
+    if (data) setFeatureIdeas((prev) => [data, ...prev]);
   }
 
   async function handleUpdateIdea(id: string, newText: string) {
-    const updated = featureIdeas.map((i) => i.id === id ? { ...i, text: newText } : i);
-    setFeatureIdeas(updated);
-    await supabase.from("settings").upsert({
-      key: "feature_ideas",
-      value: { ideas: updated },
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "key" });
+    await supabase.from("feature_ideas").update({ text: newText }).eq("id", id);
+    setFeatureIdeas((prev) => prev.map((i) => i.id === id ? { ...i, text: newText } : i));
   }
 
   async function handleDeleteIdea(id: string) {
-    const updated = featureIdeas.filter((i) => i.id !== id);
-    setFeatureIdeas(updated);
-    await supabase.from("settings").upsert({
-      key: "feature_ideas",
-      value: { ideas: updated },
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "key" });
+    await supabase.from("feature_ideas").delete().eq("id", id);
+    setFeatureIdeas((prev) => prev.filter((i) => i.id !== id));
   }
 
   const handleReviewDone = useCallback(async (id: number, category?: string, notes?: string) => {

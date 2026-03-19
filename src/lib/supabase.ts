@@ -65,9 +65,13 @@ export interface Due {
 
 export interface FeatureIdea {
   id: string;
-  seq: number; // Sequential ID for display (F-1, B-2, etc.)
+  seq: number; // Sequential ID for display (F1, B2, etc.)
   text: string;
   type: 'feature' | 'bug';
-  status: 'pending' | 'implemented';
+  status: 'pending' | 'in-progress' | 'implemented' | 'needs-input' | 'skipped';
+  resolution_note: string | null;
+  pr_url: string | null;
+  branch_name: string | null;
   created_at: string;
+  updated_at?: string;
 }
