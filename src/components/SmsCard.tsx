@@ -36,7 +36,6 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
   const [settleMode, setSettleMode] = useState(false);
   const [selectedDues, setSelectedDues] = useState<Set<number>>(new Set());
 
-  const fmt = (n: number) => "\u20B9" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmtShort = (n: number) => "\u20B9" + n.toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
   const fmtDate = (ts: number) => new Date(ts).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" });
 
@@ -250,7 +249,7 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
                   <optgroup key={group.label} label={group.label}>
                     {items.map((c) => (
                       <option key={c.id} value={c.name}>
-                        {c.name} ({fmt(c.cap)} {c.recurrence.toLowerCase()})
+                        {c.name}
                       </option>
                     ))}
                   </optgroup>
