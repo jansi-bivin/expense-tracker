@@ -100,12 +100,10 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
   const totalSpent = useMemo(() => {
     let sum = 0;
     for (const cat of monthlyCategories) {
-      const eCap = getEffectiveCap(cat);
-      if (eCap === 0 && cat.cap === 0 && monthlyOverrides[cat.id] == null) continue;
       sum += categorySpend.get(cat.name) || 0;
     }
     return sum;
-  }, [monthlyCategories, categorySpend, monthlyOverrides]);
+  }, [monthlyCategories, categorySpend]);
 
   const totalPct = totalCap > 0 ? Math.min((totalSpent / totalCap) * 100, 100) : 0;
   const totalRemainingPct = Math.max(100 - totalPct, 0);
