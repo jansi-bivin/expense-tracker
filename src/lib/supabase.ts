@@ -68,7 +68,7 @@ export interface FeatureIdea {
   seq: number; // Sequential ID for display (F1, B2, etc.)
   text: string;
   type: 'feature' | 'bug';
-  status: 'pending' | 'in-progress' | 'implemented' | 'needs-input' | 'skipped';
+  status: 'pending' | 'in-progress' | 'implemented' | 'needs-input' | 'skipped' | 'error';
   resolution_note: string | null;
   pr_url: string | null;
   branch_name: string | null;

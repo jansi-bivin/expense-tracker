@@ -174,7 +174,7 @@ for (const idea of ideas) {
     const errDetail = err.stderr?.toString() || err.stdout?.toString() || err.message;
     console.error(`Error processing ${shortId}:`, errDetail);
     await updateIdea(idea.id, {
-      status: 'needs-input',
+      status: 'error',
       resolution_note: `Automation error: ${errDetail.slice(0, 300)}`,
     });
     results.push({ id: shortId, status: 'error' });

@@ -17,6 +17,7 @@ const STATUS_CONFIG: Record<string, { label: string; badge: string; icon: string
   implemented:   { label: "done",        badge: "badge-green",  icon: "" },
   "needs-input": { label: "needs input", badge: "badge-orange", icon: "" },
   skipped:       { label: "skipped",     badge: "badge-red",    icon: "" },
+  error:         { label: "infra error", badge: "badge-red",    icon: "" },
 };
 
 export default function FeatureIdeas({ ideas, onAdd, onDelete, onUpdate, onClose }: Props) {
@@ -67,12 +68,13 @@ export default function FeatureIdeas({ ideas, onAdd, onDelete, onUpdate, onClose
 
   // Group by status
   const needsInput = ideas.filter((i) => i.status === 'needs-input');
+  const errorItems = ideas.filter((i) => i.status === 'error');
   const inProgress = ideas.filter((i) => i.status === 'in-progress');
   const pending = ideas.filter((i) => i.status === 'pending');
   const implemented = ideas.filter((i) => i.status === 'implemented');
   const skipped = ideas.filter((i) => i.status === 'skipped');
   const historyItems = [...implemented, ...skipped];
-  const openCount = needsInput.length + inProgress.length + pending.length;
+  const openCount = needsInput.length + errorItems.length + inProgress.length + pending.length;
 
   function renderIdea(idea: FeatureIdea, dimmed = false) {
     const shortId = `${idea.type === 'bug' ? 'B' : 'F'}${idea.seq || '?'}`;
@@ -228,6 +230,17 @@ export default function FeatureIdeas({ ideas, onAdd, onDelete, onUpdate, onClose
                   Needs your input ({needsInput.length})
                 </div>
                 {needsInput.map((idea) => renderIdea(idea))}
+              </>
+            )}
+
+            {/* Infra errors */}
+            {errorItems.length > 0 && (
+              <>
+                <div className="px-5 py-2 text-[10px] font-semibold uppercase tracking-wider"
+                  style={{ color: "var(--accent-red)", background: "rgba(239,68,68,0.05)" }}>
+                  Infra error ({errorItems.length})
+                </div>
+                {errorItems.map((idea) => renderIdea(idea))}
               </>
             )}
 
