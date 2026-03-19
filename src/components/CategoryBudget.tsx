@@ -662,11 +662,7 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
                             animation: isOver ? "bubble-pulse 2s ease-in-out infinite" : "none",
                           }}
                         >
-                          <div className="text-[10px] font-semibold leading-tight text-center px-1 truncate max-w-full"
-                            style={{ color: "var(--text-primary)" }}>
-                            {c.name.length > 12 ? c.name.slice(0, 10) + "…" : c.name}
-                          </div>
-                          <div className="text-xs font-bold mt-0.5" style={{ color }}>
+                          <div className="text-sm font-bold" style={{ color }}>
                             {fmt(spent)}
                           </div>
                           {!isNoCap && (
@@ -674,6 +670,10 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
                               {isOver ? `${fmt(-remaining)} over` : `${fmt(remaining)} left`}
                             </div>
                           )}
+                        </div>
+                        <div className="text-[10px] font-medium text-center mt-1.5 leading-tight"
+                          style={{ color: "var(--text-secondary)", maxWidth: size + 12 }}>
+                          {c.name}
                         </div>
                       </div>
                     );
@@ -818,11 +818,7 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
                                 boxShadow: isOver ? `0 0 12px ${color}40, 0 0 24px ${color}20` : "none",
                                 animation: isOver ? "bubble-pulse 2s ease-in-out infinite" : "none",
                               }}>
-                              <div className="text-[10px] font-semibold leading-tight text-center px-1 truncate max-w-full"
-                                style={{ color: "var(--text-primary)" }}>
-                                {c.name.length > 12 ? c.name.slice(0, 10) + "…" : c.name}
-                              </div>
-                              <div className="text-xs font-bold mt-0.5" style={{ color }}>
+                              <div className="text-sm font-bold" style={{ color }}>
                                 {fmt(spent)}
                               </div>
                               {!isNoCap && (
@@ -830,6 +826,10 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
                                   {isOver ? `${fmt(-remaining)} over` : `${fmt(remaining)} left`}
                                 </div>
                               )}
+                            </div>
+                            <div className="text-[10px] font-medium text-center mt-1.5 leading-tight"
+                              style={{ color: "var(--text-secondary)", maxWidth: size + 12 }}>
+                              {c.name}
                             </div>
                           </div>
                         );
