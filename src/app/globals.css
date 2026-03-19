@@ -358,6 +358,10 @@ input[type="checkbox"] {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.5; transform: scale(1.5); }
 }
+@keyframes bubble-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.06); }
+}
 .pulse-dot {
   width: 6px;
   height: 6px;

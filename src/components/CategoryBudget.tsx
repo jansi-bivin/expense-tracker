@@ -616,61 +616,64 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
         </div>
       </div>
 
-      {/* ═══ Stacked Overview ═══ */}
+      {/* ═══ Bubble Overview ═══ */}
       {(() => {
         const activeCats = monthlyCategories.filter((c) => (categorySpend.get(c.name) || 0) > 0);
         const zeroCats = monthlyCategories.filter((c) => (categorySpend.get(c.name) || 0) === 0);
-        const COLORS = ["#f87171", "#fb923c", "#a78bfa", "#4ade80", "#38bdf8", "#fbbf24", "#818cf8", "#f472b6", "#34d399", "#c084fc"];
         const maxSpent = activeCats.length > 0 ? Math.max(...activeCats.map((c) => categorySpend.get(c.name) || 0)) : 0;
+        const MIN_SIZE = 56;
+        const MAX_SIZE = 110;
         return (
           <>
             {activeCats.length > 0 && (
               <div className="card p-4 mb-4 animate-slide-up">
-                <div className="section-label mb-2.5">Monthly</div>
-                {/* Stacked bar */}
-                <div className="flex h-6 rounded-xl overflow-hidden gap-px">
-                  {activeCats.map((c, i) => (
-                    <div key={c.name} style={{ flex: categorySpend.get(c.name) || 0, background: COLORS[i % COLORS.length], height: "100%", minWidth: 3 }}
-                      onClick={() => setDrillDownId(c.id)} className="cursor-pointer transition-opacity hover:opacity-80" />
-                  ))}
-                </div>
-                {/* Legend */}
-                <div className="flex flex-wrap gap-x-3.5 gap-y-1.5 mt-3">
-                  {activeCats.map((c, i) => (
-                    <div key={c.name} className="flex items-center gap-1.5 text-[11px] cursor-pointer" style={{ color: "var(--text-secondary)" }}
-                      onClick={() => setDrillDownId(c.id)}>
-                      <div className="w-2 h-2 rounded-full shrink-0" style={{ background: COLORS[i % COLORS.length] }} />
-                      {c.name} {fmt(categorySpend.get(c.name) || 0)}
-                    </div>
-                  ))}
-                </div>
-                {/* Individual breakdown rows */}
-                <div className="mt-4 pt-3" style={{ borderTop: "1px solid var(--border)" }}>
-                  {activeCats.map((c, i) => {
+                <div className="section-label mb-4">Monthly</div>
+                <div className="flex flex-wrap justify-center gap-3 py-2">
+                  {activeCats.map((c) => {
                     const spent = categorySpend.get(c.name) || 0;
                     const eCap = getEffectiveCap(c);
                     const isNoCap = eCap === 0 && c.cap === 0 && monthlyOverrides[c.id] == null;
+                    const pct = eCap > 0 ? (spent / eCap) * 100 : 0;
+                    const isOver = !isNoCap && spent > eCap;
+                    // Size: sqrt-proportional to spend, with overshoot swelling
+                    const ratio = maxSpent > 0 ? Math.sqrt(spent / maxSpent) : 0;
+                    let size = MIN_SIZE + ratio * (MAX_SIZE - MIN_SIZE);
+                    if (isOver) size = Math.min(size * 1.15, MAX_SIZE * 1.2);
+                    // Color based on budget usage
+                    const color = isNoCap ? "rgba(123,108,246,0.7)"
+                      : pct > 100 ? "#f87171"
+                      : pct > 75 ? "#fbbf24"
+                      : "#4ade80";
+                    const bgColor = isNoCap ? "rgba(123,108,246,0.1)"
+                      : pct > 100 ? "rgba(248,113,113,0.12)"
+                      : pct > 75 ? "rgba(251,191,36,0.1)"
+                      : "rgba(74,222,128,0.08)";
                     const remaining = eCap - spent;
-                    const pct = eCap > 0 ? Math.min((spent / eCap) * 100, 100) : 0;
-                    const accentColor = isNoCap ? "var(--text-tertiary)" : pct >= 90 ? "var(--accent-red)" : pct >= 75 ? "var(--accent-orange)" : "var(--accent-green)";
                     return (
-                      <div key={c.name} className="mb-3 last:mb-0 cursor-pointer" onClick={() => setDrillDownId(c.id)}>
-                        <div className="flex justify-between items-baseline text-[11px] mb-1">
-                          <span className="font-medium" style={{ color: "var(--text-primary)" }}>{c.name}</span>
-                          <div className="flex items-center gap-2">
-                            {!isNoCap && (
-                              <span style={{ color: accentColor, fontWeight: 600 }}>
-                                {remaining >= 0 ? fmt(remaining) + " left" : fmt(-remaining) + " over"}
-                              </span>
-                            )}
-                            <span style={{ color: "var(--text-tertiary)" }}>{fmt(spent)}{!isNoCap && ` / ${fmt(eCap)}`}</span>
+                      <div key={c.name} className="flex flex-col items-center cursor-pointer" style={{ width: size + 16 }}
+                        onClick={() => setDrillDownId(c.id)}>
+                        <div
+                          className="rounded-full flex flex-col items-center justify-center transition-all"
+                          style={{
+                            width: size, height: size,
+                            background: bgColor,
+                            border: `2px solid ${color}`,
+                            boxShadow: isOver ? `0 0 12px ${color}40, 0 0 24px ${color}20` : "none",
+                            animation: isOver ? "bubble-pulse 2s ease-in-out infinite" : "none",
+                          }}
+                        >
+                          <div className="text-[10px] font-semibold leading-tight text-center px-1 truncate max-w-full"
+                            style={{ color: "var(--text-primary)" }}>
+                            {c.name.length > 12 ? c.name.slice(0, 10) + "…" : c.name}
                           </div>
-                        </div>
-                        <div className="h-1.5 rounded-sm" style={{ background: "var(--border)" }}>
-                          <div className="h-full rounded-sm transition-all" style={{
-                            width: isNoCap ? `${((spent / maxSpent) * 100)}%` : `${pct}%`,
-                            background: COLORS[i % COLORS.length],
-                          }} />
+                          <div className="text-xs font-bold mt-0.5" style={{ color }}>
+                            {fmt(spent)}
+                          </div>
+                          {!isNoCap && (
+                            <div className="text-[8px] font-semibold mt-0.5" style={{ color: isOver ? "#f87171" : "var(--text-tertiary)" }}>
+                              {isOver ? `${fmt(-remaining)} over` : `${fmt(remaining)} left`}
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
@@ -775,59 +778,58 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
             </div>
           </div>
 
-          {/* Yearly Stacked Overview */}
+          {/* Yearly Bubble Overview */}
           {(() => {
             const activeYearly = yearlyCategories.filter((c) => (categorySpend.get(c.name) || 0) > 0);
             const zeroYearly = yearlyCategories.filter((c) => (categorySpend.get(c.name) || 0) === 0);
-            const COLORS = ["#f87171", "#fb923c", "#a78bfa", "#4ade80", "#38bdf8", "#fbbf24", "#818cf8", "#f472b6", "#34d399", "#c084fc"];
             const maxSpent = activeYearly.length > 0 ? Math.max(...activeYearly.map((c) => categorySpend.get(c.name) || 0)) : 0;
+            const MIN_SIZE = 56;
+            const MAX_SIZE = 110;
             return (
               <>
                 {activeYearly.length > 0 && (
                   <div className="card p-4 mb-4 animate-slide-up">
-                    {/* Stacked bar */}
-                    <div className="flex h-6 rounded-xl overflow-hidden gap-px">
-                      {activeYearly.map((c, i) => (
-                        <div key={c.name} style={{ flex: categorySpend.get(c.name) || 0, background: COLORS[i % COLORS.length], height: "100%", minWidth: 3 }}
-                          onClick={() => setDrillDownId(c.id)} className="cursor-pointer transition-opacity hover:opacity-80" />
-                      ))}
-                    </div>
-                    {/* Legend */}
-                    <div className="flex flex-wrap gap-x-3.5 gap-y-1.5 mt-3">
-                      {activeYearly.map((c, i) => (
-                        <div key={c.name} className="flex items-center gap-1.5 text-[11px] cursor-pointer" style={{ color: "var(--text-secondary)" }}
-                          onClick={() => setDrillDownId(c.id)}>
-                          <div className="w-2 h-2 rounded-full shrink-0" style={{ background: COLORS[i % COLORS.length] }} />
-                          {c.name} {fmt(categorySpend.get(c.name) || 0)}
-                        </div>
-                      ))}
-                    </div>
-                    {/* Individual breakdown rows */}
-                    <div className="mt-4 pt-3" style={{ borderTop: "1px solid var(--border)" }}>
-                      {activeYearly.map((c, i) => {
+                    <div className="flex flex-wrap justify-center gap-3 py-2">
+                      {activeYearly.map((c) => {
                         const spent = categorySpend.get(c.name) || 0;
                         const isNoCap = c.cap === 0;
+                        const pct = c.cap > 0 ? (spent / c.cap) * 100 : 0;
+                        const isOver = !isNoCap && spent > c.cap;
+                        const ratio = maxSpent > 0 ? Math.sqrt(spent / maxSpent) : 0;
+                        let size = MIN_SIZE + ratio * (MAX_SIZE - MIN_SIZE);
+                        if (isOver) size = Math.min(size * 1.15, MAX_SIZE * 1.2);
+                        const color = isNoCap ? "rgba(123,108,246,0.7)"
+                          : pct > 100 ? "#f87171"
+                          : pct > 75 ? "#fbbf24"
+                          : "#4ade80";
+                        const bgColor = isNoCap ? "rgba(123,108,246,0.1)"
+                          : pct > 100 ? "rgba(248,113,113,0.12)"
+                          : pct > 75 ? "rgba(251,191,36,0.1)"
+                          : "rgba(74,222,128,0.08)";
                         const remaining = c.cap - spent;
-                        const pct = c.cap > 0 ? Math.min((spent / c.cap) * 100, 100) : 0;
-                        const accentColor = isNoCap ? "var(--text-tertiary)" : pct >= 90 ? "var(--accent-red)" : pct >= 75 ? "var(--accent-orange)" : "var(--accent-green)";
                         return (
-                          <div key={c.name} className="mb-3 last:mb-0 cursor-pointer" onClick={() => setDrillDownId(c.id)}>
-                            <div className="flex justify-between items-baseline text-[11px] mb-1">
-                              <span className="font-medium" style={{ color: "var(--text-primary)" }}>{c.name}</span>
-                              <div className="flex items-center gap-2">
-                                {!isNoCap && (
-                                  <span style={{ color: accentColor, fontWeight: 600 }}>
-                                    {remaining >= 0 ? fmt(remaining) + " left" : fmt(-remaining) + " over"}
-                                  </span>
-                                )}
-                                <span style={{ color: "var(--text-tertiary)" }}>{fmt(spent)}{!isNoCap && ` / ${fmt(c.cap)}`}</span>
+                          <div key={c.name} className="flex flex-col items-center cursor-pointer" style={{ width: size + 16 }}
+                            onClick={() => setDrillDownId(c.id)}>
+                            <div className="rounded-full flex flex-col items-center justify-center transition-all"
+                              style={{
+                                width: size, height: size,
+                                background: bgColor,
+                                border: `2px solid ${color}`,
+                                boxShadow: isOver ? `0 0 12px ${color}40, 0 0 24px ${color}20` : "none",
+                                animation: isOver ? "bubble-pulse 2s ease-in-out infinite" : "none",
+                              }}>
+                              <div className="text-[10px] font-semibold leading-tight text-center px-1 truncate max-w-full"
+                                style={{ color: "var(--text-primary)" }}>
+                                {c.name.length > 12 ? c.name.slice(0, 10) + "…" : c.name}
                               </div>
-                            </div>
-                            <div className="h-1.5 rounded-sm" style={{ background: "var(--border)" }}>
-                              <div className="h-full rounded-sm transition-all" style={{
-                                width: isNoCap ? `${((spent / maxSpent) * 100)}%` : `${pct}%`,
-                                background: COLORS[i % COLORS.length],
-                              }} />
+                              <div className="text-xs font-bold mt-0.5" style={{ color }}>
+                                {fmt(spent)}
+                              </div>
+                              {!isNoCap && (
+                                <div className="text-[8px] font-semibold mt-0.5" style={{ color: isOver ? "#f87171" : "var(--text-tertiary)" }}>
+                                  {isOver ? `${fmt(-remaining)} over` : `${fmt(remaining)} left`}
+                                </div>
+                              )}
                             </div>
                           </div>
                         );
