@@ -16,7 +16,7 @@ import FeatureIdeas from "@/components/FeatureIdeas";
 function DebitOverlay({ txns, categories, isPrimary, unclearedDues, settlementHints, merchantCategoryMap, onDone, onSnooze, onSettle, onDismissAll }: {
   txns: Transaction[]; categories: Category[]; isPrimary: boolean;
   unclearedDues: Due[]; settlementHints: string[];
-  merchantCategoryMap: Record<string, string>;
+  merchantCategoryMap: Map<string, string>;
   onDone: (id: number, cat?: string, notes?: string) => void;
   onSnooze: (id: number) => void;
   onSettle: (txnId: number, dueIds: number[]) => void;
