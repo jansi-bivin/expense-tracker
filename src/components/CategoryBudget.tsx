@@ -15,9 +15,11 @@ interface Props {
   daysInMonth: number;
   onActiveDaysUpdate: (days: number) => void;
   onReclassify?: (txnId: number, newCategory: string) => void;
+  onDeleteTxn?: (txnId: number) => void;
+  dues?: { id: number; transaction_id: number; cleared: boolean; settlement_transaction_id?: number | null }[];
 }
 
-function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, monthlyOverrides, onCategoriesChange, onShowAddCategory, onMonthlyOverride, activeDays, daysInMonth, onActiveDaysUpdate, onReclassify }: Props) {
+function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, monthlyOverrides, onCategoriesChange, onShowAddCategory, onMonthlyOverride, activeDays, daysInMonth, onActiveDaysUpdate, onReclassify, onDeleteTxn, dues }: Props) {
   const now = new Date();
   const currentMonth = now.getMonth();
   const currentYear = now.getFullYear();
@@ -161,10 +163,16 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
   function ExpenseRow({ txn, currentCatName }: { txn: Transaction; currentCatName?: string }) {
     const [expanded, setExpanded] = useState(false);
     const [showReclassify, setShowReclassify] = useState(false);
+    const [confirmDelete, setConfirmDelete] = useState(false);
     const isManual = txn.address === "MANUAL";
     const merchant = txn.merchant || (isManual ? "Manual Entry" : "Unknown");
     const hasNotes = txn.notes && txn.notes.trim().length > 0;
     const hasRawSms = !isManual && txn.body && txn.body.length > 0;
+
+    // F2: Check if this txn has an associated due and its settlement status
+    const associatedDue = dues?.find((d) => d.transaction_id === txn.id);
+    const isSettled = associatedDue?.cleared;
+    const hasSettlement = associatedDue?.settlement_transaction_id != null;
 
     return (
       <div
@@ -177,6 +185,12 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
           <span className="flex-1 min-w-0 text-sm truncate" style={{ color: "var(--text-primary)" }}>
             {merchant}
             {isManual && <span className="text-[9px] ml-1.5 opacity-50">manual</span>}
+            {associatedDue && (
+              <span className={`text-[9px] ml-1.5 font-semibold ${isSettled ? "" : ""}`}
+                style={{ color: isSettled ? "var(--accent-green)" : "var(--accent-orange)" }}>
+                {isSettled ? (hasSettlement ? "settled" : "cleared") : "due"}
+              </span>
+            )}
           </span>
           <span className="text-xs shrink-0" style={{ color: "var(--text-tertiary)" }}>
             {fmtDate(txn.sms_date)}
@@ -193,12 +207,38 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
               ↔
             </button>
           )}
+          {/* B2: Delete button for manual entries */}
+          {isManual && isPrimary && onDeleteTxn && (
+            <button
+              className="text-[10px] shrink-0 px-1.5 py-0.5 rounded-md"
+              style={{ color: "var(--accent-red)", background: "rgba(255,90,110,0.08)" }}
+              onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}
+            >
+              ×
+            </button>
+          )}
           {hasRawSms && (
             <span className="text-[10px] shrink-0" style={{ color: "var(--accent)", opacity: expanded ? 0.4 : 0.7 }}>
               {expanded ? "▾" : "▸"}
             </span>
           )}
         </div>
+
+        {/* Delete confirmation */}
+        {confirmDelete && (
+          <div className="pb-3 flex items-center gap-2 animate-fade-in">
+            <span className="text-xs" style={{ color: "var(--accent-red)" }}>Delete this entry?</span>
+            <button className="text-[10px] px-2.5 py-1 rounded-lg font-semibold"
+              style={{ background: "rgba(255,90,110,0.15)", color: "var(--accent-red)" }}
+              onClick={() => { onDeleteTxn!(txn.id); setConfirmDelete(false); }}>
+              Yes
+            </button>
+            <button className="text-[10px] px-2.5 py-1 rounded-lg btn-ghost"
+              onClick={() => setConfirmDelete(false)}>
+              No
+            </button>
+          </div>
+        )}
 
         {/* Reclassify picker */}
         {showReclassify && onReclassify && (

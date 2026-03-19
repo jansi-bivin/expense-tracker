@@ -424,6 +424,14 @@ function HomeInner() {
     }
   }
 
+  // B2: Delete a manual transaction
+  async function handleDeleteTxn(txnId: number) {
+    await supabase.from("dues").delete().eq("transaction_id", txnId);
+    await supabase.from("transactions").delete().eq("id", txnId);
+    setCategorizedTxns((prev) => prev.filter((t) => t.id !== txnId));
+    setDues((prev) => prev.filter((d) => d.transaction_id !== txnId));
+  }
+
   // Reclassify: change category of an already-categorized transaction
   async function handleReclassify(txnId: number, newCategory: string) {
     await supabase.from("transactions").update({ category: newCategory }).eq("id", txnId);
@@ -438,6 +446,16 @@ function HomeInner() {
     const maxSeq = featureIdeas.filter((i) => i.type === type).reduce((max, i) => Math.max(max, i.seq || 0), 0);
     const idea: FeatureIdea = { id: crypto.randomUUID(), seq: maxSeq + 1, text, type, status: 'pending', created_at: new Date().toISOString() };
     const updated = [idea, ...featureIdeas];
+    setFeatureIdeas(updated);
+    await supabase.from("settings").upsert({
+      key: "feature_ideas",
+      value: { ideas: updated },
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "key" });
+  }
+
+  async function handleUpdateIdea(id: string, newText: string) {
+    const updated = featureIdeas.map((i) => i.id === id ? { ...i, text: newText } : i);
     setFeatureIdeas(updated);
     await supabase.from("settings").upsert({
       key: "feature_ideas",
@@ -677,6 +695,8 @@ function HomeInner() {
               daysInMonth={daysInMonth}
               onActiveDaysUpdate={handleActiveDaysUpdate}
               onReclassify={handleReclassify}
+              onDeleteTxn={handleDeleteTxn}
+              dues={dues}
             />
           </>
         )}
@@ -752,6 +772,7 @@ function HomeInner() {
           ideas={featureIdeas}
           onAdd={handleAddIdea}
           onDelete={handleDeleteIdea}
+          onUpdate={handleUpdateIdea}
           onClose={() => setShowFeatureIdeas(false)}
         />
       )}
