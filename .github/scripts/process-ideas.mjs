@@ -88,10 +88,27 @@ for (const idea of ideas) {
       '4. After the decision line, explain what you did or what you need.',
     ].join('\n');
 
-    const claudeOutput = execSync(
-      `claude -p ${JSON.stringify(prompt)} --allowedTools "Edit,Write,Read,Glob,Grep" 2>&1`,
-      { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024, timeout: 300000 }
-    ).trim();
+    // First, verify claude CLI works
+    try {
+      const ver = execSync('claude --version 2>&1', { encoding: 'utf-8' }).trim();
+      console.log(`Claude CLI version: ${ver}`);
+    } catch (verErr) {
+      console.error('Claude CLI check failed:', verErr.stderr?.toString() || verErr.stdout?.toString() || verErr.message);
+    }
+
+    let claudeOutput;
+    try {
+      claudeOutput = execSync(
+        `claude -p ${JSON.stringify(prompt)} --allowedTools "Edit,Write,Read,Glob,Grep" 2>&1`,
+        { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024, timeout: 300000 }
+      ).trim();
+    } catch (claudeErr) {
+      const output = claudeErr.stdout?.toString() || claudeErr.stderr?.toString() || '';
+      console.error('Claude CLI failed. Exit code:', claudeErr.status);
+      console.error('Output:', output.slice(0, 2000));
+      console.error('Message:', claudeErr.message.slice(0, 500));
+      throw new Error(`Claude CLI failed (exit ${claudeErr.status}): ${output.slice(0, 300) || claudeErr.message.slice(0, 300)}`);
+    }
 
     console.log('\n--- Claude Output ---');
     console.log(claudeOutput.slice(0, 2000));
