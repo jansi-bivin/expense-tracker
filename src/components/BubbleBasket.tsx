@@ -30,7 +30,10 @@ export default function BubbleBasket({ bubbles }: { bubbles: BubbleItem[] }) {
   bblRef.current = bubbles;
   const [w, setW] = useState(0);
 
-  const h = Math.max(240, Math.min(420, bubbles.length * 38 + BOWL + 60));
+  // Estimate settled height: assume ~3 bubbles per row, stack rows + bowl curve + label
+  const avgSize = bubbles.length > 0 ? bubbles.reduce((s, b) => s + b.size, 0) / bubbles.length : 60;
+  const rows = Math.ceil(bubbles.length / 3);
+  const h = Math.max(160, Math.min(360, rows * avgSize * 0.85 + BOWL + LABEL_H + PAD));
   const bubbleKey = bubbles.map(b => b.id).join(",");
 
   // Measure container width
