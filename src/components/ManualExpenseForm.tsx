@@ -31,7 +31,6 @@ export default function ManualExpenseForm({ categories, isPrimary, onSave, onClo
   const [dateStr, setDateStr] = useState(new Date().toISOString().split("T")[0]);
   const [saving, setSaving] = useState(false);
 
-  const fmt = (n: number) => "\u20B9" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   // Filter categories by visibility
   const visibleCategories = categories.filter((c) =>
@@ -92,7 +91,7 @@ export default function ManualExpenseForm({ categories, isPrimary, onSave, onClo
               <optgroup key={group.label} label={group.label}>
                 {items.map((c) => (
                   <option key={c.id} value={c.name}>
-                    {c.name} ({fmt(c.cap)} {c.recurrence.toLowerCase()})
+                    {c.name}
                   </option>
                 ))}
               </optgroup>
