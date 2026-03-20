@@ -18,9 +18,9 @@ interface Body {
   x: number; y: number; vx: number; vy: number; r: number; held: boolean;
 }
 
-const G = 0.35, DAMP = 0.93, BOUNCE = 0.3, BOWL = 50, PAD = 8, LABEL_H = 22;
+const G = 0.35, DAMP = 0.93, BOUNCE = 0.3, BOWL = 45, PAD = 8, LABEL_H = 22, RIM = 28;
 
-export default function BubbleBasket({ bubbles }: { bubbles: BubbleItem[] }) {
+export default function BubbleBasket({ bubbles, title }: { bubbles: BubbleItem[]; title?: string }) {
   const cRef = useRef<HTMLDivElement>(null);
   const bRef = useRef<Body[]>([]);
   const eRef = useRef<(HTMLDivElement | null)[]>([]);
@@ -30,10 +30,10 @@ export default function BubbleBasket({ bubbles }: { bubbles: BubbleItem[] }) {
   bblRef.current = bubbles;
   const [w, setW] = useState(0);
 
-  // Estimate settled height: assume ~3 bubbles per row, stack rows + bowl curve + label
+  // Estimate settled height: rim + stacked rows + bowl curve + label space
   const avgSize = bubbles.length > 0 ? bubbles.reduce((s, b) => s + b.size, 0) / bubbles.length : 60;
   const rows = Math.ceil(bubbles.length / 3);
-  const h = Math.max(160, Math.min(360, rows * avgSize * 0.85 + BOWL + LABEL_H + PAD));
+  const h = Math.max(180, Math.min(400, RIM + rows * avgSize * 0.85 + BOWL + LABEL_H + PAD));
   const bubbleKey = bubbles.map(b => b.id).join(",");
 
   // Measure container width
@@ -46,11 +46,23 @@ export default function BubbleBasket({ bubbles }: { bubbles: BubbleItem[] }) {
     return () => ro.disconnect();
   }, []);
 
+  // Bucket geometry: tapers inward toward the bottom
+  const TAPER = 0.15; // how much narrower the bottom is vs top (0 = straight, 0.3 = very tapered)
+
   // Bowl floor: parabolic curve — deepest at center, curves up at edges
   const floorAt = useCallback((x: number) => {
     if (w <= 0) return h;
     const n = (x - w / 2) / (w / 2);
     return h - PAD - LABEL_H - BOWL * n * n;
+  }, [w, h]);
+
+  // Bucket side walls: at a given y, compute the left and right wall x positions
+  // Wider at rim (y=RIM), narrower at bottom (y=h)
+  const wallsAt = useCallback((y: number) => {
+    if (w <= 0) return { left: PAD, right: w - PAD };
+    const t = Math.max(0, Math.min(1, (y - RIM) / (h - RIM - PAD))); // 0 at rim, 1 at bottom
+    const inset = t * TAPER * w * 0.5;
+    return { left: PAD + inset, right: w - PAD - inset };
   }, [w, h]);
 
   // Initialize physics bodies — drop from above with stagger
@@ -86,11 +98,12 @@ export default function BubbleBasket({ bubbles }: { bubbles: BubbleItem[] }) {
         // Bowl floor
         const fl = floorAt(b.x);
         if (b.y + b.r > fl) { b.y = fl - b.r; b.vy *= -BOUNCE; b.vx *= 0.9; }
-        // Walls
-        if (b.x - b.r < PAD) { b.x = PAD + b.r; b.vx *= -BOUNCE; }
-        if (b.x + b.r > w - PAD) { b.x = w - PAD - b.r; b.vx *= -BOUNCE; }
-        // Ceiling
-        if (b.y - b.r < -100) { b.y = -100 + b.r; b.vy *= -BOUNCE; }
+        // Tapered bucket walls
+        const walls = wallsAt(b.y);
+        if (b.x - b.r < walls.left) { b.x = walls.left + b.r; b.vx *= -BOUNCE; }
+        if (b.x + b.r > walls.right) { b.x = walls.right - b.r; b.vx *= -BOUNCE; }
+        // Rim (bubbles can peek above but not fly away)
+        if (b.y - b.r < RIM - 20) { b.y = RIM - 20 + b.r; b.vy *= -BOUNCE; }
       }
 
       // Circle-circle collisions
@@ -191,14 +204,24 @@ export default function BubbleBasket({ bubbles }: { bubbles: BubbleItem[] }) {
     };
   }, []);
 
-  // Bowl outline SVG path
-  const bowlD = w > 0 ? (() => {
-    const pts: string[] = [];
-    for (let x = PAD; x <= w - PAD; x += 3) {
-      const n = (x - w / 2) / (w / 2);
-      pts.push(`${x},${h - PAD - LABEL_H - BOWL * n * n + 6}`);
+  // Bucket SVG: trapezoid walls + curved bottom + rim
+  const bucketSvg = w > 0 ? (() => {
+    const topL = PAD, topR = w - PAD;
+    const botL = PAD + TAPER * w * 0.5, botR = w - PAD - TAPER * w * 0.5;
+    const rimY = RIM;
+    const botY = h - PAD - LABEL_H;
+    // Curved bottom
+    const bottomPts: string[] = [];
+    for (let x = botL; x <= botR; x += 2) {
+      const n = (x - w / 2) / ((botR - botL) / 2);
+      const y = botY - BOWL * (1 - n * n) + BOWL;
+      bottomPts.push(`${x},${Math.min(y, botY + 6)}`);
     }
-    return `M${pts.join(" L")}`;
+    // Full bucket path: left wall → bottom curve → right wall
+    const path = `M${topL},${rimY} L${botL},${botY - BOWL + 6} `
+      + bottomPts.map(p => `L${p}`).join(" ")
+      + ` L${topR},${rimY}`;
+    return path;
   })() : "";
 
   if (bubbles.length === 0) return null;
@@ -206,10 +229,21 @@ export default function BubbleBasket({ bubbles }: { bubbles: BubbleItem[] }) {
   return (
     <div ref={cRef} className="relative overflow-hidden rounded-2xl"
       style={{ height: h, touchAction: "none", userSelect: "none" }}>
-      {/* Subtle bowl curve outline */}
-      {bowlD && (
+      {/* Bucket outline */}
+      {bucketSvg && (
         <svg className="absolute inset-0 pointer-events-none" width={w} height={h}>
-          <path d={bowlD} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="2" />
+          {/* Bucket body */}
+          <path d={bucketSvg} fill="rgba(255,255,255,0.02)" stroke="rgba(255,255,255,0.1)" strokeWidth="1.5" strokeLinejoin="round" />
+          {/* Rim band */}
+          <rect x={PAD - 1} y={RIM - 4} width={w - PAD * 2 + 2} height={8} rx={4}
+            fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.12)" strokeWidth="1" />
+          {/* Month label on rim */}
+          {title && (
+            <text x={w / 2} y={RIM + 1} textAnchor="middle" dominantBaseline="middle"
+              fill="rgba(255,255,255,0.35)" fontSize="10" fontWeight="600" fontFamily="inherit">
+              {title}
+            </text>
+          )}
         </svg>
       )}
 

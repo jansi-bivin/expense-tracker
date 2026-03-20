@@ -654,9 +654,8 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
 
       {/* ═══ Bubble Overview ═══ */}
       {monthlyBubbles.length > 0 && (
-        <div className="card p-4 mb-4 animate-slide-up">
-          <div className="section-label mb-2">Monthly</div>
-          <BubbleBasket bubbles={monthlyBubbles} />
+        <div className="card p-3 mb-4 animate-slide-up">
+          <BubbleBasket bubbles={monthlyBubbles} title={now.toLocaleDateString("en-IN", { month: "short", year: "numeric" }).toUpperCase()} />
         </div>
       )}
       {monthlyZeroCats.length > 0 && (
@@ -755,7 +754,7 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
           {/* Yearly Bubble Overview */}
           {yearlyBubbles.length > 0 && (
             <div className="card p-4 mb-4 animate-slide-up">
-              <BubbleBasket bubbles={yearlyBubbles} />
+              <BubbleBasket bubbles={yearlyBubbles} title={String(currentYear)} />
             </div>
           )}
           {yearlyZeroCats.length > 0 && (
