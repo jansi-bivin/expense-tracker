@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState } from "react";
 import { supabase, Transaction, Category } from "@/lib/supabase";
+import BubbleBasket from "./BubbleBasket";
 interface Props {
   transactions: Transaction[];
   categories: Category[];
@@ -124,6 +125,41 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
   const yearlyRemaining = yearlyTotalCap - yearlyTotalSpent;
   const yearlyProportionalRemaining = yearlyExpectedSpend - yearlyTotalSpent;
   const yearlyOnTrack = yearlyTotalSpent <= yearlyExpectedSpend;
+
+  // ── Bubble data for basket visualization ──
+  const monthlyActiveCats = monthlyCategories.filter((c) => (categorySpend.get(c.name) || 0) > 0);
+  const monthlyZeroCats = monthlyCategories.filter((c) => (categorySpend.get(c.name) || 0) === 0);
+  const yearlyActiveCats = yearlyCategories.filter((c) => (categorySpend.get(c.name) || 0) > 0);
+  const yearlyZeroCats = yearlyCategories.filter((c) => (categorySpend.get(c.name) || 0) === 0);
+
+  function buildBubbles(cats: Category[], yearly = false) {
+    if (cats.length === 0) return [];
+    const spends = cats.map((c) => categorySpend.get(c.name) || 0);
+    const minS = Math.min(...spends), maxS = Math.max(...spends), range = maxS - minS;
+    const MIN = 48, MAX = 100;
+    return cats.map((c) => {
+      const spent = categorySpend.get(c.name) || 0;
+      const eCap = yearly ? c.cap : getEffectiveCap(c);
+      const noCap = yearly ? c.cap === 0 : (eCap === 0 && c.cap === 0 && monthlyOverrides[c.id] == null);
+      const pct = eCap > 0 ? (spent / eCap) * 100 : 0;
+      const isOver = !noCap && spent > eCap;
+      const norm = range > 0 ? Math.sqrt((spent - minS) / range) : (cats.length === 1 ? 1 : 0.5);
+      let size = MIN + norm * (MAX - MIN);
+      if (isOver) size = Math.min(size * 1.15, MAX * 1.2);
+      const color = noCap ? "rgba(123,108,246,0.7)" : pct > 100 ? "#f87171" : pct > 75 ? "#fbbf24" : "#4ade80";
+      const bgColor = noCap ? "rgba(123,108,246,0.1)" : pct > 100 ? "rgba(248,113,113,0.12)" : pct > 75 ? "rgba(251,191,36,0.1)" : "rgba(74,222,128,0.08)";
+      const rem = eCap - spent;
+      return {
+        id: c.id, label: c.name, amount: fmt(spent),
+        detail: noCap ? undefined : (isOver ? `${fmt(-rem)} over` : `${fmt(rem)} left`),
+        isOver, color, bgColor, size: Math.round(size),
+        onClick: () => setDrillDownId(c.id),
+      };
+    });
+  }
+
+  const monthlyBubbles = buildBubbles(monthlyActiveCats);
+  const yearlyBubbles = buildBubbles(yearlyActiveCats, true);
 
   function startEdit(cat: Category) {
     if (!isPrimary) return;
@@ -617,88 +653,26 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
       </div>
 
       {/* ═══ Bubble Overview ═══ */}
-      {(() => {
-        const activeCats = monthlyCategories.filter((c) => (categorySpend.get(c.name) || 0) > 0);
-        const zeroCats = monthlyCategories.filter((c) => (categorySpend.get(c.name) || 0) === 0);
-        const maxSpent = activeCats.length > 0 ? Math.max(...activeCats.map((c) => categorySpend.get(c.name) || 0)) : 0;
-        const MIN_SIZE = 56;
-        const MAX_SIZE = 110;
-        return (
-          <>
-            {activeCats.length > 0 && (
-              <div className="card p-4 mb-4 animate-slide-up">
-                <div className="section-label mb-4">Monthly</div>
-                <div className="flex flex-wrap justify-center gap-3 py-2">
-                  {activeCats.map((c) => {
-                    const spent = categorySpend.get(c.name) || 0;
-                    const eCap = getEffectiveCap(c);
-                    const isNoCap = eCap === 0 && c.cap === 0 && monthlyOverrides[c.id] == null;
-                    const pct = eCap > 0 ? (spent / eCap) * 100 : 0;
-                    const isOver = !isNoCap && spent > eCap;
-                    // Size: sqrt-proportional to spend, with overshoot swelling
-                    const ratio = maxSpent > 0 ? Math.sqrt(spent / maxSpent) : 0;
-                    let size = MIN_SIZE + ratio * (MAX_SIZE - MIN_SIZE);
-                    if (isOver) size = Math.min(size * 1.15, MAX_SIZE * 1.2);
-                    // Color based on budget usage
-                    const color = isNoCap ? "rgba(123,108,246,0.7)"
-                      : pct > 100 ? "#f87171"
-                      : pct > 75 ? "#fbbf24"
-                      : "#4ade80";
-                    const bgColor = isNoCap ? "rgba(123,108,246,0.1)"
-                      : pct > 100 ? "rgba(248,113,113,0.12)"
-                      : pct > 75 ? "rgba(251,191,36,0.1)"
-                      : "rgba(74,222,128,0.08)";
-                    const remaining = eCap - spent;
-                    return (
-                      <div key={c.name} className="flex flex-col items-center cursor-pointer" style={{ width: size + 16 }}
-                        onClick={() => setDrillDownId(c.id)}>
-                        <div
-                          className="rounded-full flex flex-col items-center justify-center transition-all"
-                          style={{
-                            width: size, height: size,
-                            background: bgColor,
-                            border: `2px solid ${color}`,
-                            boxShadow: isOver ? `0 0 12px ${color}40, 0 0 24px ${color}20` : "none",
-                            animation: isOver ? "bubble-pulse 2s ease-in-out infinite" : "none",
-                          }}
-                        >
-                          <div className="text-sm font-bold" style={{ color }}>
-                            {fmt(spent)}
-                          </div>
-                          {!isNoCap && (
-                            <div className="text-[8px] font-semibold mt-0.5" style={{ color: isOver ? "#f87171" : "var(--text-tertiary)" }}>
-                              {isOver ? `${fmt(-remaining)} over` : `${fmt(remaining)} left`}
-                            </div>
-                          )}
-                        </div>
-                        <div className="text-[10px] font-medium text-center mt-1.5 leading-tight"
-                          style={{ color: "var(--text-secondary)", maxWidth: size + 12 }}>
-                          {c.name}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-            {/* Zero-spend categories */}
-            {zeroCats.length > 0 && (
-              <div className="card p-4 mb-6 animate-slide-up">
-                <div className="text-[11px] font-medium mb-2" style={{ color: "var(--text-tertiary)" }}>No activity</div>
-                <div className="flex flex-wrap gap-2">
-                  {zeroCats.map((c) => (
-                    <button key={c.id} className="text-[11px] px-2.5 py-1 rounded-lg"
-                      style={{ color: "var(--text-tertiary)", background: "var(--bg-elevated)", border: "1px solid var(--border)" }}
-                      onClick={() => setDrillDownId(c.id)}>
-                      {c.name}{c.cap > 0 ? ` · ${fmt(getEffectiveCap(c))}` : ""}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </>
-        );
-      })()}
+      {monthlyBubbles.length > 0 && (
+        <div className="card p-4 mb-4 animate-slide-up">
+          <div className="section-label mb-2">Monthly</div>
+          <BubbleBasket bubbles={monthlyBubbles} />
+        </div>
+      )}
+      {monthlyZeroCats.length > 0 && (
+        <div className="card p-4 mb-6 animate-slide-up">
+          <div className="text-[11px] font-medium mb-2" style={{ color: "var(--text-tertiary)" }}>No activity</div>
+          <div className="flex flex-wrap gap-2">
+            {monthlyZeroCats.map((c) => (
+              <button key={c.id} className="text-[11px] px-2.5 py-1 rounded-lg"
+                style={{ color: "var(--text-tertiary)", background: "var(--bg-elevated)", border: "1px solid var(--border)" }}
+                onClick={() => setDrillDownId(c.id)}>
+                {c.name}{c.cap > 0 ? ` · ${fmt(getEffectiveCap(c))}` : ""}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ═══ Monthly Categories — edit cards (only when editing) ═══ */}
       {editingId !== null && monthlyCategories.some((c) => c.id === editingId) && (
@@ -779,82 +753,25 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
           </div>
 
           {/* Yearly Bubble Overview */}
-          {(() => {
-            const activeYearly = yearlyCategories.filter((c) => (categorySpend.get(c.name) || 0) > 0);
-            const zeroYearly = yearlyCategories.filter((c) => (categorySpend.get(c.name) || 0) === 0);
-            const maxSpent = activeYearly.length > 0 ? Math.max(...activeYearly.map((c) => categorySpend.get(c.name) || 0)) : 0;
-            const MIN_SIZE = 56;
-            const MAX_SIZE = 110;
-            return (
-              <>
-                {activeYearly.length > 0 && (
-                  <div className="card p-4 mb-4 animate-slide-up">
-                    <div className="flex flex-wrap justify-center gap-3 py-2">
-                      {activeYearly.map((c) => {
-                        const spent = categorySpend.get(c.name) || 0;
-                        const isNoCap = c.cap === 0;
-                        const pct = c.cap > 0 ? (spent / c.cap) * 100 : 0;
-                        const isOver = !isNoCap && spent > c.cap;
-                        const ratio = maxSpent > 0 ? Math.sqrt(spent / maxSpent) : 0;
-                        let size = MIN_SIZE + ratio * (MAX_SIZE - MIN_SIZE);
-                        if (isOver) size = Math.min(size * 1.15, MAX_SIZE * 1.2);
-                        const color = isNoCap ? "rgba(123,108,246,0.7)"
-                          : pct > 100 ? "#f87171"
-                          : pct > 75 ? "#fbbf24"
-                          : "#4ade80";
-                        const bgColor = isNoCap ? "rgba(123,108,246,0.1)"
-                          : pct > 100 ? "rgba(248,113,113,0.12)"
-                          : pct > 75 ? "rgba(251,191,36,0.1)"
-                          : "rgba(74,222,128,0.08)";
-                        const remaining = c.cap - spent;
-                        return (
-                          <div key={c.name} className="flex flex-col items-center cursor-pointer" style={{ width: size + 16 }}
-                            onClick={() => setDrillDownId(c.id)}>
-                            <div className="rounded-full flex flex-col items-center justify-center transition-all"
-                              style={{
-                                width: size, height: size,
-                                background: bgColor,
-                                border: `2px solid ${color}`,
-                                boxShadow: isOver ? `0 0 12px ${color}40, 0 0 24px ${color}20` : "none",
-                                animation: isOver ? "bubble-pulse 2s ease-in-out infinite" : "none",
-                              }}>
-                              <div className="text-sm font-bold" style={{ color }}>
-                                {fmt(spent)}
-                              </div>
-                              {!isNoCap && (
-                                <div className="text-[8px] font-semibold mt-0.5" style={{ color: isOver ? "#f87171" : "var(--text-tertiary)" }}>
-                                  {isOver ? `${fmt(-remaining)} over` : `${fmt(remaining)} left`}
-                                </div>
-                              )}
-                            </div>
-                            <div className="text-[10px] font-medium text-center mt-1.5 leading-tight"
-                              style={{ color: "var(--text-secondary)", maxWidth: size + 12 }}>
-                              {c.name}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-                {/* Zero-spend yearly categories */}
-                {zeroYearly.length > 0 && (
-                  <div className="card p-4 mb-6 animate-slide-up">
-                    <div className="text-[11px] font-medium mb-2" style={{ color: "var(--text-tertiary)" }}>No activity</div>
-                    <div className="flex flex-wrap gap-2">
-                      {zeroYearly.map((c) => (
-                        <button key={c.id} className="text-[11px] px-2.5 py-1 rounded-lg"
-                          style={{ color: "var(--text-tertiary)", background: "var(--bg-elevated)", border: "1px solid var(--border)" }}
-                          onClick={() => setDrillDownId(c.id)}>
-                          {c.name}{c.cap > 0 ? ` · ${fmt(c.cap)}` : ""}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </>
-            );
-          })()}
+          {yearlyBubbles.length > 0 && (
+            <div className="card p-4 mb-4 animate-slide-up">
+              <BubbleBasket bubbles={yearlyBubbles} />
+            </div>
+          )}
+          {yearlyZeroCats.length > 0 && (
+            <div className="card p-4 mb-6 animate-slide-up">
+              <div className="text-[11px] font-medium mb-2" style={{ color: "var(--text-tertiary)" }}>No activity</div>
+              <div className="flex flex-wrap gap-2">
+                {yearlyZeroCats.map((c) => (
+                  <button key={c.id} className="text-[11px] px-2.5 py-1 rounded-lg"
+                    style={{ color: "var(--text-tertiary)", background: "var(--bg-elevated)", border: "1px solid var(--border)" }}
+                    onClick={() => setDrillDownId(c.id)}>
+                    {c.name}{c.cap > 0 ? ` · ${fmt(c.cap)}` : ""}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Yearly edit card (only when editing) */}
           {editingId !== null && yearlyCategories.some((c) => c.id === editingId) && (
