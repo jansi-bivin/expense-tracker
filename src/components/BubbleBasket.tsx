@@ -302,69 +302,136 @@ export default function BubbleBasket({ bubbles, title }: { bubbles: BubbleItem[]
         </svg>
       )}
 
+      {/* Bubble SVG defs for realistic glass effect */}
+      {w > 0 && (
+        <svg className="absolute" width="0" height="0" style={{ position: "absolute" }}>
+          <defs>
+            {bubbles.map(b => {
+              const id = `${svgId}-b${b.id}`;
+              return (
+                <g key={b.id}>
+                  {/* Main sphere gradient — deep color at edges, lighter center-top */}
+                  <radialGradient id={`${id}-base`} cx="0.42" cy="0.38" r="0.55" fx="0.42" fy="0.38">
+                    <stop offset="0%" stopColor={b.bgColor} stopOpacity="0.9" />
+                    <stop offset="55%" stopColor={b.bgColor} stopOpacity="0.65" />
+                    <stop offset="85%" stopColor={b.color} stopOpacity="0.45" />
+                    <stop offset="100%" stopColor={b.color} stopOpacity="0.7" />
+                  </radialGradient>
+                  {/* Top specular highlight — bright white glint */}
+                  <radialGradient id={`${id}-spec`} cx="0.35" cy="0.28" r="0.28" fx="0.32" fy="0.24">
+                    <stop offset="0%" stopColor="white" stopOpacity="0.85" />
+                    <stop offset="40%" stopColor="white" stopOpacity="0.35" />
+                    <stop offset="100%" stopColor="white" stopOpacity="0" />
+                  </radialGradient>
+                  {/* Secondary highlight — softer, wider */}
+                  <radialGradient id={`${id}-spec2`} cx="0.48" cy="0.32" r="0.4" fx="0.45" fy="0.3">
+                    <stop offset="0%" stopColor="white" stopOpacity="0.2" />
+                    <stop offset="60%" stopColor="white" stopOpacity="0.05" />
+                    <stop offset="100%" stopColor="white" stopOpacity="0" />
+                  </radialGradient>
+                  {/* Rim light — edge glow for depth */}
+                  <radialGradient id={`${id}-rim`} cx="0.5" cy="0.5" r="0.5">
+                    <stop offset="75%" stopColor="white" stopOpacity="0" />
+                    <stop offset="92%" stopColor="white" stopOpacity="0.12" />
+                    <stop offset="100%" stopColor="white" stopOpacity="0.04" />
+                  </radialGradient>
+                  {/* Bottom caustic / reflected light */}
+                  <radialGradient id={`${id}-caust`} cx="0.58" cy="0.78" r="0.2" fx="0.6" fy="0.8">
+                    <stop offset="0%" stopColor="white" stopOpacity="0.22" />
+                    <stop offset="60%" stopColor="white" stopOpacity="0.06" />
+                    <stop offset="100%" stopColor="white" stopOpacity="0" />
+                  </radialGradient>
+                  {/* Shadow beneath bubble */}
+                  <radialGradient id={`${id}-shad`} cx="0.5" cy="1" r="0.5">
+                    <stop offset="0%" stopColor="black" stopOpacity="0.18" />
+                    <stop offset="100%" stopColor="black" stopOpacity="0" />
+                  </radialGradient>
+                </g>
+              );
+            })}
+          </defs>
+        </svg>
+      )}
+
       {/* Bubble elements */}
-      {bubbles.map((b, i) => (
-        <div key={b.id} ref={el => { eRef.current[i] = el; }}
-          className="absolute top-0 left-0"
-          style={{ width: b.size, willChange: "transform", zIndex: 1 }}>
-          <div className="rounded-full flex flex-col items-center justify-center"
-            style={{
-              width: b.size, height: b.size,
-              /* Sphere-like radial gradient for 3D look */
-              background: `radial-gradient(ellipse 55% 45% at 40% 35%, rgba(255,255,255,0.25), transparent 60%),
-                           radial-gradient(ellipse 100% 100% at 50% 50%, ${b.bgColor}, ${b.color}22)`,
-              border: `2px solid ${b.color}88`,
-              boxShadow: b.isOver
-                ? `0 0 14px ${b.color}50, 0 0 28px ${b.color}25, inset 0 -4px 8px ${b.color}15`
-                : `0 4px 12px rgba(0,0,0,0.2), inset 0 -3px 6px rgba(0,0,0,0.08), inset 0 2px 4px rgba(255,255,255,0.1)`,
-              animation: b.isOver ? "bubble-pulse 2s ease-in-out infinite" : "none",
-              cursor: "grab",
-              position: "relative",
-              overflow: "hidden",
-            }}>
-            {/* Glass highlight — top-left crescent */}
+      {bubbles.map((b, i) => {
+        const id = `${svgId}-b${b.id}`;
+        const s = b.size;
+        return (
+          <div key={b.id} ref={el => { eRef.current[i] = el; }}
+            className="absolute top-0 left-0"
+            style={{ width: s, willChange: "transform", zIndex: 1 }}>
+            {/* Drop shadow under bubble */}
             <div style={{
-              position: "absolute",
-              top: "8%", left: "15%",
-              width: "40%", height: "30%",
+              position: "absolute", bottom: -4, left: "15%", width: "70%", height: "18%",
               borderRadius: "50%",
-              background: "linear-gradient(180deg, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0) 100%)",
+              background: "radial-gradient(ellipse, rgba(0,0,0,0.18) 0%, transparent 70%)",
+              filter: "blur(3px)",
               pointerEvents: "none",
             }} />
-            {/* Bottom reflection */}
-            <div style={{
-              position: "absolute",
-              bottom: "12%", right: "20%",
-              width: "25%", height: "15%",
-              borderRadius: "50%",
-              background: "radial-gradient(ellipse, rgba(255,255,255,0.12) 0%, transparent 70%)",
-              pointerEvents: "none",
-            }} />
-            <div className="font-bold leading-none" style={{
-              color: b.color, fontSize: Math.max(10, b.size * 0.19),
-              textShadow: "0 1px 2px rgba(0,0,0,0.15)",
-              position: "relative", zIndex: 1,
-            }}>
-              {b.amount}
-            </div>
-            {b.detail && b.size >= 52 && (
-              <div className="font-semibold mt-0.5 leading-none" style={{
-                fontSize: Math.max(7, b.size * 0.12),
-                color: b.isOver ? "#f87171" : "var(--text-tertiary)",
-                position: "relative", zIndex: 1,
-              }}>
-                {b.detail}
+            <div style={{ width: s, height: s, position: "relative", cursor: "grab" }}>
+              <svg width={s} height={s} viewBox={`0 0 ${s} ${s}`}
+                style={{ position: "absolute", top: 0, left: 0 }}>
+                {/* Base sphere */}
+                <circle cx={s/2} cy={s/2} r={s/2 - 1} fill={`url(#${id}-base)`} />
+                {/* Rim light for 3D edge */}
+                <circle cx={s/2} cy={s/2} r={s/2 - 1} fill={`url(#${id}-rim)`} />
+                {/* Primary specular highlight */}
+                <circle cx={s/2} cy={s/2} r={s/2 - 1} fill={`url(#${id}-spec)`} />
+                {/* Secondary soft highlight */}
+                <circle cx={s/2} cy={s/2} r={s/2 - 1} fill={`url(#${id}-spec2)`} />
+                {/* Bottom caustic reflection */}
+                <circle cx={s/2} cy={s/2} r={s/2 - 1} fill={`url(#${id}-caust)`} />
+                {/* Thin glossy border */}
+                <circle cx={s/2} cy={s/2} r={s/2 - 1}
+                  fill="none" stroke={`${b.color}55`} strokeWidth="1.5" />
+                {/* Bright specular dot — the "window reflection" */}
+                <ellipse cx={s * 0.34} cy={s * 0.26} rx={s * 0.09} ry={s * 0.065}
+                  fill="white" opacity="0.7"
+                  transform={`rotate(-25 ${s * 0.34} ${s * 0.26})`} />
+                {/* Tiny secondary specular dot */}
+                <ellipse cx={s * 0.28} cy={s * 0.38} rx={s * 0.035} ry={s * 0.025}
+                  fill="white" opacity="0.35"
+                  transform={`rotate(-25 ${s * 0.28} ${s * 0.38})`} />
+              </svg>
+              {/* Text overlay */}
+              <div className="absolute inset-0 flex flex-col items-center justify-center"
+                style={{ zIndex: 2 }}>
+                <div className="font-bold leading-none" style={{
+                  color: b.color, fontSize: Math.max(10, s * 0.19),
+                  textShadow: `0 1px 3px rgba(0,0,0,0.25), 0 0 6px ${b.bgColor}88`,
+                  filter: "drop-shadow(0 0 1px rgba(0,0,0,0.15))",
+                }}>
+                  {b.amount}
+                </div>
+                {b.detail && s >= 52 && (
+                  <div className="font-semibold mt-0.5 leading-none" style={{
+                    fontSize: Math.max(7, s * 0.12),
+                    color: b.isOver ? "#f87171" : "var(--text-tertiary)",
+                    textShadow: "0 1px 2px rgba(0,0,0,0.2)",
+                  }}>
+                    {b.detail}
+                  </div>
+                )}
               </div>
+            </div>
+            {b.isOver && (
+              <div style={{
+                position: "absolute", inset: 0, borderRadius: "50%",
+                boxShadow: `0 0 16px ${b.color}50, 0 0 32px ${b.color}25`,
+                pointerEvents: "none",
+                animation: "bubble-pulse 2s ease-in-out infinite",
+              }} />
             )}
+            <div className="text-center mt-1 leading-tight truncate" style={{
+              fontSize: Math.max(8, Math.min(10, s * 0.15)),
+              color: "var(--text-secondary)",
+            }}>
+              {b.label}
+            </div>
           </div>
-          <div className="text-center mt-1 leading-tight truncate" style={{
-            fontSize: Math.max(8, Math.min(10, b.size * 0.15)),
-            color: "var(--text-secondary)",
-          }}>
-            {b.label}
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
