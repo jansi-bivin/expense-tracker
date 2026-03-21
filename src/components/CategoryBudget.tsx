@@ -667,20 +667,7 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
           <BubbleBasket bubbles={monthlyBubbles} title={now.toLocaleDateString("en-IN", { month: "short", year: "numeric" }).toUpperCase()} />
         </div>
       )}
-      {monthlyZeroCats.length > 0 && (
-        <div className="card p-4 mb-6 animate-slide-up">
-          <div className="text-[11px] font-medium mb-2" style={{ color: "var(--text-tertiary)" }}>No activity</div>
-          <div className="flex flex-wrap gap-2">
-            {monthlyZeroCats.map((c) => (
-              <button key={c.id} className="text-[11px] px-2.5 py-1 rounded-lg"
-                style={{ color: "var(--text-tertiary)", background: "var(--bg-elevated)", border: "1px solid var(--border)" }}
-                onClick={() => setDrillDownId(c.id)}>
-                {c.name}{c.cap > 0 ? ` · ${fmt(getEffectiveCap(c))}` : ""}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* F-7: Unused categories hidden from view */}
 
       {/* ═══ Monthly Categories — edit cards (only when editing) ═══ */}
       {editingId !== null && monthlyCategories.some((c) => c.id === editingId) && (
@@ -766,20 +753,7 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
               <BubbleBasket bubbles={yearlyBubbles} title={String(currentYear)} />
             </div>
           )}
-          {yearlyZeroCats.length > 0 && (
-            <div className="card p-4 mb-6 animate-slide-up">
-              <div className="text-[11px] font-medium mb-2" style={{ color: "var(--text-tertiary)" }}>No activity</div>
-              <div className="flex flex-wrap gap-2">
-                {yearlyZeroCats.map((c) => (
-                  <button key={c.id} className="text-[11px] px-2.5 py-1 rounded-lg"
-                    style={{ color: "var(--text-tertiary)", background: "var(--bg-elevated)", border: "1px solid var(--border)" }}
-                    onClick={() => setDrillDownId(c.id)}>
-                    {c.name}{c.cap > 0 ? ` · ${fmt(c.cap)}` : ""}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+          {/* F-7: Unused yearly categories hidden from view */}
 
           {/* Yearly edit card (only when editing) */}
           {editingId !== null && yearlyCategories.some((c) => c.id === editingId) && (

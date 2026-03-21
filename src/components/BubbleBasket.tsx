@@ -226,7 +226,7 @@ export default function BubbleBasket({ bubbles, title }: { bubbles: BubbleItem[]
     }
     const path = `M${topL},${rimY} L${botL},${botY - BOWL + 6} `
       + bottomPts.map(p => `L${p}`).join(" ")
-      + ` L${topR},${rimY}`;
+      + ` L${botR},${botY - BOWL + 6} L${topR},${rimY}`;
     return { path, topL, topR, botL, botR, rimY, botY };
   })() : null;
 
