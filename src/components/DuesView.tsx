@@ -231,7 +231,7 @@ function DuesView({ dues, transactions, categories, onDuesChange, payeeUpi, paye
                       <div key={due.id} className="flex justify-between items-center py-3"
                         style={{ borderBottom: i < categoryDues.length - 1 ? "1px solid var(--border)" : "none" }}>
                         <div>
-                          <div className="text-sm font-medium" style={{ color: "var(--text-secondary)" }}>{txn?.merchant ?? "Transaction #" + due.transaction_id}</div>
+                          <div className="text-sm font-medium" style={{ color: "var(--text-secondary)" }}>{txn?.merchant ?? txn?.notes ?? "Transaction #" + due.transaction_id}</div>
                           <div className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>{txn ? fmtDate(txn.sms_date) : ""}</div>
                         </div>
                         <div className="flex items-center gap-2">
@@ -294,7 +294,7 @@ function DuesView({ dues, transactions, categories, onDuesChange, payeeUpi, paye
                   <div key={due.id} className="flex justify-between items-center rounded-2xl px-4 py-3 animate-slide-up"
                     style={{ background: "rgba(255,255,255,0.02)", border: "1px solid var(--border)" }}>
                     <div>
-                      <div className="text-sm" style={{ color: "var(--text-tertiary)" }}>{txn?.merchant ?? "Transaction #" + due.transaction_id}</div>
+                      <div className="text-sm" style={{ color: "var(--text-tertiary)" }}>{txn?.merchant ?? txn?.notes ?? "Transaction #" + due.transaction_id}</div>
                       <div className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
                         {due.category} · {txn ? fmtDate(txn.sms_date) : ""}
                         {due.settlement_transaction_id && (
