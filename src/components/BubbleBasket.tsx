@@ -308,14 +308,17 @@ export default function BubbleBasket({ bubbles, title }: { bubbles: BubbleItem[]
           <defs>
             {bubbles.map(b => {
               const id = `${svgId}-b${b.id}`;
+              // Derive a bright tint from the accent color for the sphere center
+              // This avoids rgba stacking issues that made red look muddy
+              const bright = b.color.startsWith("#") ? b.color : "#7b6cf6";
               return (
                 <g key={b.id}>
-                  {/* Main sphere gradient — deep color at edges, lighter center-top */}
+                  {/* Main sphere gradient — bright white-tinted center, saturated color at edges */}
                   <radialGradient id={`${id}-base`} cx="0.42" cy="0.38" r="0.55" fx="0.42" fy="0.38">
-                    <stop offset="0%" stopColor={b.bgColor} stopOpacity="0.9" />
-                    <stop offset="55%" stopColor={b.bgColor} stopOpacity="0.65" />
-                    <stop offset="85%" stopColor={b.color} stopOpacity="0.45" />
-                    <stop offset="100%" stopColor={b.color} stopOpacity="0.7" />
+                    <stop offset="0%" stopColor="white" stopOpacity="0.55" />
+                    <stop offset="30%" stopColor={bright} stopOpacity="0.18" />
+                    <stop offset="65%" stopColor={bright} stopOpacity="0.35" />
+                    <stop offset="100%" stopColor={bright} stopOpacity="0.55" />
                   </radialGradient>
                   {/* Top specular highlight — bright white glint */}
                   <radialGradient id={`${id}-spec`} cx="0.35" cy="0.28" r="0.28" fx="0.32" fy="0.24">
@@ -361,12 +364,12 @@ export default function BubbleBasket({ bubbles, title }: { bubbles: BubbleItem[]
           <div key={b.id} ref={el => { eRef.current[i] = el; }}
             className="absolute top-0 left-0"
             style={{ width: s, willChange: "transform", zIndex: 1 }}>
-            {/* Drop shadow under bubble */}
+            {/* Subtle drop shadow under bubble */}
             <div style={{
-              position: "absolute", bottom: -4, left: "15%", width: "70%", height: "18%",
+              position: "absolute", bottom: -2, left: "20%", width: "60%", height: "12%",
               borderRadius: "50%",
-              background: "radial-gradient(ellipse, rgba(0,0,0,0.18) 0%, transparent 70%)",
-              filter: "blur(3px)",
+              background: "radial-gradient(ellipse, rgba(0,0,0,0.10) 0%, transparent 70%)",
+              filter: "blur(2px)",
               pointerEvents: "none",
             }} />
             <div style={{ width: s, height: s, position: "relative", cursor: "grab" }}>
@@ -399,8 +402,7 @@ export default function BubbleBasket({ bubbles, title }: { bubbles: BubbleItem[]
                 style={{ zIndex: 2 }}>
                 <div className="font-bold leading-none" style={{
                   color: b.color, fontSize: Math.max(10, s * 0.19),
-                  textShadow: `0 1px 3px rgba(0,0,0,0.25), 0 0 6px ${b.bgColor}88`,
-                  filter: "drop-shadow(0 0 1px rgba(0,0,0,0.15))",
+                  textShadow: "0 1px 2px rgba(0,0,0,0.2)",
                 }}>
                   {b.amount}
                 </div>
