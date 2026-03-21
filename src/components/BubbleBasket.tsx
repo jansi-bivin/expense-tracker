@@ -330,11 +330,11 @@ export default function BubbleBasket({ bubbles, title }: { bubbles: BubbleItem[]
                     <stop offset="60%" stopColor="white" stopOpacity="0.05" />
                     <stop offset="100%" stopColor="white" stopOpacity="0" />
                   </radialGradient>
-                  {/* Rim light — edge glow for depth */}
+                  {/* Rim light — colored edge glow for vibrant depth */}
                   <radialGradient id={`${id}-rim`} cx="0.5" cy="0.5" r="0.5">
-                    <stop offset="75%" stopColor="white" stopOpacity="0" />
-                    <stop offset="92%" stopColor="white" stopOpacity="0.12" />
-                    <stop offset="100%" stopColor="white" stopOpacity="0.04" />
+                    <stop offset="70%" stopColor={b.color} stopOpacity="0" />
+                    <stop offset="88%" stopColor={b.color} stopOpacity="0.45" />
+                    <stop offset="100%" stopColor={b.color} stopOpacity="0.15" />
                   </radialGradient>
                   {/* Bottom caustic / reflected light */}
                   <radialGradient id={`${id}-caust`} cx="0.58" cy="0.78" r="0.2" fx="0.6" fy="0.8">
@@ -377,9 +377,9 @@ export default function BubbleBasket({ bubbles, title }: { bubbles: BubbleItem[]
                 <circle cx={s/2} cy={s/2} r={s/2 - 1} fill={`url(#${id}-spec2)`} />
                 {/* Bottom caustic reflection */}
                 <circle cx={s/2} cy={s/2} r={s/2 - 1} fill={`url(#${id}-caust)`} />
-                {/* Colored border ring */}
+                {/* Colored border ring — vivid for vibrant look */}
                 <circle cx={s/2} cy={s/2} r={s/2 - 1}
-                  fill="none" stroke={`${b.color}44`} strokeWidth="1.5" />
+                  fill="none" stroke={`${b.color}cc`} strokeWidth="2.5" />
                 {/* Bright specular dot — the "window reflection" */}
                 <ellipse cx={s * 0.34} cy={s * 0.26} rx={s * 0.09} ry={s * 0.065}
                   fill="white" opacity="0.7"
