@@ -382,6 +382,10 @@ export default function BubbleBasket({ bubbles, title }: { bubbles: BubbleItem[]
                 {/* Outer colored border ring */}
                 <circle cx={s/2} cy={s/2} r={s/2 - 1}
                   fill="none" stroke={`${b.color}dd`} strokeWidth="1.5" />
+                {/* Bottom crescent — reflected ambient floor light */}
+                <ellipse cx={s * 0.5} cy={s * 0.82} rx={s * 0.22} ry={s * 0.07}
+                  fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="1.5"
+                  style={{ filter: "blur(1px)" }} />
                 {/* Inner iridescent ring — creates depth like a real bubble wall */}
                 <circle cx={s/2} cy={s/2} r={s/2 - 3}
                   fill="none" stroke="rgba(180,230,255,0.18)" strokeWidth="1" />
