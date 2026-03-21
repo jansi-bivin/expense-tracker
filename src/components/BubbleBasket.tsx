@@ -362,14 +362,6 @@ export default function BubbleBasket({ bubbles, title }: { bubbles: BubbleItem[]
           <div key={b.id} ref={el => { eRef.current[i] = el; }}
             className="absolute top-0 left-0"
             style={{ width: s, willChange: "transform", zIndex: 1 }}>
-            {/* Subtle drop shadow under bubble */}
-            <div style={{
-              position: "absolute", bottom: -2, left: "20%", width: "60%", height: "12%",
-              borderRadius: "50%",
-              background: "radial-gradient(ellipse, rgba(0,0,0,0.10) 0%, transparent 70%)",
-              filter: "blur(2px)",
-              pointerEvents: "none",
-            }} />
             <div style={{ width: s, height: s, position: "relative", cursor: "grab" }}>
               <svg width={s} height={s} viewBox={`0 0 ${s} ${s}`}
                 style={{ position: "absolute", top: 0, left: 0 }}>
@@ -417,14 +409,6 @@ export default function BubbleBasket({ bubbles, title }: { bubbles: BubbleItem[]
                 )}
               </div>
             </div>
-            {b.isOver && (
-              <div style={{
-                position: "absolute", inset: 0, borderRadius: "50%",
-                boxShadow: `0 0 16px ${b.color}50, 0 0 32px ${b.color}25`,
-                pointerEvents: "none",
-                animation: "bubble-pulse 2s ease-in-out infinite",
-              }} />
-            )}
             <div className="text-center mt-1 leading-tight truncate" style={{
               fontSize: Math.max(8, Math.min(10, s * 0.15)),
               color: "var(--text-secondary)",
