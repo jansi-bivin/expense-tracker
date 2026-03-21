@@ -147,7 +147,7 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
       let size = MIN + norm * (MAX - MIN);
       if (isOver) size = Math.min(size * 1.15, MAX * 1.2);
       const color = noCap ? "#7b6cf6" : pct > 100 ? "#f87171" : pct > 75 ? "#fbbf24" : "#4ade80";
-      const bgColor = "rgba(255,255,255,0.06)";
+      const bgColor = noCap ? "rgba(123,108,246,0.18)" : pct > 100 ? "rgba(255,180,180,0.22)" : pct > 75 ? "rgba(255,230,150,0.18)" : "rgba(150,255,200,0.15)";
       const rem = eCap - spent;
       return {
         id: c.id, label: c.name, amount: fmt(spent),
