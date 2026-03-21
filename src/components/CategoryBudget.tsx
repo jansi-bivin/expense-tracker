@@ -147,7 +147,7 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
       let size = MIN + norm * (MAX - MIN);
       if (isOver) size = Math.min(size * 1.15, MAX * 1.2);
       const color = noCap ? "rgba(123,108,246,0.7)" : pct > 100 ? "#f87171" : pct > 75 ? "#fbbf24" : "#4ade80";
-      const bgColor = noCap ? "rgba(123,108,246,0.1)" : pct > 100 ? "rgba(248,113,113,0.12)" : pct > 75 ? "rgba(251,191,36,0.1)" : "rgba(74,222,128,0.08)";
+      const bgColor = noCap ? "rgba(123,108,246,0.18)" : pct > 100 ? "rgba(255,180,180,0.22)" : pct > 75 ? "rgba(255,230,150,0.18)" : "rgba(150,255,200,0.15)";
       const rem = eCap - spent;
       return {
         id: c.id, label: c.name, amount: fmt(spent),
@@ -614,47 +614,56 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
           </div>
         )}
 
-        {isPrimary ? (
-          <div className="flex justify-between items-end mb-4">
-            <div>
-              <div className="text-[11px] font-medium mb-1" style={{ color: "var(--text-tertiary)" }}>Total Spent</div>
-              <div className="amount-large amount-debit">{fmt(totalSpent)}</div>
-              <div className="text-xs mt-1" style={{ color: "var(--text-tertiary)" }}>of {fmt(totalCap)} budget</div>
-            </div>
-            <div className="text-right">
-              <div className="text-[11px] font-medium mb-1" style={{ color: "var(--text-tertiary)" }}>Remaining</div>
-              <div className="text-2xl font-extrabold" style={{ color: totalRemaining >= 0 ? "var(--accent-green)" : "var(--accent-red)" }}>
-                {totalRemaining >= 0 ? fmt(totalRemaining) : "-" + fmt(-totalRemaining)}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="text-center mb-4">
-            <div className="text-[11px] font-medium mb-2" style={{ color: "var(--text-tertiary)" }}>Monthly Budget Remaining</div>
-            <div className="text-4xl font-extrabold tracking-tight" style={{ color: totalRemainingPct > 25 ? "var(--accent-green)" : totalRemainingPct > 10 ? "var(--accent-orange)" : "var(--accent-red)" }}>
-              {pctFmt(totalRemainingPct)}
-            </div>
-            <div className="text-xs mt-2" style={{ color: "var(--text-tertiary)" }}>
-              {totalRemainingPct > 50 ? "Going great! Plenty of budget left 👍"
-                : totalRemainingPct > 25 ? "Past halfway — spend wisely"
-                : totalRemainingPct > 10 ? "Running low — be careful"
-                : "⚠️ Almost out of budget"}
-            </div>
-          </div>
-        )}
-
-        <div className="progress-track" style={{ height: "8px" }}>
-          <div className={`progress-fill ${totalPct >= 90 ? "progress-fill-red" : totalPct >= 75 ? "progress-fill-yellow" : "progress-fill-green"}`}
-            style={{ width: `${totalPct}%`, height: "8px" }} />
-        </div>
-        <div className="text-[11px] mt-2 text-right font-medium" style={{ color: "var(--text-tertiary)" }}>
-          {pctFmt(totalPct)} used
-        </div>
+        {/* Summary merged into basket — no separate card */}
       </div>
 
-      {/* ═══ Bubble Overview ═══ */}
+      {/* ═══ Bubble Overview with integrated summary ═══ */}
       {monthlyBubbles.length > 0 && (
-        <div className="card p-3 mb-4 animate-slide-up">
+        <div className="card p-4 mb-4 animate-slide-up">
+          {/* Inline summary row */}
+          <div className="flex justify-between items-center mb-2 px-1">
+            {isPrimary ? (
+              <>
+                <div>
+                  <div className="text-[10px] font-medium" style={{ color: "var(--text-tertiary)" }}>Spent</div>
+                  <div className="text-base font-extrabold amount-debit">{fmt(totalSpent)}</div>
+                </div>
+                <div className="text-center flex-1 mx-3">
+                  <div className="progress-track" style={{ height: "6px", borderRadius: 3 }}>
+                    <div className={`progress-fill ${totalPct >= 90 ? "progress-fill-red" : totalPct >= 75 ? "progress-fill-yellow" : "progress-fill-green"}`}
+                      style={{ width: `${Math.min(totalPct, 100)}%`, height: "6px", borderRadius: 3 }} />
+                  </div>
+                  <div className="text-[9px] mt-1 font-medium" style={{ color: "var(--text-tertiary)" }}>
+                    {pctFmt(totalPct)} of {fmt(totalCap)}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-[10px] font-medium" style={{ color: "var(--text-tertiary)" }}>Left</div>
+                  <div className="text-base font-extrabold" style={{ color: totalRemaining >= 0 ? "var(--accent-green)" : "var(--accent-red)" }}>
+                    {totalRemaining >= 0 ? fmt(totalRemaining) : "-" + fmt(-totalRemaining)}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <div className="text-[10px] font-medium" style={{ color: "var(--text-tertiary)" }}>Budget Left</div>
+                  <div className="text-lg font-extrabold" style={{ color: totalRemainingPct > 25 ? "var(--accent-green)" : totalRemainingPct > 10 ? "var(--accent-orange)" : "var(--accent-red)" }}>
+                    {pctFmt(totalRemainingPct)}
+                  </div>
+                </div>
+                <div className="flex-1 mx-3">
+                  <div className="progress-track" style={{ height: "6px", borderRadius: 3 }}>
+                    <div className={`progress-fill ${totalPct >= 90 ? "progress-fill-red" : totalPct >= 75 ? "progress-fill-yellow" : "progress-fill-green"}`}
+                      style={{ width: `${Math.min(totalPct, 100)}%`, height: "6px", borderRadius: 3 }} />
+                  </div>
+                </div>
+                <div className="text-[10px] font-medium text-right" style={{ color: "var(--text-tertiary)" }}>
+                  {totalRemainingPct > 50 ? "👍" : totalRemainingPct > 25 ? "🤔" : totalRemainingPct > 10 ? "😬" : "⚠️"}
+                </div>
+              </>
+            )}
+          </div>
           <BubbleBasket bubbles={monthlyBubbles} title={now.toLocaleDateString("en-IN", { month: "short", year: "numeric" }).toUpperCase()} />
         </div>
       )}
