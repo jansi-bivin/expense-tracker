@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useState, useCallback } from "react";
+import { useRef, useEffect, useState, useCallback, useMemo } from "react";
 
 export interface BubbleItem {
   id: number;
@@ -18,7 +18,8 @@ interface Body {
   x: number; y: number; vx: number; vy: number; r: number; held: boolean;
 }
 
-const G = 0.35, DAMP = 0.93, BOUNCE = 0.3, BOWL = 45, PAD = 8, LABEL_H = 22, RIM = 28;
+const G = 0.35, DAMP = 0.92, BOUNCE = 0.25, BOWL = 45, PAD = 12, LABEL_H = 22, RIM = 32;
+const WALL_MARGIN = 4; // extra inset so bubbles never clip the basket edge
 
 export default function BubbleBasket({ bubbles, title }: { bubbles: BubbleItem[]; title?: string }) {
   const cRef = useRef<HTMLDivElement>(null);
@@ -30,10 +31,9 @@ export default function BubbleBasket({ bubbles, title }: { bubbles: BubbleItem[]
   bblRef.current = bubbles;
   const [w, setW] = useState(0);
 
-  // Estimate settled height: rim + stacked rows + bowl curve + label space
   const avgSize = bubbles.length > 0 ? bubbles.reduce((s, b) => s + b.size, 0) / bubbles.length : 60;
   const rows = Math.ceil(bubbles.length / 3);
-  const h = Math.max(180, Math.min(400, RIM + rows * avgSize * 0.85 + BOWL + LABEL_H + PAD));
+  const h = Math.max(200, Math.min(420, RIM + rows * avgSize * 0.85 + BOWL + LABEL_H + PAD + 10));
   const bubbleKey = bubbles.map(b => b.id).join(",");
 
   // Measure container width
@@ -47,36 +47,34 @@ export default function BubbleBasket({ bubbles, title }: { bubbles: BubbleItem[]
   }, []);
 
   // Bucket geometry: tapers inward toward the bottom
-  const TAPER = 0.15; // how much narrower the bottom is vs top (0 = straight, 0.3 = very tapered)
+  const TAPER = 0.18;
 
-  // Bowl floor: parabolic curve — deepest at center, curves up at edges
+  // Bowl floor: parabolic curve
   const floorAt = useCallback((x: number) => {
     if (w <= 0) return h;
     const n = (x - w / 2) / (w / 2);
     return h - PAD - LABEL_H - BOWL * n * n;
   }, [w, h]);
 
-  // Bucket side walls: at a given y, compute the left and right wall x positions
-  // Wider at rim (y=RIM), narrower at bottom (y=h)
+  // Tapered bucket walls with extra margin so bubbles stay inside
   const wallsAt = useCallback((y: number) => {
-    if (w <= 0) return { left: PAD, right: w - PAD };
-    const t = Math.max(0, Math.min(1, (y - RIM) / (h - RIM - PAD))); // 0 at rim, 1 at bottom
+    if (w <= 0) return { left: PAD + WALL_MARGIN, right: w - PAD - WALL_MARGIN };
+    const t = Math.max(0, Math.min(1, (y - RIM) / (h - RIM - PAD)));
     const inset = t * TAPER * w * 0.5;
-    return { left: PAD + inset, right: w - PAD - inset };
+    return { left: PAD + inset + WALL_MARGIN, right: w - PAD - inset - WALL_MARGIN };
   }, [w, h]);
 
-  // Initialize physics bodies — drop from above with stagger
+  // Initialize physics bodies
   useEffect(() => {
     if (w <= 0 || bubbles.length === 0) return;
     bRef.current = bubbles.map((b, i) => ({
-      x: w * 0.15 + w * 0.7 * (bubbles.length > 1 ? i / (bubbles.length - 1) : 0.5),
+      x: w * 0.2 + w * 0.6 * (bubbles.length > 1 ? i / (bubbles.length - 1) : 0.5),
       y: -b.size - i * 30 - Math.random() * 40,
-      vx: (Math.random() - 0.5) * 1.5, vy: 0,
+      vx: (Math.random() - 0.5) * 1.2, vy: 0,
       r: b.size / 2, held: false,
     }));
   }, [bubbleKey, w]);
 
-  // Keep radii in sync when sizes change without reinit
   useEffect(() => {
     bubbles.forEach((b, i) => { if (bRef.current[i]) bRef.current[i].r = b.size / 2; });
   });
@@ -88,7 +86,6 @@ export default function BubbleBasket({ bubbles, title }: { bubbles: BubbleItem[]
     const tick = () => {
       const bs = bRef.current;
 
-      // Apply forces
       for (const b of bs) {
         if (b.held) continue;
         b.vy += G;
@@ -97,13 +94,13 @@ export default function BubbleBasket({ bubbles, title }: { bubbles: BubbleItem[]
 
         // Bowl floor
         const fl = floorAt(b.x);
-        if (b.y + b.r > fl) { b.y = fl - b.r; b.vy *= -BOUNCE; b.vx *= 0.9; }
-        // Tapered bucket walls
+        if (b.y + b.r > fl) { b.y = fl - b.r; b.vy *= -BOUNCE; b.vx *= 0.85; }
+        // Tapered bucket walls — hard clamp
         const walls = wallsAt(b.y);
-        if (b.x - b.r < walls.left) { b.x = walls.left + b.r; b.vx *= -BOUNCE; }
-        if (b.x + b.r > walls.right) { b.x = walls.right - b.r; b.vx *= -BOUNCE; }
-        // Rim (bubbles can peek above but not fly away)
-        if (b.y - b.r < RIM - 20) { b.y = RIM - 20 + b.r; b.vy *= -BOUNCE; }
+        if (b.x - b.r < walls.left) { b.x = walls.left + b.r; b.vx = Math.abs(b.vx) * BOUNCE; }
+        if (b.x + b.r > walls.right) { b.x = walls.right - b.r; b.vx = -Math.abs(b.vx) * BOUNCE; }
+        // Ceiling: bubbles must not escape above the rim
+        if (b.y - b.r < RIM) { b.y = RIM + b.r; b.vy = Math.abs(b.vy) * BOUNCE; }
       }
 
       // Circle-circle collisions
@@ -128,7 +125,16 @@ export default function BubbleBasket({ bubbles, title }: { bubbles: BubbleItem[]
         }
       }
 
-      // Update DOM positions directly (no React re-render)
+      // Post-collision: re-clamp all bodies inside walls (prevents collision pushout escapes)
+      for (const b of bs) {
+        const walls = wallsAt(b.y);
+        if (b.x - b.r < walls.left) b.x = walls.left + b.r;
+        if (b.x + b.r > walls.right) b.x = walls.right - b.r;
+        const fl = floorAt(b.x);
+        if (b.y + b.r > fl) b.y = fl - b.r;
+        if (b.y - b.r < RIM) b.y = RIM + b.r;
+      }
+
       for (let i = 0; i < bs.length; i++) {
         const el = eRef.current[i];
         if (el) el.style.transform = `translate(${bs[i].x - bs[i].r}px,${bs[i].y - bs[i].r}px)`;
@@ -139,7 +145,7 @@ export default function BubbleBasket({ bubbles, title }: { bubbles: BubbleItem[]
 
     raf.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf.current);
-  }, [w, floorAt]);
+  }, [w, floorAt, wallsAt]);
 
   // Touch & mouse drag events
   useEffect(() => {
@@ -183,7 +189,6 @@ export default function BubbleBasket({ bubbles, title }: { bubbles: BubbleItem[]
       bRef.current[i].held = false;
       const el = eRef.current[i];
       if (el) el.style.zIndex = "1";
-      // Short distance = tap → drill down; long distance = drag
       if (dist < 10) bblRef.current[i]?.onClick();
       drg.current = null;
     };
@@ -204,49 +209,100 @@ export default function BubbleBasket({ bubbles, title }: { bubbles: BubbleItem[]
     };
   }, []);
 
-  // Bucket SVG: trapezoid walls + curved bottom + rim
+  // Unique SVG gradient IDs for this instance
+  const svgId = useMemo(() => `bb-${Math.random().toString(36).slice(2, 8)}`, []);
+
+  // Basket SVG path
   const bucketSvg = w > 0 ? (() => {
     const topL = PAD, topR = w - PAD;
     const botL = PAD + TAPER * w * 0.5, botR = w - PAD - TAPER * w * 0.5;
     const rimY = RIM;
     const botY = h - PAD - LABEL_H;
-    // Curved bottom
     const bottomPts: string[] = [];
     for (let x = botL; x <= botR; x += 2) {
       const n = (x - w / 2) / ((botR - botL) / 2);
       const y = botY - BOWL * (1 - n * n) + BOWL;
       bottomPts.push(`${x},${Math.min(y, botY + 6)}`);
     }
-    // Full bucket path: left wall → bottom curve → right wall
     const path = `M${topL},${rimY} L${botL},${botY - BOWL + 6} `
       + bottomPts.map(p => `L${p}`).join(" ")
       + ` L${topR},${rimY}`;
-    return path;
-  })() : "";
+    return { path, topL, topR, botL, botR, rimY, botY };
+  })() : null;
+
+  // Wicker horizontal lines for basket texture
+  const wickerLines = useMemo(() => {
+    if (!bucketSvg || w <= 0) return [];
+    const { rimY, botY, botL, topL, botR, topR } = bucketSvg;
+    const lines: { y: number; x1: number; x2: number }[] = [];
+    const step = 12;
+    for (let y = rimY + step; y < botY - 4; y += step) {
+      const t = (y - rimY) / (botY - rimY);
+      const lx = topL + t * (botL - topL);
+      const rx = topR + t * (botR - topR);
+      lines.push({ y, x1: lx + 2, x2: rx - 2 });
+    }
+    return lines;
+  }, [bucketSvg, w]);
 
   if (bubbles.length === 0) return null;
 
   return (
     <div ref={cRef} className="relative overflow-hidden rounded-2xl"
       style={{ height: h, touchAction: "none", userSelect: "none" }}>
-      {/* Bucket outline */}
+      {/* Basket SVG */}
       {bucketSvg && (
         <svg className="absolute inset-0 pointer-events-none" width={w} height={h}>
-          {/* Bucket body */}
-          <path d={bucketSvg} fill="rgba(255,255,255,0.02)" stroke="rgba(255,255,255,0.1)" strokeWidth="1.5" strokeLinejoin="round" />
-          {/* Rim band */}
-          <rect x={PAD - 1} y={RIM - 4} width={w - PAD * 2 + 2} height={8} rx={4}
-            fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.12)" strokeWidth="1" />
+          <defs>
+            {/* Basket wicker gradient */}
+            <linearGradient id={`${svgId}-wicker`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="rgba(180,140,80,0.18)" />
+              <stop offset="50%" stopColor="rgba(160,120,60,0.12)" />
+              <stop offset="100%" stopColor="rgba(120,90,40,0.18)" />
+            </linearGradient>
+            {/* Rim metallic gradient */}
+            <linearGradient id={`${svgId}-rim`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="rgba(220,200,160,0.25)" />
+              <stop offset="40%" stopColor="rgba(180,160,120,0.15)" />
+              <stop offset="100%" stopColor="rgba(140,120,80,0.25)" />
+            </linearGradient>
+          </defs>
+
+          {/* Basket body fill */}
+          <path d={bucketSvg.path} fill={`url(#${svgId}-wicker)`}
+            stroke="rgba(180,150,100,0.22)" strokeWidth="2" strokeLinejoin="round" />
+
+          {/* Wicker horizontal weave lines */}
+          {wickerLines.map((l, i) => (
+            <line key={i} x1={l.x1} y1={l.y} x2={l.x2} y2={l.y}
+              stroke={i % 2 === 0 ? "rgba(180,150,100,0.12)" : "rgba(140,110,70,0.10)"}
+              strokeWidth="1" strokeDasharray={i % 2 === 0 ? "6 4" : "4 6"} />
+          ))}
+
+          {/* Inner shadow on left & right walls */}
+          <path d={bucketSvg.path} fill="none"
+            stroke="rgba(0,0,0,0.06)" strokeWidth="6" strokeLinejoin="round"
+            style={{ filter: "blur(3px)" }} />
+
+          {/* Rim band — thicker, with a highlight */}
+          <rect x={PAD - 2} y={RIM - 6} width={w - PAD * 2 + 4} height={12} rx={6}
+            fill={`url(#${svgId}-rim)`} stroke="rgba(180,150,100,0.25)" strokeWidth="1.5" />
+          {/* Rim highlight line */}
+          <rect x={PAD + 4} y={RIM - 4} width={w - PAD * 2 - 8} height={2} rx={1}
+            fill="rgba(255,255,255,0.12)" />
+
           {/* Month label on rim */}
           {title && (
             <text x={w / 2} y={RIM + 1} textAnchor="middle" dominantBaseline="middle"
-              fill="rgba(255,255,255,0.35)" fontSize="10" fontWeight="600" fontFamily="inherit">
+              fill="rgba(255,255,255,0.45)" fontSize="10" fontWeight="700" fontFamily="inherit"
+              letterSpacing="0.5">
               {title}
             </text>
           )}
         </svg>
       )}
 
+      {/* Bubble elements */}
       {bubbles.map((b, i) => (
         <div key={b.id} ref={el => { eRef.current[i] = el; }}
           className="absolute top-0 left-0"
@@ -254,33 +310,57 @@ export default function BubbleBasket({ bubbles, title }: { bubbles: BubbleItem[]
           <div className="rounded-full flex flex-col items-center justify-center"
             style={{
               width: b.size, height: b.size,
-              background: b.bgColor,
-              border: `2px solid ${b.color}`,
+              /* Sphere-like radial gradient for 3D look */
+              background: `radial-gradient(ellipse 55% 45% at 40% 35%, rgba(255,255,255,0.25), transparent 60%),
+                           radial-gradient(ellipse 100% 100% at 50% 50%, ${b.bgColor}, ${b.color}22)`,
+              border: `2px solid ${b.color}88`,
               boxShadow: b.isOver
-                ? `0 0 12px ${b.color}40, 0 0 24px ${b.color}20`
-                : "0 2px 8px rgba(0,0,0,0.15)",
+                ? `0 0 14px ${b.color}50, 0 0 28px ${b.color}25, inset 0 -4px 8px ${b.color}15`
+                : `0 4px 12px rgba(0,0,0,0.2), inset 0 -3px 6px rgba(0,0,0,0.08), inset 0 2px 4px rgba(255,255,255,0.1)`,
               animation: b.isOver ? "bubble-pulse 2s ease-in-out infinite" : "none",
               cursor: "grab",
+              position: "relative",
+              overflow: "hidden",
             }}>
-            <div className="font-bold leading-none"
-              style={{ color: b.color, fontSize: Math.max(10, b.size * 0.19) }}>
+            {/* Glass highlight — top-left crescent */}
+            <div style={{
+              position: "absolute",
+              top: "8%", left: "15%",
+              width: "40%", height: "30%",
+              borderRadius: "50%",
+              background: "linear-gradient(180deg, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0) 100%)",
+              pointerEvents: "none",
+            }} />
+            {/* Bottom reflection */}
+            <div style={{
+              position: "absolute",
+              bottom: "12%", right: "20%",
+              width: "25%", height: "15%",
+              borderRadius: "50%",
+              background: "radial-gradient(ellipse, rgba(255,255,255,0.12) 0%, transparent 70%)",
+              pointerEvents: "none",
+            }} />
+            <div className="font-bold leading-none" style={{
+              color: b.color, fontSize: Math.max(10, b.size * 0.19),
+              textShadow: "0 1px 2px rgba(0,0,0,0.15)",
+              position: "relative", zIndex: 1,
+            }}>
               {b.amount}
             </div>
             {b.detail && b.size >= 52 && (
-              <div className="font-semibold mt-0.5 leading-none"
-                style={{
-                  fontSize: Math.max(7, b.size * 0.12),
-                  color: b.isOver ? "#f87171" : "var(--text-tertiary)",
-                }}>
+              <div className="font-semibold mt-0.5 leading-none" style={{
+                fontSize: Math.max(7, b.size * 0.12),
+                color: b.isOver ? "#f87171" : "var(--text-tertiary)",
+                position: "relative", zIndex: 1,
+              }}>
                 {b.detail}
               </div>
             )}
           </div>
-          <div className="text-center mt-1 leading-tight truncate"
-            style={{
-              fontSize: Math.max(8, Math.min(10, b.size * 0.15)),
-              color: "var(--text-secondary)",
-            }}>
+          <div className="text-center mt-1 leading-tight truncate" style={{
+            fontSize: Math.max(8, Math.min(10, b.size * 0.15)),
+            color: "var(--text-secondary)",
+          }}>
             {b.label}
           </div>
         </div>
