@@ -147,7 +147,7 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
       let size = MIN + norm * (MAX - MIN);
       if (isOver) size = Math.min(size * 1.15, MAX * 1.2);
       const color = noCap ? "#a78bfa" : pct > 100 ? "#f87171" : pct > 75 ? "#fbbf24" : "#34d399";
-      const bgColor = `${color}38`; // ~22% opacity tint for vibrant bubble fill
+      const bgColor = `${color}14`; // ~8% opacity — nearly transparent like a real soap bubble
       const rem = eCap - spent;
       return {
         id: c.id, label: c.name, amount: fmt(spent),

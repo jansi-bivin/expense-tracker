@@ -311,35 +311,37 @@ export default function BubbleBasket({ bubbles, title }: { bubbles: BubbleItem[]
               // All bubbles use same neutral glass gradient — color comes only from border/stroke
               return (
                 <g key={b.id}>
-                  {/* Main sphere gradient — neutral glass, same for ALL colors */}
-                  <radialGradient id={`${id}-base`} cx="0.42" cy="0.38" r="0.55" fx="0.42" fy="0.38">
-                    <stop offset="0%" stopColor="white" stopOpacity="0.45" />
-                    <stop offset="40%" stopColor="white" stopOpacity="0.15" />
-                    <stop offset="75%" stopColor="white" stopOpacity="0.05" />
-                    <stop offset="100%" stopColor="black" stopOpacity="0.08" />
+                  {/* Main sphere gradient — very transparent like real soap bubble */}
+                  <radialGradient id={`${id}-base`} cx="0.42" cy="0.38" r="0.6" fx="0.42" fy="0.38">
+                    <stop offset="0%" stopColor="white" stopOpacity="0.55" />
+                    <stop offset="30%" stopColor="white" stopOpacity="0.08" />
+                    <stop offset="70%" stopColor="white" stopOpacity="0.02" />
+                    <stop offset="100%" stopColor="black" stopOpacity="0.04" />
                   </radialGradient>
                   {/* Top specular highlight — bright white glint */}
-                  <radialGradient id={`${id}-spec`} cx="0.35" cy="0.28" r="0.28" fx="0.32" fy="0.24">
-                    <stop offset="0%" stopColor="white" stopOpacity="0.85" />
-                    <stop offset="40%" stopColor="white" stopOpacity="0.35" />
+                  <radialGradient id={`${id}-spec`} cx="0.35" cy="0.28" r="0.26" fx="0.32" fy="0.24">
+                    <stop offset="0%" stopColor="white" stopOpacity="0.95" />
+                    <stop offset="35%" stopColor="white" stopOpacity="0.45" />
                     <stop offset="100%" stopColor="white" stopOpacity="0" />
                   </radialGradient>
                   {/* Secondary highlight — softer, wider */}
                   <radialGradient id={`${id}-spec2`} cx="0.48" cy="0.32" r="0.4" fx="0.45" fy="0.3">
-                    <stop offset="0%" stopColor="white" stopOpacity="0.2" />
-                    <stop offset="60%" stopColor="white" stopOpacity="0.05" />
+                    <stop offset="0%" stopColor="white" stopOpacity="0.18" />
+                    <stop offset="60%" stopColor="white" stopOpacity="0.04" />
                     <stop offset="100%" stopColor="white" stopOpacity="0" />
                   </radialGradient>
-                  {/* Rim light — colored edge glow for vibrant depth */}
+                  {/* Iridescent rim — thin-film interference shimmer like real soap bubble */}
                   <radialGradient id={`${id}-rim`} cx="0.5" cy="0.5" r="0.5">
-                    <stop offset="70%" stopColor={b.color} stopOpacity="0" />
-                    <stop offset="88%" stopColor={b.color} stopOpacity="0.45" />
-                    <stop offset="100%" stopColor={b.color} stopOpacity="0.15" />
+                    <stop offset="62%" stopColor={b.color} stopOpacity="0" />
+                    <stop offset="78%" stopColor={b.color} stopOpacity="0.55" />
+                    <stop offset="88%" stopColor="rgba(180,220,255,1)" stopOpacity="0.3" />
+                    <stop offset="95%" stopColor={b.color} stopOpacity="0.65" />
+                    <stop offset="100%" stopColor="white" stopOpacity="0.2" />
                   </radialGradient>
                   {/* Bottom caustic / reflected light */}
-                  <radialGradient id={`${id}-caust`} cx="0.58" cy="0.78" r="0.2" fx="0.6" fy="0.8">
-                    <stop offset="0%" stopColor="white" stopOpacity="0.22" />
-                    <stop offset="60%" stopColor="white" stopOpacity="0.06" />
+                  <radialGradient id={`${id}-caust`} cx="0.58" cy="0.78" r="0.22" fx="0.6" fy="0.8">
+                    <stop offset="0%" stopColor="white" stopOpacity="0.3" />
+                    <stop offset="55%" stopColor="white" stopOpacity="0.08" />
                     <stop offset="100%" stopColor="white" stopOpacity="0" />
                   </radialGradient>
                   {/* Shadow beneath bubble */}
@@ -377,17 +379,20 @@ export default function BubbleBasket({ bubbles, title }: { bubbles: BubbleItem[]
                 <circle cx={s/2} cy={s/2} r={s/2 - 1} fill={`url(#${id}-spec2)`} />
                 {/* Bottom caustic reflection */}
                 <circle cx={s/2} cy={s/2} r={s/2 - 1} fill={`url(#${id}-caust)`} />
-                {/* Colored border ring — vivid for vibrant look */}
+                {/* Outer colored border ring */}
                 <circle cx={s/2} cy={s/2} r={s/2 - 1}
-                  fill="none" stroke={`${b.color}cc`} strokeWidth="2.5" />
+                  fill="none" stroke={`${b.color}dd`} strokeWidth="1.5" />
+                {/* Inner iridescent ring — creates depth like a real bubble wall */}
+                <circle cx={s/2} cy={s/2} r={s/2 - 3}
+                  fill="none" stroke="rgba(180,230,255,0.18)" strokeWidth="1" />
                 {/* Bright specular dot — the "window reflection" */}
-                <ellipse cx={s * 0.34} cy={s * 0.26} rx={s * 0.09} ry={s * 0.065}
-                  fill="white" opacity="0.7"
-                  transform={`rotate(-25 ${s * 0.34} ${s * 0.26})`} />
+                <ellipse cx={s * 0.34} cy={s * 0.26} rx={s * 0.10} ry={s * 0.07}
+                  fill="white" opacity="0.9"
+                  transform={`rotate(-28 ${s * 0.34} ${s * 0.26})`} />
                 {/* Tiny secondary specular dot */}
-                <ellipse cx={s * 0.28} cy={s * 0.38} rx={s * 0.035} ry={s * 0.025}
-                  fill="white" opacity="0.35"
-                  transform={`rotate(-25 ${s * 0.28} ${s * 0.38})`} />
+                <ellipse cx={s * 0.28} cy={s * 0.38} rx={s * 0.04} ry={s * 0.028}
+                  fill="white" opacity="0.5"
+                  transform={`rotate(-28 ${s * 0.28} ${s * 0.38})`} />
               </svg>
               {/* Text overlay */}
               <div className="absolute inset-0 flex flex-col items-center justify-center"
