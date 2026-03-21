@@ -308,17 +308,15 @@ export default function BubbleBasket({ bubbles, title }: { bubbles: BubbleItem[]
           <defs>
             {bubbles.map(b => {
               const id = `${svgId}-b${b.id}`;
-              // Derive a bright tint from the accent color for the sphere center
-              // This avoids rgba stacking issues that made red look muddy
-              const bright = b.color.startsWith("#") ? b.color : "#7b6cf6";
+              // All bubbles use same neutral glass gradient — color comes only from border/stroke
               return (
                 <g key={b.id}>
-                  {/* Main sphere gradient — bright white-tinted center, saturated color at edges */}
+                  {/* Main sphere gradient — neutral glass, same for ALL colors */}
                   <radialGradient id={`${id}-base`} cx="0.42" cy="0.38" r="0.55" fx="0.42" fy="0.38">
-                    <stop offset="0%" stopColor="white" stopOpacity="0.55" />
-                    <stop offset="30%" stopColor={bright} stopOpacity="0.18" />
-                    <stop offset="65%" stopColor={bright} stopOpacity="0.35" />
-                    <stop offset="100%" stopColor={bright} stopOpacity="0.55" />
+                    <stop offset="0%" stopColor="white" stopOpacity="0.45" />
+                    <stop offset="40%" stopColor="white" stopOpacity="0.15" />
+                    <stop offset="75%" stopColor="white" stopOpacity="0.05" />
+                    <stop offset="100%" stopColor="black" stopOpacity="0.08" />
                   </radialGradient>
                   {/* Top specular highlight — bright white glint */}
                   <radialGradient id={`${id}-spec`} cx="0.35" cy="0.28" r="0.28" fx="0.32" fy="0.24">
@@ -375,7 +373,9 @@ export default function BubbleBasket({ bubbles, title }: { bubbles: BubbleItem[]
             <div style={{ width: s, height: s, position: "relative", cursor: "grab" }}>
               <svg width={s} height={s} viewBox={`0 0 ${s} ${s}`}
                 style={{ position: "absolute", top: 0, left: 0 }}>
-                {/* Base sphere */}
+                {/* Flat color base — same lightness for all colors */}
+                <circle cx={s/2} cy={s/2} r={s/2 - 1} fill={b.bgColor} />
+                {/* Glass overlay — neutral, identical for all bubbles */}
                 <circle cx={s/2} cy={s/2} r={s/2 - 1} fill={`url(#${id}-base)`} />
                 {/* Rim light for 3D edge */}
                 <circle cx={s/2} cy={s/2} r={s/2 - 1} fill={`url(#${id}-rim)`} />
@@ -385,9 +385,9 @@ export default function BubbleBasket({ bubbles, title }: { bubbles: BubbleItem[]
                 <circle cx={s/2} cy={s/2} r={s/2 - 1} fill={`url(#${id}-spec2)`} />
                 {/* Bottom caustic reflection */}
                 <circle cx={s/2} cy={s/2} r={s/2 - 1} fill={`url(#${id}-caust)`} />
-                {/* Thin glossy border */}
+                {/* Colored border ring */}
                 <circle cx={s/2} cy={s/2} r={s/2 - 1}
-                  fill="none" stroke={`${b.color}55`} strokeWidth="1.5" />
+                  fill="none" stroke={`${b.color}44`} strokeWidth="1.5" />
                 {/* Bright specular dot — the "window reflection" */}
                 <ellipse cx={s * 0.34} cy={s * 0.26} rx={s * 0.09} ry={s * 0.065}
                   fill="white" opacity="0.7"

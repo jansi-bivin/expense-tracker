@@ -564,62 +564,50 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
       {/* Full-screen drill-down overlay */}
       <DrillDownOverlay />
 
-      {/* ═══ Monthly Hero Card ═══ */}
-      <div className="card-gradient-purple shimmer p-5 mb-6 animate-slide-up">
-        <div className="flex items-center justify-between mb-3">
-          <button
-            className="flex items-center gap-2"
-            onClick={() => { if (isPrimary) setShowActiveDays(!showActiveDays); }}
-          >
-            <span className="text-base">💰</span>
-            <span className="section-label" style={{ color: "var(--accent-bright)" }}>
-              {now.toLocaleDateString("en-IN", { month: "long", year: "numeric" })}
+      {/* Active days control — compact, only when needed */}
+      {showActiveDays && isPrimary && (
+        <div className="flex items-center justify-between px-3 py-2 mb-3 rounded-xl animate-fade-in"
+          style={{ background: isScaled ? "rgba(255,179,71,0.08)" : "rgba(255,255,255,0.03)", border: `1px solid ${isScaled ? "rgba(255,179,71,0.15)" : "var(--border)"}` }}>
+          <span className="text-xs font-medium" style={{ color: isScaled ? "var(--accent-orange)" : "var(--text-tertiary)" }}>
+            Active Days
+          </span>
+          <div className="flex items-center gap-2">
+            <button className="w-7 h-7 rounded-lg flex items-center justify-center text-sm font-bold btn-ghost"
+              onClick={() => onActiveDaysUpdate(Math.max(1, activeDays - 1))}>−</button>
+            <span className="text-sm font-bold min-w-[3ch] text-center" style={{ color: isScaled ? "var(--accent-orange)" : "var(--text-primary)" }}>
+              {activeDays}
             </span>
+            <span className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>/ {daysInMonth}</span>
+            <button className="w-7 h-7 rounded-lg flex items-center justify-center text-sm font-bold btn-ghost"
+              onClick={() => onActiveDaysUpdate(Math.min(daysInMonth, activeDays + 1))}>+</button>
             {isScaled && (
-              <span className="text-[10px] font-bold" style={{ color: "var(--accent-orange)" }}>
-                {activeDays}d
-              </span>
-            )}
-          </button>
-        </div>
-
-        {/* Active days — hidden by default, tap month to reveal */}
-        {showActiveDays && isPrimary && (
-          <div className="flex items-center justify-between px-3 py-2 mb-3 rounded-xl animate-fade-in"
-            style={{ background: isScaled ? "rgba(255,179,71,0.08)" : "rgba(255,255,255,0.03)", border: `1px solid ${isScaled ? "rgba(255,179,71,0.15)" : "var(--border)"}` }}>
-            <span className="text-xs font-medium" style={{ color: isScaled ? "var(--accent-orange)" : "var(--text-tertiary)" }}>
-              Active Days
-            </span>
-            <div className="flex items-center gap-2">
-              <button className="w-7 h-7 rounded-lg flex items-center justify-center text-sm font-bold btn-ghost"
-                onClick={() => onActiveDaysUpdate(Math.max(1, activeDays - 1))}>−</button>
-              <span className="text-sm font-bold min-w-[3ch] text-center" style={{ color: isScaled ? "var(--accent-orange)" : "var(--text-primary)" }}>
-                {activeDays}
-              </span>
-              <span className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>/ {daysInMonth}</span>
-              <button className="w-7 h-7 rounded-lg flex items-center justify-center text-sm font-bold btn-ghost"
-                onClick={() => onActiveDaysUpdate(Math.min(daysInMonth, activeDays + 1))}>+</button>
-              {isScaled && (
-                <button className="text-[10px] font-semibold px-2 py-1 rounded-lg"
-                  style={{ color: "var(--accent-orange)", background: "rgba(255,179,71,0.1)" }}
-                  onClick={() => { onActiveDaysUpdate(daysInMonth); setShowActiveDays(false); }}>
-                  Reset
-                </button>
-              )}
-              <button className="text-[10px] font-semibold px-2 py-1 rounded-lg btn-ghost"
-                onClick={() => setShowActiveDays(false)}>
-                Done
+              <button className="text-[10px] font-semibold px-2 py-1 rounded-lg"
+                style={{ color: "var(--accent-orange)", background: "rgba(255,179,71,0.1)" }}
+                onClick={() => { onActiveDaysUpdate(daysInMonth); setShowActiveDays(false); }}>
+                Reset
               </button>
-            </div>
+            )}
+            <button className="text-[10px] font-semibold px-2 py-1 rounded-lg btn-ghost"
+              onClick={() => setShowActiveDays(false)}>
+              Done
+            </button>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Summary merged into basket — no separate card */}
-      </div>
-
-      {/* ═══ Bubble Overview with integrated summary ═══ */}
+      {/* ═══ Monthly Bubble Basket with integrated summary ═══ */}
       {monthlyBubbles.length > 0 && (
         <div className="card p-4 mb-4 animate-slide-up">
+          {/* Month label + active days toggle */}
+          <div className="flex items-center justify-between mb-2 px-1">
+            <button className="flex items-center gap-1.5"
+              onClick={() => { if (isPrimary) setShowActiveDays(!showActiveDays); }}>
+              <span className="text-[11px] font-bold" style={{ color: "var(--text-tertiary)" }}>
+                {now.toLocaleDateString("en-IN", { month: "short", year: "numeric" }).toUpperCase()}
+              </span>
+              {isScaled && <span className="text-[9px] font-bold" style={{ color: "var(--accent-orange)" }}>{activeDays}d</span>}
+            </button>
+          </div>
           {/* Inline summary row */}
           <div className="flex justify-between items-center mb-2 px-1">
             {isPrimary ? (
@@ -664,7 +652,7 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
               </>
             )}
           </div>
-          <BubbleBasket bubbles={monthlyBubbles} title={now.toLocaleDateString("en-IN", { month: "short", year: "numeric" }).toUpperCase()} />
+          <BubbleBasket bubbles={monthlyBubbles} />
         </div>
       )}
       {/* F-7: Unused categories hidden from view */}
@@ -678,82 +666,70 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
         </div>
       )}
 
-      {/* ═══ Yearly Categories ═══ */}
+      {/* ═══ Yearly Bubble Basket with integrated summary ═══ */}
       {yearlyCategories.length > 0 && (
         <>
-          {/* Yearly Hero Card */}
-          <div className="card-gradient-purple shimmer p-5 mb-4 animate-slide-up" style={{ opacity: 0.9 }}>
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-base">📅</span>
-              <span className="section-label" style={{ color: "var(--accent-bright)" }}>
-                {currentYear}
-              </span>
-            </div>
-
-            {isPrimary ? (
-              <div className="flex justify-between items-end mb-4">
-                <div>
-                  <div className="text-[11px] font-medium mb-1" style={{ color: "var(--text-tertiary)" }}>Yearly Spent</div>
-                  <div className="text-xl font-extrabold" style={{ color: "var(--text-primary)" }}>{fmt(yearlyTotalSpent)}</div>
-                  <div className="text-xs mt-1" style={{ color: "var(--text-tertiary)" }}>of {fmt(yearlyTotalCap)} budget</div>
-                </div>
-                <div className="text-right">
-                  <div className="text-[11px] font-medium mb-1" style={{ color: "var(--text-tertiary)" }}>
-                    By month {monthsElapsed}
-                  </div>
-                  <div className="text-lg font-extrabold" style={{ color: yearlyOnTrack ? "var(--accent-green)" : "var(--accent-red)" }}>
-                    {yearlyOnTrack
-                      ? fmt(Math.abs(yearlyProportionalRemaining)) + " under"
-                      : fmt(Math.abs(yearlyProportionalRemaining)) + " over"
-                    }
-                  </div>
-                  <div className="text-[10px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>
-                    expected: {fmt(Math.round(yearlyExpectedSpend))}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center mb-4">
-                <div className="text-[11px] font-medium mb-2" style={{ color: "var(--text-tertiary)" }}>Yearly Budget</div>
-                <div className="text-2xl font-extrabold" style={{ color: yearlyOnTrack ? "var(--accent-green)" : "var(--accent-red)" }}>
-                  {yearlyOnTrack ? "On Track" : "Over Pace"}
-                </div>
-                <div className="text-xs mt-1" style={{ color: "var(--text-tertiary)" }}>
-                  {pctFmt(yearlyPct)} used · expected {pctFmt(yearlyExpectedPct)} by now
-                </div>
-              </div>
-            )}
-
-            {/* Progress bar with expected marker */}
-            <div className="relative">
-              <div className="progress-track" style={{ height: "8px" }}>
-                <div className={`progress-fill ${yearlyPct > yearlyExpectedPct ? "progress-fill-red" : yearlyPct > yearlyExpectedPct * 0.8 ? "progress-fill-yellow" : "progress-fill-green"}`}
-                  style={{ width: `${yearlyPct}%`, height: "8px" }} />
-              </div>
-              {/* Expected pace marker */}
-              <div className="absolute top-0 h-2 w-0.5" style={{
-                left: `${yearlyExpectedPct}%`,
-                background: "var(--text-tertiary)",
-                opacity: 0.6,
-              }} />
-            </div>
-            <div className="flex justify-between mt-2">
-              <span className="text-[10px] font-medium" style={{ color: "var(--text-tertiary)" }}>
-                {pctFmt(yearlyPct)} used
-              </span>
-              <span className="text-[10px]" style={{ color: "var(--text-tertiary)", opacity: 0.6 }}>
-                ▏pace: {pctFmt(yearlyExpectedPct)}
-              </span>
-            </div>
-          </div>
-
-          {/* Yearly Bubble Overview */}
           {yearlyBubbles.length > 0 && (
             <div className="card p-4 mb-4 animate-slide-up">
-              <BubbleBasket bubbles={yearlyBubbles} title={String(currentYear)} />
+              {/* Year label */}
+              <div className="flex items-center gap-1.5 mb-2 px-1">
+                <span className="text-[11px] font-bold" style={{ color: "var(--text-tertiary)" }}>
+                  {currentYear}
+                </span>
+              </div>
+              {/* Inline yearly summary */}
+              <div className="flex justify-between items-center mb-2 px-1">
+                {isPrimary ? (
+                  <>
+                    <div>
+                      <div className="text-[10px] font-medium" style={{ color: "var(--text-tertiary)" }}>Spent</div>
+                      <div className="text-base font-extrabold" style={{ color: "var(--text-primary)" }}>{fmt(yearlyTotalSpent)}</div>
+                    </div>
+                    <div className="text-center flex-1 mx-3">
+                      <div className="relative">
+                        <div className="progress-track" style={{ height: "6px", borderRadius: 3 }}>
+                          <div className={`progress-fill ${yearlyPct > yearlyExpectedPct ? "progress-fill-red" : yearlyPct > yearlyExpectedPct * 0.8 ? "progress-fill-yellow" : "progress-fill-green"}`}
+                            style={{ width: `${yearlyPct}%`, height: "6px", borderRadius: 3 }} />
+                        </div>
+                        <div className="absolute top-0 h-1.5 w-0.5" style={{ left: `${yearlyExpectedPct}%`, background: "var(--text-tertiary)", opacity: 0.6 }} />
+                      </div>
+                      <div className="text-[9px] mt-1 font-medium" style={{ color: "var(--text-tertiary)" }}>
+                        {pctFmt(yearlyPct)} used · pace {pctFmt(yearlyExpectedPct)}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[10px] font-medium" style={{ color: "var(--text-tertiary)" }}>M{monthsElapsed}</div>
+                      <div className="text-base font-extrabold" style={{ color: yearlyOnTrack ? "var(--accent-green)" : "var(--accent-red)" }}>
+                        {yearlyOnTrack
+                          ? fmt(Math.abs(yearlyProportionalRemaining)) + " ↓"
+                          : fmt(Math.abs(yearlyProportionalRemaining)) + " ↑"
+                        }
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <div className="text-[10px] font-medium" style={{ color: "var(--text-tertiary)" }}>Yearly</div>
+                      <div className="text-lg font-extrabold" style={{ color: yearlyOnTrack ? "var(--accent-green)" : "var(--accent-red)" }}>
+                        {yearlyOnTrack ? "On Track" : "Over Pace"}
+                      </div>
+                    </div>
+                    <div className="flex-1 mx-3">
+                      <div className="relative">
+                        <div className="progress-track" style={{ height: "6px", borderRadius: 3 }}>
+                          <div className={`progress-fill ${yearlyPct > yearlyExpectedPct ? "progress-fill-red" : yearlyPct > yearlyExpectedPct * 0.8 ? "progress-fill-yellow" : "progress-fill-green"}`}
+                            style={{ width: `${yearlyPct}%`, height: "6px", borderRadius: 3 }} />
+                        </div>
+                        <div className="absolute top-0 h-1.5 w-0.5" style={{ left: `${yearlyExpectedPct}%`, background: "var(--text-tertiary)", opacity: 0.6 }} />
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+              <BubbleBasket bubbles={yearlyBubbles} />
             </div>
           )}
-          {/* F-7: Unused yearly categories hidden from view */}
 
           {/* Yearly edit card (only when editing) */}
           {editingId !== null && yearlyCategories.some((c) => c.id === editingId) && (
