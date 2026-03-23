@@ -52,6 +52,7 @@ export default function FeatureIdeas({ ideas, onAdd, onDelete, onUpdate, onClose
 
   function downloadHistory() {
     const done = ideas.filter((i) => i.status === 'implemented' || i.status === 'skipped');
+    if (done.length === 0) return;
     const lines = done.map((i) => {
       const tag = i.type === 'bug' ? 'B' : 'F';
       const note = i.resolution_note ? ` — ${i.resolution_note}` : '';
@@ -62,7 +63,9 @@ export default function FeatureIdeas({ ideas, onAdd, onDelete, onUpdate, onClose
     const a = document.createElement("a");
     a.href = url;
     a.download = `exptrack-history-${new Date().toISOString().split("T")[0]}.txt`;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }
 

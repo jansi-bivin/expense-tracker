@@ -41,6 +41,7 @@ export default function ManualExpenseForm({ categories, isPrimary, onSave, onClo
     const amtNum = Number(amount);
     if (!amtNum || amtNum <= 0) return;
     if (!category) return;
+    if (!note.trim()) return;
 
     setSaving(true);
     const d = new Date(dateStr);
@@ -102,10 +103,12 @@ export default function ManualExpenseForm({ categories, isPrimary, onSave, onClo
         {/* Note */}
         <input
           type="text"
-          placeholder="Note (optional)"
+          placeholder="Note (required)"
           className="w-full px-3 py-2.5 mb-3 text-sm rounded-xl"
+          style={!note.trim() && amount ? { borderColor: "var(--accent)", borderWidth: 1 } : {}}
           value={note}
           onChange={(e) => setNote(e.target.value)}
+          required
         />
 
         {/* Date */}
