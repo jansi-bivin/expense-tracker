@@ -73,10 +73,12 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
   }, [categoryTxns]);
 
   function getEffectiveCap(cat: Category): number {
+    // Yearly categories always use their universal cap — no monthly overrides
+    if (cat.recurrence === "Yearly") return cat.cap;
     const hasOverride = monthlyOverrides[cat.id] != null;
     if (hasOverride) return monthlyOverrides[cat.id];
     if (cat.cap === 0) return 0;
-    return cat.recurrence === "Monthly" ? cat.cap * scaleFactor : cat.cap;
+    return cat.cap * scaleFactor;
   }
 
   // Sort categories: most spend first, then alphabetical for zero-spend
