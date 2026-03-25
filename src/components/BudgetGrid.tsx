@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { supabase, Category, MonthlyBudget } from "@/lib/supabase";
 
 interface Props {
@@ -55,6 +55,9 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
   const [editCatName, setEditCatName] = useState("");
   const [editCatRecurrence, setEditCatRecurrence] = useState<"Monthly" | "Yearly">("Monthly");
   const [editCatVisibility, setEditCatVisibility] = useState<"all" | "primary" | "secondary">("all");
+  // Inline edit mode — all categories editable at once
+  const [editMode, setEditMode] = useState(false);
+  const [catEdits, setCatEdits] = useState<Map<number, { name: string; recurrence: "Monthly" | "Yearly"; visible_to: "all" | "primary" | "secondary" }>>(new Map());
   const inputRef = useRef<HTMLInputElement>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipNextReload = useRef(false);
@@ -324,6 +327,53 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
     setEditingCat(null);
   }
 
+  // --- Inline edit mode functions ---
+  function enterEditMode() {
+    const edits = new Map<number, { name: string; recurrence: "Monthly" | "Yearly"; visible_to: "all" | "primary" | "secondary" }>();
+    categories.forEach(c => edits.set(c.id, { name: c.name, recurrence: c.recurrence, visible_to: c.visible_to }));
+    setCatEdits(edits);
+    setEditMode(true);
+  }
+
+  function updateCatEdit(catId: number, field: string, value: string) {
+    setCatEdits(prev => {
+      const next = new Map(prev);
+      const cur = next.get(catId);
+      if (cur) next.set(catId, { ...cur, [field]: value });
+      return next;
+    });
+  }
+
+  async function saveCatEdits() {
+    setSaving(true);
+    const updates: Promise<void>[] = [];
+    for (const cat of categories) {
+      const edit = catEdits.get(cat.id);
+      if (!edit) continue;
+      const changed = edit.name !== cat.name || edit.recurrence !== cat.recurrence || edit.visible_to !== cat.visible_to;
+      if (!changed) continue;
+      updates.push((async () => {
+        await supabase.from("categories").update({
+          name: edit.name, recurrence: edit.recurrence, visible_to: edit.visible_to,
+        }).eq("id", cat.id);
+        if (edit.name !== cat.name) {
+          await supabase.from("transactions").update({ category: edit.name }).eq("category", cat.name);
+          await supabase.from("dues").update({ category: edit.name }).eq("category", cat.name);
+          await supabase.from("monthly_budgets").update({ category_name: edit.name }).eq("category_id", cat.id);
+        }
+      })());
+    }
+    await Promise.all(updates);
+    onCategoriesChange(categories.map(c => {
+      const edit = catEdits.get(c.id);
+      return edit ? { ...c, name: edit.name, recurrence: edit.recurrence, visible_to: edit.visible_to } : c;
+    }));
+    setEditMode(false);
+    setSaving(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  }
+
   async function deleteCategory(catId: number) {
     if (!confirm("Delete this category? This cannot be undone.")) return;
     await supabase.from("monthly_budgets").delete().eq("category_id", catId);
@@ -457,18 +507,31 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
         </tr>
 
         {/* Category rows */}
-        {cats.map(cat => (
-          <tr key={cat.id}>
-            <td className="sticky left-0 z-10 px-3 py-1.5 text-[12px] font-medium cursor-pointer"
+        {cats.map(cat => {
+          const catEdit = editMode ? catEdits.get(cat.id) : null;
+          return (
+          <React.Fragment key={cat.id}>
+          <tr>
+            <td className="sticky left-0 z-10 px-3 py-1.5 text-[12px] font-medium"
               style={{
                 background: "var(--bg-base)", color: "var(--text-primary)",
-                minWidth: 160, maxWidth: 200, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                borderBottom: "1px solid rgba(255,255,255,0.04)", borderRight: "1px solid var(--border)",
+                minWidth: 160, maxWidth: 200,
+                borderBottom: editMode ? "none" : "1px solid rgba(255,255,255,0.04)", borderRight: "1px solid var(--border)",
+                cursor: editMode ? "default" : "pointer",
               }}
-              title={`${cat.name} — click to edit`}
-              onClick={() => openEditCategory(cat)}>
-              <span>{cat.name}</span>
-              <span className="ml-1 text-[9px]" style={{ color: "var(--text-tertiary)", opacity: 0.5 }}>✎</span>
+              title={editMode ? undefined : `${cat.name} — click to edit`}
+              onClick={editMode ? undefined : () => openEditCategory(cat)}>
+              {editMode && catEdit ? (
+                <input type="text" className="w-full bg-transparent outline-none text-[12px] font-medium"
+                  style={{ color: "var(--text-primary)" }}
+                  value={catEdit.name}
+                  onChange={e => updateCatEdit(cat.id, "name", e.target.value)} />
+              ) : (
+                <>
+                  <span>{cat.name}</span>
+                  <span className="ml-1 text-[9px]" style={{ color: "var(--text-tertiary)", opacity: 0.5 }}>✎</span>
+                </>
+              )}
             </td>
             <td className="sticky px-2 py-1.5 text-center text-[12px] cursor-pointer"
               style={{
@@ -507,11 +570,56 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
               monthCols.map(col => renderCell(cat, col))
             )}
             <td className="px-2 py-1.5 text-center text-[11px] font-semibold"
-              style={{ color: "var(--text-tertiary)", borderBottom: "1px solid rgba(255,255,255,0.04)", borderLeft: "1px solid var(--border)" }}>
+              style={{ color: "var(--text-tertiary)", borderBottom: editMode ? "none" : "1px solid rgba(255,255,255,0.04)", borderLeft: "1px solid var(--border)" }}>
               {isYearly ? inr(cat.cap) : inr(rowTotal(cat.id))}
             </td>
           </tr>
-        ))}
+          {/* Inline edit row — shown for every category when edit mode is on */}
+          {editMode && catEdit && (
+            <tr>
+              <td colSpan={monthCols.length + 3}
+                className="sticky left-0 px-3 py-1.5"
+                style={{ background: "rgba(123,108,246,0.03)", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                <div className="flex items-center gap-3 flex-wrap">
+                  {/* Recurrence toggle */}
+                  <div className="flex items-center gap-1">
+                    <span className="text-[9px] font-semibold" style={{ color: "var(--text-tertiary)" }}>Recurrence:</span>
+                    {(["Monthly", "Yearly"] as const).map(r => (
+                      <button key={r} className="px-2 py-0.5 rounded text-[10px] font-semibold"
+                        style={{
+                          background: catEdit.recurrence === r ? "var(--accent)" : "rgba(255,255,255,0.06)",
+                          color: catEdit.recurrence === r ? "#fff" : "var(--text-tertiary)",
+                        }}
+                        onClick={() => updateCatEdit(cat.id, "recurrence", r)}>{r}</button>
+                    ))}
+                  </div>
+                  {/* Visibility toggle */}
+                  <div className="flex items-center gap-1">
+                    <span className="text-[9px] font-semibold" style={{ color: "var(--text-tertiary)" }}>Visible:</span>
+                    {([
+                      { value: "all" as const, label: "Both" },
+                      { value: "primary" as const, label: "Me" },
+                      { value: "secondary" as const, label: "Wife" },
+                    ]).map(opt => (
+                      <button key={opt.value} className="px-2 py-0.5 rounded text-[10px] font-semibold"
+                        style={{
+                          background: catEdit.visible_to === opt.value ? "var(--accent)" : "rgba(255,255,255,0.06)",
+                          color: catEdit.visible_to === opt.value ? "#fff" : "var(--text-tertiary)",
+                        }}
+                        onClick={() => updateCatEdit(cat.id, "visible_to", opt.value)}>{opt.label}</button>
+                    ))}
+                  </div>
+                  {/* Delete */}
+                  <button className="px-2 py-0.5 rounded text-[10px] font-semibold"
+                    style={{ color: "var(--accent-red)", background: "rgba(255,90,110,0.08)" }}
+                    onClick={() => deleteCategory(cat.id)}>Delete</button>
+                </div>
+              </td>
+            </tr>
+          )}
+          </React.Fragment>
+          );
+        })}
 
         {/* Section subtotal */}
         <tr>
@@ -571,18 +679,37 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button className="text-[11px] px-3 py-1.5 rounded-lg font-semibold"
-            style={{
-              background: saved ? "rgba(74,222,128,0.15)" : hasDirty ? "var(--accent)" : "rgba(255,255,255,0.06)",
-              color: saved ? "#4ade80" : hasDirty ? "#fff" : "var(--text-tertiary)",
-            }}
-            disabled={saving || !hasDirty}
-            onClick={handleSaveAll}>
-            {saving ? "Saving..." : saved ? "✓ Saved" : "Save All"}
-          </button>
-          <button className="text-[11px] px-3 py-1.5 rounded-lg"
-            style={{ color: "var(--text-tertiary)", background: "rgba(255,255,255,0.06)" }}
-            onClick={onClose}>Close</button>
+          {editMode ? (
+            <>
+              <button className="text-[11px] px-3 py-1.5 rounded-lg font-semibold"
+                style={{ background: "var(--accent)", color: "#fff" }}
+                disabled={saving}
+                onClick={saveCatEdits}>
+                {saving ? "Saving..." : "Save Categories"}
+              </button>
+              <button className="text-[11px] px-3 py-1.5 rounded-lg"
+                style={{ color: "var(--text-tertiary)", background: "rgba(255,255,255,0.06)" }}
+                onClick={() => setEditMode(false)}>Cancel</button>
+            </>
+          ) : (
+            <>
+              <button className="text-[11px] px-3 py-1.5 rounded-lg font-semibold"
+                style={{ color: "var(--accent)", background: "rgba(123,108,246,0.1)" }}
+                onClick={enterEditMode}>✎ Edit</button>
+              <button className="text-[11px] px-3 py-1.5 rounded-lg font-semibold"
+                style={{
+                  background: saved ? "rgba(74,222,128,0.15)" : hasDirty ? "var(--accent)" : "rgba(255,255,255,0.06)",
+                  color: saved ? "#4ade80" : hasDirty ? "#fff" : "var(--text-tertiary)",
+                }}
+                disabled={saving || !hasDirty}
+                onClick={handleSaveAll}>
+                {saving ? "Saving..." : saved ? "✓ Saved" : "Save All"}
+              </button>
+              <button className="text-[11px] px-3 py-1.5 rounded-lg"
+                style={{ color: "var(--text-tertiary)", background: "rgba(255,255,255,0.06)" }}
+                onClick={onClose}>Close</button>
+            </>
+          )}
         </div>
       </div>
 
