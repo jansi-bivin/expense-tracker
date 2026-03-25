@@ -309,9 +309,16 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
     if (!editingCat) return;
     const name = editCatName.trim();
     if (!name) return;
+    const oldName = editingCat.name;
     await supabase.from("categories").update({
       name, recurrence: editCatRecurrence, visible_to: editCatVisibility,
     }).eq("id", editingCat.id);
+    // If name changed, update all transactions and dues referencing the old name
+    if (name !== oldName) {
+      await supabase.from("transactions").update({ category: name }).eq("category", oldName);
+      await supabase.from("dues").update({ category: name }).eq("category", oldName);
+      await supabase.from("monthly_budgets").update({ category_name: name }).eq("category_id", editingCat.id);
+    }
     onCategoriesChange(categories.map(c => c.id === editingCat.id
       ? { ...c, name, recurrence: editCatRecurrence, visible_to: editCatVisibility } : c));
     setEditingCat(null);
