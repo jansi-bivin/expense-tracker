@@ -764,14 +764,12 @@ function HomeInner() {
             <button
               onClick={() => setShowManualExpense(true)}
               className="flex flex-col items-center gap-1 py-1.5 transition-all"
-              style={activeView === "budget" ? { color: "var(--accent)" } : { color: "var(--text-tertiary)", opacity: 0.5 }}
+              style={{ color: "var(--accent)" }}
             >
-              <div className="flex items-center justify-center rounded-full"
-                style={{
-                  width: 28, height: 28,
-                  background: "linear-gradient(135deg, var(--accent), var(--accent-dim))",
-                  color: "#fff", fontSize: 18, fontWeight: 300, lineHeight: 1,
-                }}>+</div>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M12 8v8M8 12h8" />
+              </svg>
               <span className="text-[10px] font-semibold">Add</span>
             </button>
 
