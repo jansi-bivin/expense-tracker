@@ -63,6 +63,18 @@ export interface Due {
   settlement_transaction_id: number | null;
 }
 
+export interface MonthlyBudget {
+  id: number;
+  month: number;       // 1-12
+  year: number;
+  category_id: number;
+  category_name: string;
+  cap: number;
+  is_included: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface FeatureIdea {
   id: string;
   seq: number; // Sequential ID for display (F1, B2, etc.)

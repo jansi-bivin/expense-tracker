@@ -9,6 +9,7 @@ interface Props {
   isPrimary: boolean;
   scaleFactor: number;
   monthlyOverrides: Record<number, number>;
+  excludedCategoryIds?: Set<number>;
   onCategoriesChange: (cats: Category[]) => void;
   onShowAddCategory: () => void;
   onMonthlyOverride: (catId: number, cap: number | null) => void;
@@ -20,7 +21,7 @@ interface Props {
   dues?: { id: number; transaction_id: number; cleared: boolean; settlement_transaction_id?: number | null }[];
 }
 
-function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, monthlyOverrides, onCategoriesChange, onShowAddCategory, onMonthlyOverride, activeDays, daysInMonth, onActiveDaysUpdate, onReclassify, onDeleteTxn, dues }: Props) {
+function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, monthlyOverrides, excludedCategoryIds, onCategoriesChange, onShowAddCategory, onMonthlyOverride, activeDays, daysInMonth, onActiveDaysUpdate, onReclassify, onDeleteTxn, dues }: Props) {
   const now = new Date();
   const currentMonth = now.getMonth();
   const currentYear = now.getFullYear();
@@ -40,9 +41,10 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
 
   const visibleCategories = useMemo(() => {
     return categories.filter((c) =>
-      isPrimary || c.visible_to === "all" || c.visible_to === "secondary"
+      (isPrimary || c.visible_to === "all" || c.visible_to === "secondary") &&
+      !(excludedCategoryIds?.has(c.id))
     );
-  }, [categories, isPrimary]);
+  }, [categories, isPrimary, excludedCategoryIds]);
 
   const categoryTxns = useMemo(() => {
     const map = new Map<string, Transaction[]>();

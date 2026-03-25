@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { supabase, RawSms, Transaction, Category, User, Due, FeatureIdea } from "@/lib/supabase";
+import { supabase, RawSms, Transaction, Category, User, Due, FeatureIdea, MonthlyBudget } from "@/lib/supabase";
 import { detectFields } from "@/lib/smsDetector";
 import NewSmsReview from "@/components/NewSmsReview";
 import SmsCard from "@/components/SmsCard";
@@ -12,6 +12,7 @@ import DuesView from "@/components/DuesView";
 import AddCategoryForm from "@/components/AddCategoryForm";
 import ManualExpenseForm from "@/components/ManualExpenseForm";
 import FeatureIdeas from "@/components/FeatureIdeas";
+import BudgetPlanner from "@/components/BudgetPlanner";
 
 /* ── DebitOverlay: self-contained so overlayIdx doesn't re-render parent ── */
 function DebitOverlay({ txns, categories, isPrimary, unclearedDues, settlementHints, merchantCategoryMap, onDone, onSnooze, onSettle, onDismissAll }: {
@@ -124,6 +125,10 @@ function HomeInner() {
   // Feature ideas
   const [featureIdeas, setFeatureIdeas] = useState<FeatureIdea[]>([]);
   const [showFeatureIdeas, setShowFeatureIdeas] = useState(false);
+
+  // Budget planner
+  const [monthlyBudgets, setMonthlyBudgets] = useState<MonthlyBudget[]>([]);
+  const [showBudgetPlanner, setShowBudgetPlanner] = useState(false);
 
   // Compute days in current month & scale factor
   const now = new Date();
@@ -243,17 +248,47 @@ function HomeInner() {
         }
       }
 
-      // Fetch monthly cap overrides
-      const { data: overridesData } = await supabase.from("settings").select("*").eq("key", "category_overrides").single();
-      if (overridesData) {
-        const val = overridesData.value as { overrides?: Record<string, number>; month?: number; year?: number };
-        if (val.month === currentMonth && val.year === currentYear && val.overrides) {
-          // Convert string keys back to numbers
-          const parsed: Record<number, number> = {};
-          for (const [k, v] of Object.entries(val.overrides)) {
-            parsed[Number(k)] = v;
+      // Fetch monthly budgets for current month (replaces legacy category_overrides)
+      const { data: mbData } = await supabase
+        .from("monthly_budgets")
+        .select("*")
+        .eq("month", currentMonth)
+        .eq("year", currentYear);
+
+      if (mbData && mbData.length > 0) {
+        setMonthlyBudgets(mbData);
+        const overrides: Record<number, number> = {};
+        for (const mb of mbData) {
+          if (mb.is_included) overrides[mb.category_id] = mb.cap;
+        }
+        setMonthlyOverrides(overrides);
+      } else {
+        // Fallback: migrate legacy category_overrides from settings
+        const { data: legacyData } = await supabase
+          .from("settings").select("*").eq("key", "category_overrides").single();
+        if (legacyData) {
+          const val = legacyData.value as { overrides?: Record<string, number>; month?: number; year?: number };
+          if (val.month === currentMonth && val.year === currentYear && val.overrides) {
+            const parsed: Record<number, number> = {};
+            for (const [k, v] of Object.entries(val.overrides)) {
+              parsed[Number(k)] = v;
+            }
+            setMonthlyOverrides(parsed);
+            // Auto-migrate to monthly_budgets
+            const rows = Object.entries(val.overrides).map(([catIdStr, cap]) => {
+              const catId = Number(catIdStr);
+              const cat = cats?.find((c: Category) => c.id === catId);
+              return {
+                month: currentMonth, year: currentYear,
+                category_id: catId, category_name: cat?.name ?? "",
+                cap, is_included: true,
+              };
+            });
+            if (rows.length > 0) {
+              await supabase.from("monthly_budgets").upsert(rows, { onConflict: "month,year,category_id" });
+              await supabase.from("settings").delete().eq("key", "category_overrides");
+            }
           }
-          setMonthlyOverrides(parsed);
         }
       }
 
@@ -345,7 +380,7 @@ function HomeInner() {
     }, { onConflict: "key" });
   }
 
-  // Monthly cap override handler
+  // Monthly cap override handler — writes to monthly_budgets table
   async function handleMonthlyOverride(catId: number, cap: number | null) {
     const updated = { ...monthlyOverrides };
     if (cap === null) {
@@ -357,11 +392,20 @@ function HomeInner() {
 
     const currentMonth = now.getMonth() + 1;
     const currentYear = now.getFullYear();
-    await supabase.from("settings").upsert({
-      key: "category_overrides",
-      value: { overrides: updated, month: currentMonth, year: currentYear },
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "key" });
+    const cat = categories.find(c => c.id === catId);
+
+    if (cap === null) {
+      await supabase.from("monthly_budgets")
+        .delete()
+        .eq("month", currentMonth).eq("year", currentYear).eq("category_id", catId);
+    } else {
+      await supabase.from("monthly_budgets").upsert({
+        month: currentMonth, year: currentYear,
+        category_id: catId, category_name: cat?.name ?? "",
+        cap, is_included: true,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "month,year,category_id" });
+    }
   }
 
   // Feature 4: Save manual expense
@@ -537,6 +581,15 @@ function HomeInner() {
     }));
   }
 
+  // Categories excluded from this month's budget
+  const excludedCategoryIds = useMemo(() => {
+    const set = new Set<number>();
+    for (const mb of monthlyBudgets) {
+      if (!mb.is_included) set.add(mb.category_id);
+    }
+    return set;
+  }, [monthlyBudgets]);
+
   // Memoize derived data (must be before early returns for Rules of Hooks)
   const unclearedDues = useMemo(() => dues.filter((d) => !d.cleared), [dues]);
   const duesTotal = useMemo(() => unclearedDues.reduce((sum, d) => sum + Number(d.amount), 0), [unclearedDues]);
@@ -615,6 +668,15 @@ function HomeInner() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {isPrimary && (
+            <button
+              className="text-[11px] px-2.5 py-1.5 rounded-lg font-semibold"
+              style={{ background: "rgba(123,108,246,0.1)", color: "var(--accent)" }}
+              onClick={() => setShowBudgetPlanner(true)}
+            >
+              Plan
+            </button>
+          )}
           {currentUser && (
             <div className="flex items-center gap-2">
               <div className="pulse-dot" />
@@ -672,6 +734,7 @@ function HomeInner() {
               isPrimary={isPrimary}
               scaleFactor={scaleFactor}
               monthlyOverrides={monthlyOverrides}
+              excludedCategoryIds={excludedCategoryIds}
               onCategoriesChange={setCategories}
               onShowAddCategory={handleShowAddCategory}
               onMonthlyOverride={handleMonthlyOverride}
@@ -758,6 +821,15 @@ function HomeInner() {
           onDelete={handleDeleteIdea}
           onUpdate={handleUpdateIdea}
           onClose={() => setShowFeatureIdeas(false)}
+        />
+      )}
+
+      {/* Budget Planner overlay */}
+      {showBudgetPlanner && (
+        <BudgetPlanner
+          categories={categories}
+          onCategoriesChange={setCategories}
+          onClose={() => setShowBudgetPlanner(false)}
         />
       )}
     </div>
