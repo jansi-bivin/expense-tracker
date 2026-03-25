@@ -737,6 +737,7 @@ function HomeInner() {
       </div>
 
       {/* ═══ Bottom Navigation Bar ═══ */}
+      {/* ═══ Bottom Navigation Bar ═══ */}
       {!showManualExpense && !showAddCategory && !hasOverlay && !showBudgetPlanner && !showFeatureIdeas && (
         <nav className="fixed bottom-0 left-0 right-0 z-40"
           style={{
@@ -745,67 +746,64 @@ function HomeInner() {
             WebkitBackdropFilter: "blur(16px)",
             borderTop: "1px solid rgba(255,255,255,0.06)",
           }}>
-          <div className="max-w-2xl mx-auto flex items-end justify-around px-2 pt-1.5 pb-4">
-            {/* Expenses tab */}
+          <div className="max-w-2xl mx-auto grid px-4 pt-2 pb-5"
+            style={{ gridTemplateColumns: isPrimary ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr" }}>
+            {/* Expenses */}
             <button
               onClick={() => setView("budget")}
-              className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all"
-              style={activeView === "budget" ? { color: "var(--accent)" } : { color: "var(--text-tertiary)", opacity: 0.6 }}
+              className="flex flex-col items-center gap-1 py-1.5 transition-all"
+              style={activeView === "budget" ? { color: "var(--accent)" } : { color: "var(--text-tertiary)", opacity: 0.5 }}
             >
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />
               </svg>
               <span className="text-[10px] font-semibold">Expenses</span>
-              {activeView === "budget" && <div style={{ width: 4, height: 4, borderRadius: 2, background: "var(--accent)", marginTop: 1 }} />}
             </button>
 
-            {/* Add Expense — center, elevated */}
-            {activeView === "budget" && (
-              <button
-                onClick={() => setShowManualExpense(true)}
-                className="flex items-center justify-center rounded-full transition-all active:scale-95"
+            {/* Add */}
+            <button
+              onClick={() => setShowManualExpense(true)}
+              className="flex flex-col items-center gap-1 py-1.5 transition-all"
+              style={activeView === "budget" ? { color: "var(--accent)" } : { color: "var(--text-tertiary)", opacity: 0.5 }}
+            >
+              <div className="flex items-center justify-center rounded-full"
                 style={{
-                  width: 52, height: 52,
+                  width: 28, height: 28,
                   background: "linear-gradient(135deg, var(--accent), var(--accent-dim))",
-                  boxShadow: "0 4px 20px rgba(123, 108, 246, 0.35)",
-                  marginBottom: 8,
-                  color: "#fff",
-                  fontSize: 24,
-                  fontWeight: 300,
-                }}
-              >
-                +
-              </button>
-            )}
+                  color: "#fff", fontSize: 18, fontWeight: 300, lineHeight: 1,
+                }}>+</div>
+              <span className="text-[10px] font-semibold">Add</span>
+            </button>
 
-            {/* Dues tab */}
+            {/* Dues */}
             <button
               onClick={() => setView("dues")}
-              className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all relative"
-              style={activeView === "dues" ? { color: "var(--accent)" } : { color: "var(--text-tertiary)", opacity: 0.6 }}
+              className="flex flex-col items-center gap-1 py-1.5 transition-all relative"
+              style={activeView === "dues" ? { color: "var(--accent)" } : { color: "var(--text-tertiary)", opacity: 0.5 }}
             >
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="3" width="18" height="18" rx="2" />
-                <path d="M9 12h6M9 8h6M9 16h4" />
-              </svg>
+              <div className="relative">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <path d="M9 12h6M9 8h6M9 16h4" />
+                </svg>
+                {duesTotal > 0 && (
+                  <span className="absolute -top-2 -right-3 text-[7px] font-bold px-1 py-0.5 rounded-full"
+                    style={{ background: "var(--accent-red)", color: "#fff", minWidth: 14, textAlign: "center", lineHeight: 1 }}>
+                    {duesTotal > 999 ? Math.round(duesTotal/1000) + "K" : duesTotal}
+                  </span>
+                )}
+              </div>
               <span className="text-[10px] font-semibold">Dues</span>
-              {duesTotal > 0 && (
-                <span className="absolute -top-1 -right-1 text-[8px] font-bold px-1.5 py-0.5 rounded-full"
-                  style={{ background: "var(--accent-red)", color: "#fff", minWidth: 16, textAlign: "center" }}>
-                  {duesTotal > 999 ? Math.round(duesTotal/1000) + "K" : duesTotal}
-                </span>
-              )}
-              {activeView === "dues" && <div style={{ width: 4, height: 4, borderRadius: 2, background: "var(--accent)", marginTop: 1 }} />}
             </button>
 
-            {/* Budget Planner tab */}
+            {/* Planner */}
             {isPrimary && (
               <button
                 onClick={() => setShowBudgetPlanner(true)}
-                className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all"
-                style={{ color: "var(--text-tertiary)", opacity: 0.6 }}
+                className="flex flex-col items-center gap-1 py-1.5 transition-all"
+                style={{ color: "var(--text-tertiary)", opacity: 0.5 }}
               >
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="3" y="4" width="18" height="16" rx="2" />
                   <path d="M3 10h18M9 4v16" />
                 </svg>
