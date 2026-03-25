@@ -436,7 +436,7 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
   }
 
   // Shared section renderer
-  function renderSection(title: string, cats: Category[]) {
+  function renderSection(title: string, cats: Category[], isYearly: boolean) {
     if (cats.length === 0) return null;
     return (
       <>
@@ -483,10 +483,25 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
                 <span>{inrPlain(cat.cap)}</span>
               )}
             </td>
-            {monthCols.map(col => renderCell(cat, col))}
+            {isYearly ? (
+              /* Yearly categories: month cells are empty — cap is yearly, not per-month */
+              <>
+                {monthCols.map(col => (
+                  <td key={col.key} className="px-1 py-1.5 text-center text-[11px]"
+                    style={{
+                      color: "var(--text-tertiary)", opacity: 0.2,
+                      borderBottom: "1px solid rgba(255,255,255,0.04)",
+                    }}>
+                    ·
+                  </td>
+                ))}
+              </>
+            ) : (
+              monthCols.map(col => renderCell(cat, col))
+            )}
             <td className="px-2 py-1.5 text-center text-[11px] font-semibold"
               style={{ color: "var(--text-tertiary)", borderBottom: "1px solid rgba(255,255,255,0.04)", borderLeft: "1px solid var(--border)" }}>
-              {inr(rowTotal(cat.id))}
+              {isYearly ? inr(cat.cap) : inr(rowTotal(cat.id))}
             </td>
           </tr>
         ))}
@@ -501,15 +516,24 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
             style={{ background: "rgba(123,108,246,0.04)", color: "var(--accent)", borderBottom: "1px solid var(--border)", borderRight: "1px solid rgba(123,108,246,0.08)", left: 160 }}>
             {inr(cats.reduce((s, c) => s + c.cap, 0))}
           </td>
-          {monthCols.map(col => (
-            <td key={col.key} className="px-1 py-1.5 text-center text-[11px] font-bold"
-              style={{ background: col.isCurrent ? "rgba(123,108,246,0.04)" : "rgba(255,255,255,0.02)", color: col.isCurrent ? "var(--accent)" : "var(--text-secondary)", borderBottom: "1px solid var(--border)" }}>
-              {inr(colTotal(col.key, cats))}
-            </td>
-          ))}
+          {isYearly ? (
+            monthCols.map(col => (
+              <td key={col.key} className="px-1 py-1.5"
+                style={{ borderBottom: "1px solid var(--border)" }} />
+            ))
+          ) : (
+            monthCols.map(col => (
+              <td key={col.key} className="px-1 py-1.5 text-center text-[11px] font-bold"
+                style={{ background: col.isCurrent ? "rgba(123,108,246,0.04)" : "rgba(255,255,255,0.02)", color: col.isCurrent ? "var(--accent)" : "var(--text-secondary)", borderBottom: "1px solid var(--border)" }}>
+                {inr(colTotal(col.key, cats))}
+              </td>
+            ))
+          )}
           <td className="px-2 py-1.5 text-center text-[11px] font-bold"
             style={{ color: "var(--text-secondary)", borderBottom: "1px solid var(--border)", borderLeft: "1px solid var(--border)" }}>
-            {inr(cats.reduce((s, c) => s + rowTotal(c.id), 0))}
+            {isYearly
+              ? inr(cats.reduce((s, c) => s + c.cap, 0))
+              : inr(cats.reduce((s, c) => s + rowTotal(c.id), 0))}
           </td>
         </tr>
       </>
@@ -597,8 +621,8 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
             </tr>
           </thead>
           <tbody>
-            {renderSection("Monthly", monthlyCategories)}
-            {renderSection("Yearly", yearlyCategories)}
+            {renderSection("Monthly", monthlyCategories, false)}
+            {renderSection("Yearly", yearlyCategories, true)}
 
             {/* Grand total */}
             <tr>
@@ -608,7 +632,7 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
               </td>
               <td className="sticky px-2 py-2 text-center text-[12px] font-bold"
                 style={{ background: "rgba(123,108,246,0.06)", color: "var(--accent)", borderTop: "2px solid var(--border)", borderRight: "1px solid rgba(123,108,246,0.08)", left: 160 }}>
-                {inr(categories.reduce((s, c) => s + c.cap, 0))}
+                {inr(monthlyCategories.reduce((s, c) => s + c.cap, 0) + yearlyCategories.reduce((s, c) => s + c.cap, 0))}
               </td>
               {monthCols.map(col => (
                 <td key={col.key} className="px-1 py-2 text-center text-[12px] font-bold"
@@ -617,12 +641,15 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
                     color: col.isCurrent ? "var(--accent)" : "var(--text-primary)",
                     borderTop: "2px solid var(--border)",
                   }}>
-                  {inr(colTotal(col.key, categories))}
+                  {inr(colTotal(col.key, monthlyCategories))}
                 </td>
               ))}
               <td className="px-2 py-2 text-center text-[12px] font-bold"
                 style={{ background: "var(--bg-elevated)", color: "var(--text-primary)", borderTop: "2px solid var(--border)", borderLeft: "1px solid var(--border)" }}>
-                {inr(monthCols.reduce((s, col) => s + colTotal(col.key, categories), 0))}
+                {inr(
+                  monthCols.reduce((s, col) => s + colTotal(col.key, monthlyCategories), 0)
+                  + yearlyCategories.reduce((s, c) => s + c.cap, 0)
+                )}
               </td>
             </tr>
           </tbody>
