@@ -658,59 +658,19 @@ function HomeInner() {
 
   return (
     <div className="max-w-2xl mx-auto px-4 pt-5 pb-24 animate-fade-in">
-      {/* Header */}
+      {/* Header — minimal */}
       <div className="flex justify-between items-center mb-5">
-        <div>
-          <div className="text-xl font-extrabold tracking-tight select-none"
-            onTouchStart={startLongPress} onTouchEnd={cancelLongPress} onTouchCancel={cancelLongPress}
-            onMouseDown={startLongPress} onMouseUp={cancelLongPress} onMouseLeave={cancelLongPress}>
-            {resetting ? <span style={{ color: "var(--accent-red)" }}>Resetting...</span> : <>Exp<span style={{ color: "var(--accent)" }}>Track</span></>}
+        <div className="text-xl font-extrabold tracking-tight select-none"
+          onTouchStart={startLongPress} onTouchEnd={cancelLongPress} onTouchCancel={cancelLongPress}
+          onMouseDown={startLongPress} onMouseUp={cancelLongPress} onMouseLeave={cancelLongPress}>
+          {resetting ? <span style={{ color: "var(--accent-red)" }}>Resetting...</span> : <>Exp<span style={{ color: "var(--accent)" }}>Track</span></>}
+        </div>
+        {currentUser && (
+          <div className="flex items-center gap-2">
+            <div className="pulse-dot" />
+            <span className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>{currentUser.name}</span>
           </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {isPrimary && (
-            <button
-              className="text-[11px] px-2.5 py-1.5 rounded-lg font-semibold"
-              style={{ background: "rgba(123,108,246,0.1)", color: "var(--accent)" }}
-              onClick={() => setShowBudgetPlanner(true)}
-            >
-              Budget
-            </button>
-          )}
-          {currentUser && (
-            <div className="flex items-center gap-2">
-              <div className="pulse-dot" />
-              <span className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>{currentUser.name}</span>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Tab bar — always visible */}
-      <div className="flex gap-1.5 mb-5 p-1 rounded-2xl" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)" }}>
-        <button
-          onClick={() => setView("budget")}
-          className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-            activeView === "budget" ? "btn-primary" : ""
-          }`}
-          style={activeView !== "budget" ? { color: "var(--text-tertiary)" } : undefined}
-        >
-          💰 Budget
-        </button>
-        <button
-          onClick={() => setView("dues")}
-          className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all relative ${
-            activeView === "dues" ? "btn-primary" : ""
-          }`}
-          style={activeView !== "dues" ? { color: "var(--text-tertiary)" } : undefined}
-        >
-          📋 Dues
-          {duesTotal > 0 && (
-            <span className="badge badge-red ml-1.5 text-[10px] py-0">
-              {"\u20B9"}{duesTotal.toLocaleString("en-IN")}
-            </span>
-          )}
-        </button>
+        )}
       </div>
 
       {/* Content */}
@@ -776,23 +736,84 @@ function HomeInner() {
         </button>
       </div>
 
-      {/* Add Expense button — fixed bottom bar, budget view only */}
-      {activeView === "budget" && !showManualExpense && !showAddCategory && !hasOverlay && (
-        <div className="fixed bottom-0 left-0 right-0 z-40 px-4 pb-5 pt-3"
-          style={{ background: "linear-gradient(to top, var(--bg-base) 70%, transparent)" }}>
-          <button
-            className="w-full max-w-2xl mx-auto flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-semibold transition-all active:scale-[0.98]"
-            style={{
-              background: "linear-gradient(135deg, var(--accent), var(--accent-dim))",
-              color: "#fff",
-              boxShadow: "0 4px 20px rgba(123, 108, 246, 0.3)",
-            }}
-            onClick={() => setShowManualExpense(true)}
-          >
-            <span>+</span>
-            <span>Add Expense</span>
-          </button>
-        </div>
+      {/* ═══ Bottom Navigation Bar ═══ */}
+      {!showManualExpense && !showAddCategory && !hasOverlay && !showBudgetPlanner && !showFeatureIdeas && (
+        <nav className="fixed bottom-0 left-0 right-0 z-40"
+          style={{
+            background: "rgba(10,10,26,0.92)",
+            backdropFilter: "blur(16px)",
+            WebkitBackdropFilter: "blur(16px)",
+            borderTop: "1px solid rgba(255,255,255,0.06)",
+          }}>
+          <div className="max-w-2xl mx-auto flex items-end justify-around px-2 pt-1.5 pb-4">
+            {/* Expenses tab */}
+            <button
+              onClick={() => setView("budget")}
+              className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all"
+              style={activeView === "budget" ? { color: "var(--accent)" } : { color: "var(--text-tertiary)", opacity: 0.6 }}
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />
+              </svg>
+              <span className="text-[10px] font-semibold">Expenses</span>
+              {activeView === "budget" && <div style={{ width: 4, height: 4, borderRadius: 2, background: "var(--accent)", marginTop: 1 }} />}
+            </button>
+
+            {/* Add Expense — center, elevated */}
+            {activeView === "budget" && (
+              <button
+                onClick={() => setShowManualExpense(true)}
+                className="flex items-center justify-center rounded-full transition-all active:scale-95"
+                style={{
+                  width: 52, height: 52,
+                  background: "linear-gradient(135deg, var(--accent), var(--accent-dim))",
+                  boxShadow: "0 4px 20px rgba(123, 108, 246, 0.35)",
+                  marginBottom: 8,
+                  color: "#fff",
+                  fontSize: 24,
+                  fontWeight: 300,
+                }}
+              >
+                +
+              </button>
+            )}
+
+            {/* Dues tab */}
+            <button
+              onClick={() => setView("dues")}
+              className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all relative"
+              style={activeView === "dues" ? { color: "var(--accent)" } : { color: "var(--text-tertiary)", opacity: 0.6 }}
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <path d="M9 12h6M9 8h6M9 16h4" />
+              </svg>
+              <span className="text-[10px] font-semibold">Dues</span>
+              {duesTotal > 0 && (
+                <span className="absolute -top-1 -right-1 text-[8px] font-bold px-1.5 py-0.5 rounded-full"
+                  style={{ background: "var(--accent-red)", color: "#fff", minWidth: 16, textAlign: "center" }}>
+                  {duesTotal > 999 ? Math.round(duesTotal/1000) + "K" : duesTotal}
+                </span>
+              )}
+              {activeView === "dues" && <div style={{ width: 4, height: 4, borderRadius: 2, background: "var(--accent)", marginTop: 1 }} />}
+            </button>
+
+            {/* Budget Planner tab */}
+            {isPrimary && (
+              <button
+                onClick={() => setShowBudgetPlanner(true)}
+                className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all"
+                style={{ color: "var(--text-tertiary)", opacity: 0.6 }}
+              >
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="4" width="18" height="16" rx="2" />
+                  <path d="M3 10h18M9 4v16" />
+                </svg>
+                <span className="text-[10px] font-semibold">Planner</span>
+              </button>
+            )}
+          </div>
+        </nav>
       )}
 
       {/* Manual Expense Form overlay */}
