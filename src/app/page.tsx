@@ -674,7 +674,7 @@ function HomeInner() {
               style={{ background: "rgba(123,108,246,0.1)", color: "var(--accent)" }}
               onClick={() => setShowBudgetPlanner(true)}
             >
-              Plan
+              Budget
             </button>
           )}
           {currentUser && (

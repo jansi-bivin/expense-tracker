@@ -50,6 +50,10 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
   const [newCatName, setNewCatName] = useState("");
   const [newCatCap, setNewCatCap] = useState("");
   const [newCatRecurrence, setNewCatRecurrence] = useState<"Monthly" | "Yearly">("Monthly");
+  const [editingCat, setEditingCat] = useState<Category | null>(null);
+  const [editCatName, setEditCatName] = useState("");
+  const [editCatRecurrence, setEditCatRecurrence] = useState<"Monthly" | "Yearly">("Monthly");
+  const [editCatVisibility, setEditCatVisibility] = useState<"all" | "primary" | "secondary">("all");
   const inputRef = useRef<HTMLInputElement>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -230,6 +234,34 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
     }
   }
 
+  function openEditCategory(cat: Category) {
+    setEditingCat(cat);
+    setEditCatName(cat.name);
+    setEditCatRecurrence(cat.recurrence);
+    setEditCatVisibility(cat.visible_to);
+  }
+
+  async function saveEditCategory() {
+    if (!editingCat) return;
+    const name = editCatName.trim();
+    if (!name) return;
+    await supabase.from("categories").update({
+      name, recurrence: editCatRecurrence, visible_to: editCatVisibility,
+    }).eq("id", editingCat.id);
+    onCategoriesChange(categories.map(c => c.id === editingCat.id
+      ? { ...c, name, recurrence: editCatRecurrence, visible_to: editCatVisibility } : c));
+    setEditingCat(null);
+  }
+
+  async function deleteCategory(catId: number) {
+    if (!confirm("Delete this category? This cannot be undone.")) return;
+    await supabase.from("monthly_budgets").delete().eq("category_id", catId);
+    await supabase.from("categories").delete().eq("id", catId);
+    onCategoriesChange(categories.filter(c => c.id !== catId));
+    setEditingCat(null);
+    setGrid(prev => { const next = new Map(prev); next.delete(catId); return next; });
+  }
+
   function startEdit(catId: number, monthKey: string) {
     const cell = grid.get(catId)?.get(monthKey);
     setEditingCell({ catId, monthKey });
@@ -356,14 +388,16 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
         {/* Category rows */}
         {cats.map(cat => (
           <tr key={cat.id}>
-            <td className="sticky left-0 z-10 px-3 py-1.5 text-[12px] font-medium"
+            <td className="sticky left-0 z-10 px-3 py-1.5 text-[12px] font-medium cursor-pointer"
               style={{
                 background: "var(--bg-base)", color: "var(--text-primary)",
                 minWidth: 160, maxWidth: 200, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                 borderBottom: "1px solid rgba(255,255,255,0.04)", borderRight: "1px solid var(--border)",
               }}
-              title={cat.name}>
-              {cat.name}
+              title={`${cat.name} — click to edit`}
+              onClick={() => openEditCategory(cat)}>
+              <span>{cat.name}</span>
+              <span className="ml-1 text-[9px]" style={{ color: "var(--text-tertiary)", opacity: 0.5 }}>✎</span>
             </td>
             <td className="sticky px-2 py-1.5 text-center text-[12px] cursor-pointer"
               style={{
@@ -434,7 +468,7 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
           <button className="text-sm px-2 py-1 rounded-lg" style={{ color: "var(--accent)" }}
             onClick={onClose}>←</button>
           <div>
-          <div className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>Budget Planner</div>
+          <div className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>Categories & Budget</div>
           <div className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>
             {monthlyCategories.length} monthly + {yearlyCategories.length} yearly categories
             {hasDirty && <span style={{ color: "var(--accent)" }}> — unsaved changes</span>}
@@ -518,6 +552,65 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
           </tbody>
         </table>
       </div>
+
+      {/* Category edit modal */}
+      {editingCat && (
+        <>
+          <div className="fixed inset-0 z-50" style={{ background: "rgba(0,0,0,0.5)" }} onClick={() => setEditingCat(null)} />
+          <div className="fixed z-50 rounded-2xl p-5 shadow-xl"
+            style={{
+              top: "50%", left: "50%", transform: "translate(-50%, -50%)",
+              background: "var(--bg-elevated)", border: "1px solid var(--border)",
+              minWidth: 320, maxWidth: 400,
+            }}>
+            <div className="text-sm font-bold mb-4" style={{ color: "var(--text-primary)" }}>Edit Category</div>
+
+            <div className="text-[10px] font-semibold mb-1" style={{ color: "var(--text-tertiary)" }}>Name</div>
+            <input type="text" className="w-full px-3 py-2 text-sm rounded-xl mb-3"
+              value={editCatName} onChange={e => setEditCatName(e.target.value)} autoFocus />
+
+            <div className="text-[10px] font-semibold mb-1" style={{ color: "var(--text-tertiary)" }}>Recurrence</div>
+            <div className="flex gap-2 mb-3">
+              {(["Monthly", "Yearly"] as const).map(r => (
+                <button key={r} className="flex-1 py-2 rounded-xl text-xs font-semibold"
+                  style={{
+                    background: editCatRecurrence === r ? "var(--accent)" : "rgba(255,255,255,0.06)",
+                    color: editCatRecurrence === r ? "#fff" : "var(--text-tertiary)",
+                  }}
+                  onClick={() => setEditCatRecurrence(r)}>{r}</button>
+              ))}
+            </div>
+
+            <div className="text-[10px] font-semibold mb-1" style={{ color: "var(--text-tertiary)" }}>Visible to</div>
+            <div className="flex gap-2 mb-4">
+              {([
+                { value: "all" as const, label: "Both" },
+                { value: "primary" as const, label: "Me only" },
+                { value: "secondary" as const, label: "Wife only" },
+              ]).map(opt => (
+                <button key={opt.value} className="flex-1 py-2 rounded-xl text-xs font-semibold"
+                  style={{
+                    background: editCatVisibility === opt.value ? "var(--accent)" : "rgba(255,255,255,0.06)",
+                    color: editCatVisibility === opt.value ? "#fff" : "var(--text-tertiary)",
+                  }}
+                  onClick={() => setEditCatVisibility(opt.value)}>{opt.label}</button>
+              ))}
+            </div>
+
+            <div className="flex gap-2">
+              <button className="flex-1 py-2.5 rounded-xl text-sm font-semibold"
+                style={{ background: "var(--accent)", color: "#fff" }}
+                onClick={saveEditCategory}>Save</button>
+              <button className="px-4 py-2.5 rounded-xl text-sm"
+                style={{ color: "var(--text-tertiary)", background: "rgba(255,255,255,0.06)" }}
+                onClick={() => setEditingCat(null)}>Cancel</button>
+              <button className="px-4 py-2.5 rounded-xl text-sm"
+                style={{ color: "var(--accent-red)", background: "rgba(255,90,110,0.08)" }}
+                onClick={() => deleteCategory(editingCat.id)}>Delete</button>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Context menu */}
       {contextMenu && (
