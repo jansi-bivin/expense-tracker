@@ -18,10 +18,8 @@ interface Props {
 }
 
 const CATEGORY_GROUPS = [
-  { label: "General", filter: (c: Category) => !c.name.startsWith("FC :") && !c.name.startsWith("FOC :") && !c.name.startsWith("Service:") && !c.name.startsWith("Insurance:") },
-  { label: "FC (From City)", filter: (c: Category) => c.name.startsWith("FC :") },
-  { label: "FOC (Home Town)", filter: (c: Category) => c.name.startsWith("FOC :") },
-  { label: "Services & Insurance", filter: (c: Category) => c.name.startsWith("Service:") || c.name.startsWith("Insurance:") },
+  { label: "Monthly", filter: (c: Category) => c.recurrence === "Monthly" },
+  { label: "Yearly", filter: (c: Category) => c.recurrence === "Yearly" },
 ];
 
 export default function ManualExpenseForm({ categories, isPrimary, onSave, onClose }: Props) {

@@ -154,8 +154,11 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
       const bgColor = `${color}14`; // ~8% opacity — nearly transparent like a real soap bubble
       const rem = eCap - spent;
       return {
-        id: c.id, label: c.name, amount: fmt(spent),
-        detail: noCap ? undefined : (isOver ? `${fmt(-rem)} over` : `${fmt(rem)} left`),
+        id: c.id, label: c.name,
+        amount: isPrimary ? fmt(spent) : (eCap > 0 ? pctFmt(pct) : fmt(spent)),
+        detail: noCap ? undefined : isPrimary
+          ? (isOver ? `${fmt(-rem)} over` : `${fmt(rem)} left`)
+          : (isOver ? `${pctFmt(pct - 100)} over` : `${pctFmt(100 - pct)} left`),
         isOver, color, bgColor, size: Math.round(size),
         onClick: () => setDrillDownId(c.id),
       };
