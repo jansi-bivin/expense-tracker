@@ -46,7 +46,8 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
   const [editingCell, setEditingCell] = useState<{ catId: number; monthKey: string } | null>(null);
   const [editValue, setEditValue] = useState("");
   const [contextMenu, setContextMenu] = useState<{ catId: number; monthKey: string; x: number; y: number } | null>(null);
-  const [showAddRow, setShowAddRow] = useState(false);
+  const [showAddUniversal, setShowAddUniversal] = useState(false);
+  const [showAddMonthly, setShowAddMonthly] = useState<string | null>(null); // monthKey or null
   const [newCatName, setNewCatName] = useState("");
   const [newCatCap, setNewCatCap] = useState("");
   const [newCatRecurrence, setNewCatRecurrence] = useState<"Monthly" | "Yearly">("Monthly");
@@ -221,17 +222,62 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
     setSaved(false);
   }
 
-  async function handleAddCategory() {
+  async function handleAddUniversal() {
     const name = newCatName.trim();
     if (!name) return;
     const cap = Number(newCatCap) || 0;
-    const { data } = await supabase.from("categories")
+    const { data, error } = await supabase.from("categories")
       .insert({ name, cap, recurrence: newCatRecurrence, visible_to: "all" })
       .select().single();
+    if (error) { console.error("Add category error:", error); return; }
     if (data) {
       onCategoriesChange([...categories, data as Category]);
-      setNewCatName(""); setNewCatCap(""); setShowAddRow(false);
+      setNewCatName(""); setNewCatCap(""); setShowAddUniversal(false);
     }
+  }
+
+  async function handleAddMonthSpecific() {
+    if (!showAddMonthly) return;
+    const name = newCatName.trim();
+    if (!name) return;
+    const cap = Number(newCatCap) || 0;
+    // Create in categories table first (needed for FK)
+    const { data, error } = await supabase.from("categories")
+      .insert({ name, cap: 0, recurrence: "Monthly", visible_to: "all" })
+      .select().single();
+    if (error) { console.error("Add category error:", error); return; }
+    if (!data) return;
+    const newCat = data as Category;
+    onCategoriesChange([...categories, newCat]);
+
+    // Set all months to excluded except the target month
+    const [y, m] = showAddMonthly.split("-").map(Number);
+    const monthBudgetRows = monthCols.map(col => ({
+      month: col.month, year: col.year,
+      category_id: newCat.id, category_name: name,
+      cap: col.key === showAddMonthly ? cap : 0,
+      is_included: col.key === showAddMonthly,
+      updated_at: new Date().toISOString(),
+    }));
+    await supabase.from("monthly_budgets").upsert(monthBudgetRows, { onConflict: "month,year,category_id" });
+
+    // Update local grid immediately
+    setGrid(prev => {
+      const next = new Map(prev);
+      const mm = new Map<string, CellData>();
+      for (const col of monthCols) {
+        mm.set(col.key, {
+          cap: col.key === showAddMonthly ? cap : 0,
+          isIncluded: col.key === showAddMonthly,
+          isModified: true,
+          isDirty: false, // already saved
+        });
+      }
+      next.set(newCat.id, mm);
+      return next;
+    });
+
+    setNewCatName(""); setNewCatCap(""); setShowAddMonthly(null);
   }
 
   function openEditCategory(cat: Category) {
@@ -502,7 +548,13 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
               </th>
               <th className="sticky z-30 px-2 py-2 text-center text-[10px] font-bold"
                 style={{ background: "rgba(123,108,246,0.06)", color: "var(--accent)", minWidth: 80, borderBottom: "2px solid var(--border)", borderRight: "1px solid rgba(123,108,246,0.15)", left: 160 }}>
-                Universal
+                <div className="flex items-center justify-center gap-1">
+                  <span>Universal</span>
+                  <button className="text-[10px] w-4 h-4 rounded flex items-center justify-center"
+                    style={{ background: "rgba(123,108,246,0.2)", color: "var(--accent)" }}
+                    onClick={() => { setShowAddUniversal(true); setShowAddMonthly(null); }}
+                    title="Add universal category">+</button>
+                </div>
               </th>
               {monthCols.map(col => (
                 <th key={col.key} className="px-1 py-2 text-center text-[10px] font-bold"
@@ -511,7 +563,13 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
                     color: col.isCurrent ? "var(--accent)" : "var(--text-tertiary)",
                     minWidth: 80, borderBottom: "2px solid var(--border)",
                   }}>
-                  {col.label}
+                  <div className="flex items-center justify-center gap-0.5">
+                    <span>{col.label}</span>
+                    <button className="text-[8px] w-3.5 h-3.5 rounded flex items-center justify-center opacity-40 hover:opacity-100"
+                      style={{ background: "rgba(255,255,255,0.1)", color: "var(--text-tertiary)" }}
+                      onClick={() => { setShowAddMonthly(col.key); setShowAddUniversal(false); }}
+                      title={`Add category for ${col.label} only`}>+</button>
+                  </div>
                 </th>
               ))}
               <th className="px-2 py-2 text-center text-[10px] font-bold"
@@ -646,13 +704,18 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
         </>
       )}
 
-      {/* Bottom bar */}
-      <div className="flex items-center justify-between px-4 py-3"
-        style={{ background: "var(--bg-elevated)", borderTop: "1px solid var(--border)" }}>
-        {showAddRow ? (
-          <div className="flex items-center gap-2 flex-1">
+      {/* Bottom bar — add category forms */}
+      {(showAddUniversal || showAddMonthly) && (
+        <div className="px-4 py-3"
+          style={{ background: "var(--bg-elevated)", borderTop: "1px solid var(--border)" }}>
+          <div className="text-[10px] font-bold mb-2" style={{ color: showAddUniversal ? "var(--accent)" : "var(--text-secondary)" }}>
+            {showAddUniversal
+              ? "Add Universal Category (applies to all months)"
+              : `Add Category for ${monthCols.find(c => c.key === showAddMonthly)?.label} only`}
+          </div>
+          <div className="flex items-center gap-2">
             <input type="text" placeholder="Category name" className="px-2 py-1.5 text-xs rounded-lg flex-1"
-              style={{ maxWidth: 160 }}
+              style={{ maxWidth: 180 }}
               value={newCatName} onChange={e => setNewCatName(e.target.value)} autoFocus />
             <div className="flex items-center gap-1">
               <span className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>₹</span>
@@ -660,31 +723,27 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
                 style={{ width: 80 }}
                 value={newCatCap} onChange={e => setNewCatCap(e.target.value)} />
             </div>
-            <div className="flex gap-1">
-              {(["Monthly", "Yearly"] as const).map(r => (
-                <button key={r} className="text-[10px] px-2 py-1 rounded"
-                  style={{
-                    background: newCatRecurrence === r ? "var(--accent)" : "rgba(255,255,255,0.06)",
-                    color: newCatRecurrence === r ? "#fff" : "var(--text-tertiary)",
-                  }}
-                  onClick={() => setNewCatRecurrence(r)}>{r}</button>
-              ))}
-            </div>
+            {showAddUniversal && (
+              <div className="flex gap-1">
+                {(["Monthly", "Yearly"] as const).map(r => (
+                  <button key={r} className="text-[10px] px-2 py-1 rounded"
+                    style={{
+                      background: newCatRecurrence === r ? "var(--accent)" : "rgba(255,255,255,0.06)",
+                      color: newCatRecurrence === r ? "#fff" : "var(--text-tertiary)",
+                    }}
+                    onClick={() => setNewCatRecurrence(r)}>{r}</button>
+                ))}
+              </div>
+            )}
             <button className="text-[11px] px-3 py-1.5 rounded-lg font-semibold"
               style={{ background: "var(--accent)", color: "#fff" }}
-              onClick={handleAddCategory}>Add</button>
+              onClick={showAddUniversal ? handleAddUniversal : handleAddMonthSpecific}>Add</button>
             <button className="text-[11px] px-2 py-1.5"
               style={{ color: "var(--text-tertiary)" }}
-              onClick={() => setShowAddRow(false)}>Cancel</button>
+              onClick={() => { setShowAddUniversal(false); setShowAddMonthly(null); setNewCatName(""); setNewCatCap(""); }}>Cancel</button>
           </div>
-        ) : (
-          <button className="text-[11px] font-semibold"
-            style={{ color: "var(--accent)" }}
-            onClick={() => setShowAddRow(true)}>
-            + Add Category
-          </button>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
