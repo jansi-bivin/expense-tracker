@@ -53,6 +53,13 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
   const inputRef = useRef<HTMLInputElement>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Escape key to close
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [onClose]);
+
   const now = new Date();
   const curMonth = now.getMonth() + 1;
   const curYear = now.getFullYear();
@@ -423,11 +430,15 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
       {/* Top bar */}
       <div className="flex items-center justify-between px-4 py-3"
         style={{ background: "var(--bg-elevated)", borderBottom: "1px solid var(--border)" }}>
-        <div>
+        <div className="flex items-center gap-3">
+          <button className="text-sm px-2 py-1 rounded-lg" style={{ color: "var(--accent)" }}
+            onClick={onClose}>←</button>
+          <div>
           <div className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>Budget Planner</div>
           <div className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>
             {monthlyCategories.length} monthly + {yearlyCategories.length} yearly categories
             {hasDirty && <span style={{ color: "var(--accent)" }}> — unsaved changes</span>}
+          </div>
           </div>
         </div>
         <div className="flex items-center gap-2">
