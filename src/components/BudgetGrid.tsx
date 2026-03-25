@@ -57,6 +57,7 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
   const [editCatVisibility, setEditCatVisibility] = useState<"all" | "primary" | "secondary">("all");
   const inputRef = useRef<HTMLInputElement>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const skipNextReload = useRef(false);
 
   // Escape key to close
   useEffect(() => {
@@ -90,6 +91,10 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
   }, [curMonth, curYear]);
 
   useEffect(() => {
+    if (skipNextReload.current) {
+      skipNextReload.current = false;
+      return;
+    }
     async function load() {
       setLoading(true);
       const { data } = await supabase
@@ -231,7 +236,19 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
       .select().single();
     if (error) { console.error("Add category error:", error); return; }
     if (data) {
+      skipNextReload.current = true;
       onCategoriesChange([...categories, data as Category]);
+      // Add to local grid immediately
+      const newCat = data as Category;
+      setGrid(prev => {
+        const next = new Map(prev);
+        const mm = new Map<string, CellData>();
+        for (const col of monthCols) {
+          mm.set(col.key, { cap: newCat.cap, isIncluded: true, isModified: false, isDirty: false });
+        }
+        next.set(newCat.id, mm);
+        return next;
+      });
       setNewCatName(""); setNewCatCap(""); setShowAddUniversal(false);
     }
   }
@@ -248,6 +265,7 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
     if (error) { console.error("Add category error:", error); return; }
     if (!data) return;
     const newCat = data as Category;
+    skipNextReload.current = true;
     onCategoriesChange([...categories, newCat]);
 
     // Set all months to excluded except the target month
