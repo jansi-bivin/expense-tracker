@@ -12,7 +12,7 @@ import DuesView from "@/components/DuesView";
 import AddCategoryForm from "@/components/AddCategoryForm";
 import ManualExpenseForm from "@/components/ManualExpenseForm";
 import FeatureIdeas from "@/components/FeatureIdeas";
-import BudgetPlanner from "@/components/BudgetPlanner";
+import BudgetGrid from "@/components/BudgetGrid";
 
 /* ── DebitOverlay: self-contained so overlayIdx doesn't re-render parent ── */
 function DebitOverlay({ txns, categories, isPrimary, unclearedDues, settlementHints, merchantCategoryMap, onDone, onSnooze, onSettle, onDismissAll }: {
@@ -824,9 +824,9 @@ function HomeInner() {
         />
       )}
 
-      {/* Budget Planner overlay */}
+      {/* Budget Grid overlay */}
       {showBudgetPlanner && (
-        <BudgetPlanner
+        <BudgetGrid
           categories={categories}
           onCategoriesChange={setCategories}
           onClose={() => setShowBudgetPlanner(false)}
