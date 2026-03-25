@@ -681,13 +681,13 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
                   {currentYear}
                 </span>
               </div>
-              {/* Inline yearly summary */}
+              {/* Inline yearly summary — same layout as monthly */}
               <div className="flex justify-between items-center mb-2 px-1">
                 {isPrimary ? (
                   <>
                     <div>
                       <div className="text-[10px] font-medium" style={{ color: "var(--text-tertiary)" }}>Spent</div>
-                      <div className="text-base font-extrabold" style={{ color: "var(--text-primary)" }}>{fmt(yearlyTotalSpent)}</div>
+                      <div className="text-base font-extrabold amount-debit">{fmt(yearlyTotalSpent)}</div>
                     </div>
                     <div className="text-center flex-1 mx-3">
                       <div className="relative">
@@ -698,25 +698,22 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
                         <div className="absolute top-0 h-1.5 w-0.5" style={{ left: `${yearlyExpectedPct}%`, background: "var(--text-tertiary)", opacity: 0.6 }} />
                       </div>
                       <div className="text-[9px] mt-1 font-medium" style={{ color: "var(--text-tertiary)" }}>
-                        {pctFmt(yearlyPct)} used · pace {pctFmt(yearlyExpectedPct)}
+                        {pctFmt(yearlyPct)} of {fmt(yearlyTotalCap)}
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="text-[10px] font-medium" style={{ color: "var(--text-tertiary)" }}>M{monthsElapsed}</div>
-                      <div className="text-base font-extrabold" style={{ color: yearlyOnTrack ? "var(--accent-green)" : "var(--accent-red)" }}>
-                        {yearlyOnTrack
-                          ? fmt(Math.abs(yearlyProportionalRemaining)) + " ↓"
-                          : fmt(Math.abs(yearlyProportionalRemaining)) + " ↑"
-                        }
+                      <div className="text-[10px] font-medium" style={{ color: "var(--text-tertiary)" }}>Left</div>
+                      <div className="text-base font-extrabold" style={{ color: yearlyRemaining >= 0 ? "var(--accent-green)" : "var(--accent-red)" }}>
+                        {yearlyRemaining >= 0 ? fmt(yearlyRemaining) : "-" + fmt(-yearlyRemaining)}
                       </div>
                     </div>
                   </>
                 ) : (
                   <>
                     <div>
-                      <div className="text-[10px] font-medium" style={{ color: "var(--text-tertiary)" }}>Yearly</div>
+                      <div className="text-[10px] font-medium" style={{ color: "var(--text-tertiary)" }}>Budget Left</div>
                       <div className="text-lg font-extrabold" style={{ color: yearlyOnTrack ? "var(--accent-green)" : "var(--accent-red)" }}>
-                        {yearlyOnTrack ? "On Track" : "Over Pace"}
+                        {pctFmt(Math.max(100 - yearlyPct, 0))}
                       </div>
                     </div>
                     <div className="flex-1 mx-3">
@@ -727,6 +724,9 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
                         </div>
                         <div className="absolute top-0 h-1.5 w-0.5" style={{ left: `${yearlyExpectedPct}%`, background: "var(--text-tertiary)", opacity: 0.6 }} />
                       </div>
+                    </div>
+                    <div className="text-[10px] font-medium text-right" style={{ color: "var(--text-tertiary)" }}>
+                      {(100 - yearlyPct) > 50 ? "👍" : (100 - yearlyPct) > 25 ? "🤔" : (100 - yearlyPct) > 10 ? "😬" : "⚠️"}
                     </div>
                   </>
                 )}
