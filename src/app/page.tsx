@@ -805,14 +805,6 @@ function HomeInner() {
         />
       )}
 
-      {/* Add Category Form overlay */}
-      {showAddCategory && (
-        <AddCategoryForm
-          onSave={handleAddCategory}
-          onClose={() => setShowAddCategory(false)}
-        />
-      )}
-
       {/* Feature Ideas overlay */}
       {showFeatureIdeas && (
         <FeatureIdeas

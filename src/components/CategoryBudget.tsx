@@ -746,17 +746,6 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
         </>
       )}
 
-      {/* ═══ Add Category — bottom, shared ═══ */}
-      {isPrimary && (
-        <button
-          className="card w-full p-4 flex items-center justify-center gap-2 mb-6 transition-all hover:scale-[1.01]"
-          style={{ border: "1px dashed var(--border-light)" }}
-          onClick={onShowAddCategory}
-        >
-          <span style={{ color: "var(--accent)" }}>+</span>
-          <span className="text-sm font-medium" style={{ color: "var(--text-tertiary)" }}>Add Category</span>
-        </button>
-      )}
     </div>
   );
 }
