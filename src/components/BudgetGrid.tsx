@@ -12,35 +12,31 @@ interface Props {
 const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-// Compact format: 1500 → "1.5K", 500 → "500"
-function fmt(n: number): string {
+function inr(n: number): string {
   if (n === 0) return "—";
-  if (n >= 10000) return `${(n / 1000).toFixed(0)}K`;
-  if (n >= 1000) return `${(n / 1000).toFixed(1).replace(/\.0$/, "")}K`;
-  return n.toLocaleString("en-IN");
+  return "₹" + n.toLocaleString("en-IN");
 }
 
-function fmtFull(n: number): string {
-  if (n === 0) return "0";
+function inrPlain(n: number): string {
   return n.toLocaleString("en-IN");
 }
 
 interface MonthCol {
-  month: number; // 1-12
+  month: number;
   year: number;
-  key: string; // "2026-4"
-  label: string; // "Apr'26"
+  key: string;
+  label: string;
   isCurrent: boolean;
 }
 
 interface CellData {
   cap: number;
   isIncluded: boolean;
-  isModified: boolean; // differs from universal
-  isDirty: boolean; // changed in this session
+  isModified: boolean;
+  isDirty: boolean;
 }
 
-type GridData = Map<number, Map<string, CellData>>; // categoryId → monthKey → cell
+type GridData = Map<number, Map<string, CellData>>;
 
 export default function BudgetGrid({ categories, onCategoriesChange, onClose }: Props) {
   const [grid, setGrid] = useState<GridData>(new Map());
@@ -53,15 +49,17 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
   const [showAddRow, setShowAddRow] = useState(false);
   const [newCatName, setNewCatName] = useState("");
   const [newCatCap, setNewCatCap] = useState("");
+  const [newCatRecurrence, setNewCatRecurrence] = useState<"Monthly" | "Yearly">("Monthly");
   const inputRef = useRef<HTMLInputElement>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
 
   const now = new Date();
   const curMonth = now.getMonth() + 1;
   const curYear = now.getFullYear();
 
-  // Generate 12 month columns
+  const monthlyCategories = useMemo(() => categories.filter(c => c.recurrence === "Monthly"), [categories]);
+  const yearlyCategories = useMemo(() => categories.filter(c => c.recurrence === "Yearly"), [categories]);
+
   const monthCols: MonthCol[] = useMemo(() => {
     const cols: MonthCol[] = [];
     for (let i = 0; i < 12; i++) {
@@ -79,53 +77,38 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
     return cols;
   }, [curMonth, curYear]);
 
-  // Load all monthly_budgets for the 12-month range
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const startYear = curYear;
-      const endYear = curYear + 1;
-
       const { data } = await supabase
         .from("monthly_budgets")
         .select("*")
-        .gte("year", startYear)
-        .lte("year", endYear);
+        .gte("year", curYear)
+        .lte("year", curYear + 1);
 
       const newGrid: GridData = new Map();
-
-      // Initialize all cells from universal defaults
       for (const cat of categories) {
         const monthMap = new Map<string, CellData>();
         for (const col of monthCols) {
-          monthMap.set(col.key, {
-            cap: cat.cap,
-            isIncluded: true,
-            isModified: false,
-            isDirty: false,
-          });
+          monthMap.set(col.key, { cap: cat.cap, isIncluded: true, isModified: false, isDirty: false });
         }
         newGrid.set(cat.id, monthMap);
       }
 
-      // Overlay with existing monthly_budgets
       if (data) {
         for (const mb of data as MonthlyBudget[]) {
           const key = `${mb.year}-${mb.month}`;
           const catMap = newGrid.get(mb.category_id);
           if (catMap) {
             const cat = categories.find(c => c.id === mb.category_id);
-            const universalCap = cat?.cap ?? 0;
+            const univCap = cat?.cap ?? 0;
             catMap.set(key, {
-              cap: mb.cap,
-              isIncluded: mb.is_included,
-              isModified: mb.cap !== universalCap || !mb.is_included,
-              isDirty: false,
+              cap: mb.cap, isIncluded: mb.is_included,
+              isModified: mb.cap !== univCap || !mb.is_included, isDirty: false,
             });
           }
         }
       }
-
       setGrid(newGrid);
       setLoading(false);
     }
@@ -134,27 +117,20 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
 
   const hasDirty = useMemo(() => {
     for (const [, months] of grid) {
-      for (const [, cell] of months) {
-        if (cell.isDirty) return true;
-      }
+      for (const [, cell] of months) { if (cell.isDirty) return true; }
     }
     return false;
   }, [grid]);
 
   function updateCell(catId: number, monthKey: string, cap: number) {
     const cat = categories.find(c => c.id === catId);
-    const universalCap = cat?.cap ?? 0;
+    const univCap = cat?.cap ?? 0;
     setGrid(prev => {
       const next = new Map(prev);
-      const monthMap = new Map(next.get(catId) ?? new Map());
-      const existing = monthMap.get(monthKey);
-      monthMap.set(monthKey, {
-        cap,
-        isIncluded: existing?.isIncluded ?? true,
-        isModified: cap !== universalCap,
-        isDirty: true,
-      });
-      next.set(catId, monthMap);
+      const mm = new Map(next.get(catId) ?? new Map());
+      const existing = mm.get(monthKey);
+      mm.set(monthKey, { cap, isIncluded: existing?.isIncluded ?? true, isModified: cap !== univCap, isDirty: true });
+      next.set(catId, mm);
       return next;
     });
     setSaved(false);
@@ -163,17 +139,10 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
   function toggleIncluded(catId: number, monthKey: string) {
     setGrid(prev => {
       const next = new Map(prev);
-      const monthMap = new Map(next.get(catId) ?? new Map());
-      const existing = monthMap.get(monthKey);
-      if (existing) {
-        monthMap.set(monthKey, {
-          ...existing,
-          isIncluded: !existing.isIncluded,
-          isModified: true,
-          isDirty: true,
-        });
-      }
-      next.set(catId, monthMap);
+      const mm = new Map(next.get(catId) ?? new Map());
+      const existing = mm.get(monthKey);
+      if (existing) mm.set(monthKey, { ...existing, isIncluded: !existing.isIncluded, isModified: true, isDirty: true });
+      next.set(catId, mm);
       return next;
     });
     setSaved(false);
@@ -181,66 +150,47 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
 
   async function handleSaveAll() {
     setSaving(true);
-    const rows: Array<{
-      month: number; year: number; category_id: number;
-      category_name: string; cap: number; is_included: boolean;
-      updated_at: string;
-    }> = [];
-
+    const rows: Array<{ month: number; year: number; category_id: number; category_name: string; cap: number; is_included: boolean; updated_at: string }> = [];
     for (const [catId, months] of grid) {
       for (const [monthKey, cell] of months) {
         if (cell.isDirty) {
           const [y, m] = monthKey.split("-").map(Number);
           const cat = categories.find(c => c.id === catId);
-          rows.push({
-            month: m, year: y,
-            category_id: catId,
-            category_name: cat?.name ?? "",
-            cap: cell.cap,
-            is_included: cell.isIncluded,
-            updated_at: new Date().toISOString(),
-          });
+          rows.push({ month: m, year: y, category_id: catId, category_name: cat?.name ?? "", cap: cell.cap, is_included: cell.isIncluded, updated_at: new Date().toISOString() });
         }
       }
     }
+    if (rows.length > 0) await supabase.from("monthly_budgets").upsert(rows, { onConflict: "month,year,category_id" });
 
-    if (rows.length > 0) {
-      await supabase.from("monthly_budgets").upsert(rows, { onConflict: "month,year,category_id" });
-    }
-
-    // Clear dirty flags
     setGrid(prev => {
       const next = new Map(prev);
       for (const [catId, months] of next) {
-        const newMonths = new Map(months);
-        for (const [key, cell] of newMonths) {
-          if (cell.isDirty) newMonths.set(key, { ...cell, isDirty: false });
-        }
-        next.set(catId, newMonths);
+        const nm = new Map(months);
+        for (const [key, cell] of nm) { if (cell.isDirty) nm.set(key, { ...cell, isDirty: false }); }
+        next.set(catId, nm);
       }
       return next;
     });
-
     setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   }
 
-  async function handlePushToUniversal(catId: number) {
+  async function handlePushCellToUniversal(catId: number, monthKey: string) {
+    const cell = grid.get(catId)?.get(monthKey);
+    if (!cell) return;
+    await supabase.from("categories").update({ cap: cell.cap }).eq("id", catId);
+    onCategoriesChange(categories.map(c => c.id === catId ? { ...c, cap: cell.cap } : c));
+    setContextMenu(null);
+  }
+
+  async function handlePushRowToUniversal(catId: number) {
     const monthMap = grid.get(catId);
     if (!monthMap) return;
-    // Find the most common cap value across months
     const capCounts = new Map<number, number>();
-    for (const [, cell] of monthMap) {
-      if (cell.isIncluded) {
-        capCounts.set(cell.cap, (capCounts.get(cell.cap) || 0) + 1);
-      }
-    }
+    for (const [, cell] of monthMap) { if (cell.isIncluded) capCounts.set(cell.cap, (capCounts.get(cell.cap) || 0) + 1); }
     let bestCap = 0, bestCount = 0;
-    for (const [cap, count] of capCounts) {
-      if (count > bestCount) { bestCap = cap; bestCount = count; }
-    }
-
+    for (const [cap, count] of capCounts) { if (count > bestCount) { bestCap = cap; bestCount = count; } }
     await supabase.from("categories").update({ cap: bestCap }).eq("id", catId);
     onCategoriesChange(categories.map(c => c.id === catId ? { ...c, cap: bestCap } : c));
     setContextMenu(null);
@@ -251,16 +201,9 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
     if (!cat) return;
     setGrid(prev => {
       const next = new Map(prev);
-      const monthMap = new Map<string, CellData>();
-      for (const col of monthCols) {
-        monthMap.set(col.key, {
-          cap: cat.cap,
-          isIncluded: true,
-          isModified: false,
-          isDirty: true,
-        });
-      }
-      next.set(catId, monthMap);
+      const mm = new Map<string, CellData>();
+      for (const col of monthCols) mm.set(col.key, { cap: cat.cap, isIncluded: true, isModified: false, isDirty: true });
+      next.set(catId, mm);
       return next;
     });
     setContextMenu(null);
@@ -272,13 +215,11 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
     if (!name) return;
     const cap = Number(newCatCap) || 0;
     const { data } = await supabase.from("categories")
-      .insert({ name, cap, recurrence: "Monthly", visible_to: "all" })
+      .insert({ name, cap, recurrence: newCatRecurrence, visible_to: "all" })
       .select().single();
     if (data) {
       onCategoriesChange([...categories, data as Category]);
-      setNewCatName("");
-      setNewCatCap("");
-      setShowAddRow(false);
+      setNewCatName(""); setNewCatCap(""); setShowAddRow(false);
     }
   }
 
@@ -290,13 +231,15 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
   }
 
   function commitEdit() {
-    if (editingCell) {
+    if (!editingCell) return;
+    if (editingCell.monthKey === "universal") {
+      commitEditUniversal();
+    } else {
       updateCell(editingCell.catId, editingCell.monthKey, Number(editValue) || 0);
       setEditingCell(null);
     }
   }
 
-  // Update universal cap directly
   function startEditUniversal(catId: number) {
     const cat = categories.find(c => c.id === catId);
     setEditingCell({ catId, monthKey: "universal" });
@@ -305,7 +248,7 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
   }
 
   async function commitEditUniversal() {
-    if (editingCell && editingCell.monthKey === "universal") {
+    if (editingCell?.monthKey === "universal") {
       const newCap = Number(editValue) || 0;
       await supabase.from("categories").update({ cap: newCap }).eq("id", editingCell.catId);
       onCategoriesChange(categories.map(c => c.id === editingCell.catId ? { ...c, cap: newCap } : c));
@@ -324,17 +267,15 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
     if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
   }, []);
 
-  // Column totals
-  function colTotal(monthKey: string): number {
+  function colTotal(monthKey: string, cats: Category[]): number {
     let sum = 0;
-    for (const [, months] of grid) {
-      const cell = months.get(monthKey);
+    for (const cat of cats) {
+      const cell = grid.get(cat.id)?.get(monthKey);
       if (cell?.isIncluded) sum += cell.cap;
     }
     return sum;
   }
 
-  // Row total
   function rowTotal(catId: number): number {
     const months = grid.get(catId);
     if (!months) return 0;
@@ -344,6 +285,130 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
       if (cell?.isIncluded) sum += cell.cap;
     }
     return sum;
+  }
+
+  // Shared cell renderer
+  function renderCell(cat: Category, col: MonthCol) {
+    const cell = grid.get(cat.id)?.get(col.key);
+    if (!cell) return <td key={col.key} />;
+    const isEditing = editingCell?.catId === cat.id && editingCell.monthKey === col.key;
+    return (
+      <td key={col.key}
+        className="px-1 py-1.5 text-center text-[12px] cursor-pointer select-none"
+        style={{
+          background: cell.isDirty ? "rgba(123,108,246,0.08)"
+            : cell.isModified ? "rgba(123,108,246,0.04)"
+            : col.isCurrent ? "rgba(123,108,246,0.02)" : "transparent",
+          color: !cell.isIncluded ? "var(--text-tertiary)"
+            : cell.isModified ? "var(--accent)" : "var(--text-secondary)",
+          borderBottom: "1px solid rgba(255,255,255,0.04)",
+          opacity: cell.isIncluded ? 1 : 0.35,
+          textDecoration: cell.isIncluded ? "none" : "line-through",
+        }}
+        onClick={() => !isEditing && startEdit(cat.id, col.key)}
+        onTouchStart={e => handleLongPress(cat.id, col.key, e)}
+        onTouchEnd={cancelLongPress}
+        onMouseDown={e => handleLongPress(cat.id, col.key, e)}
+        onMouseUp={cancelLongPress}
+        onMouseLeave={cancelLongPress}
+        onContextMenu={e => {
+          e.preventDefault();
+          const rect = (e.target as HTMLElement).getBoundingClientRect();
+          setContextMenu({ catId: cat.id, monthKey: col.key, x: rect.left, y: rect.bottom + 4 });
+        }}>
+        {isEditing ? (
+          <input ref={inputRef} type="number"
+            className="w-full text-center text-[12px] bg-transparent outline-none"
+            style={{ color: "var(--accent)" }}
+            value={editValue}
+            onChange={e => setEditValue(e.target.value)}
+            onBlur={commitEdit}
+            onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditingCell(null); }}
+          />
+        ) : (
+          <span>{cell.isIncluded ? inrPlain(cell.cap) : "—"}</span>
+        )}
+      </td>
+    );
+  }
+
+  // Shared section renderer
+  function renderSection(title: string, cats: Category[]) {
+    if (cats.length === 0) return null;
+    return (
+      <>
+        {/* Section header */}
+        <tr>
+          <td colSpan={monthCols.length + 3}
+            className="sticky left-0 px-3 py-2 text-[11px] font-bold uppercase tracking-wider"
+            style={{ background: "var(--bg-elevated)", color: "var(--text-tertiary)", borderBottom: "1px solid var(--border)", borderTop: "1px solid var(--border)" }}>
+            {title}
+          </td>
+        </tr>
+
+        {/* Category rows */}
+        {cats.map(cat => (
+          <tr key={cat.id}>
+            <td className="sticky left-0 z-10 px-3 py-1.5 text-[12px] font-medium"
+              style={{
+                background: "var(--bg-base)", color: "var(--text-primary)",
+                minWidth: 160, maxWidth: 200, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                borderBottom: "1px solid rgba(255,255,255,0.04)", borderRight: "1px solid var(--border)",
+              }}
+              title={cat.name}>
+              {cat.name}
+            </td>
+            <td className="sticky px-2 py-1.5 text-center text-[12px] cursor-pointer"
+              style={{
+                background: "rgba(123,108,246,0.03)", color: "var(--accent)",
+                borderBottom: "1px solid rgba(255,255,255,0.04)", borderRight: "1px solid rgba(123,108,246,0.08)",
+                left: 160,
+              }}
+              onClick={() => startEditUniversal(cat.id)}>
+              {editingCell?.catId === cat.id && editingCell.monthKey === "universal" ? (
+                <input ref={inputRef} type="number"
+                  className="w-full text-center text-[12px] bg-transparent outline-none"
+                  style={{ color: "var(--accent)" }}
+                  value={editValue}
+                  onChange={e => setEditValue(e.target.value)}
+                  onBlur={commitEditUniversal}
+                  onKeyDown={e => { if (e.key === "Enter") commitEditUniversal(); }}
+                />
+              ) : (
+                <span>{inrPlain(cat.cap)}</span>
+              )}
+            </td>
+            {monthCols.map(col => renderCell(cat, col))}
+            <td className="px-2 py-1.5 text-center text-[11px] font-semibold"
+              style={{ color: "var(--text-tertiary)", borderBottom: "1px solid rgba(255,255,255,0.04)", borderLeft: "1px solid var(--border)" }}>
+              {inr(rowTotal(cat.id))}
+            </td>
+          </tr>
+        ))}
+
+        {/* Section subtotal */}
+        <tr>
+          <td className="sticky left-0 z-10 px-3 py-1.5 text-[11px] font-bold"
+            style={{ background: "rgba(255,255,255,0.02)", color: "var(--text-secondary)", borderBottom: "1px solid var(--border)", borderRight: "1px solid var(--border)" }}>
+            Subtotal
+          </td>
+          <td className="sticky px-2 py-1.5 text-center text-[11px] font-bold"
+            style={{ background: "rgba(123,108,246,0.04)", color: "var(--accent)", borderBottom: "1px solid var(--border)", borderRight: "1px solid rgba(123,108,246,0.08)", left: 160 }}>
+            {inr(cats.reduce((s, c) => s + c.cap, 0))}
+          </td>
+          {monthCols.map(col => (
+            <td key={col.key} className="px-1 py-1.5 text-center text-[11px] font-bold"
+              style={{ background: col.isCurrent ? "rgba(123,108,246,0.04)" : "rgba(255,255,255,0.02)", color: col.isCurrent ? "var(--accent)" : "var(--text-secondary)", borderBottom: "1px solid var(--border)" }}>
+              {inr(colTotal(col.key, cats))}
+            </td>
+          ))}
+          <td className="px-2 py-1.5 text-center text-[11px] font-bold"
+            style={{ color: "var(--text-secondary)", borderBottom: "1px solid var(--border)", borderLeft: "1px solid var(--border)" }}>
+            {inr(cats.reduce((s, c) => s + rowTotal(c.id), 0))}
+          </td>
+        </tr>
+      </>
+    );
   }
 
   if (loading) return (
@@ -361,7 +426,7 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
         <div>
           <div className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>Budget Planner</div>
           <div className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>
-            {categories.length} categories × 12 months
+            {monthlyCategories.length} monthly + {yearlyCategories.length} yearly categories
             {hasDirty && <span style={{ color: "var(--accent)" }}> — unsaved changes</span>}
           </div>
         </div>
@@ -373,7 +438,7 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
             }}
             disabled={saving || !hasDirty}
             onClick={handleSaveAll}>
-            {saving ? "..." : saved ? "✓" : "Save"}
+            {saving ? "Saving..." : saved ? "✓ Saved" : "Save All"}
           </button>
           <button className="text-[11px] px-3 py-1.5 rounded-lg"
             style={{ color: "var(--text-tertiary)", background: "rgba(255,255,255,0.06)" }}
@@ -382,204 +447,65 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
       </div>
 
       {/* Grid */}
-      <div className="flex-1 overflow-hidden relative">
-        <div ref={scrollRef} className="overflow-auto h-full"
-          style={{ WebkitOverflowScrolling: "touch" }}>
-          <table className="border-collapse" style={{ minWidth: "max-content" }}>
-            <thead>
-              <tr>
-                {/* Category header — sticky left */}
-                <th className="sticky left-0 z-20 px-2 py-2 text-left text-[10px] font-bold"
+      <div className="flex-1 overflow-auto" style={{ WebkitOverflowScrolling: "touch" }}>
+        <table className="border-collapse w-full" style={{ minWidth: "max-content" }}>
+          <thead>
+            <tr className="sticky top-0 z-30" style={{ background: "var(--bg-elevated)" }}>
+              <th className="sticky left-0 z-40 px-3 py-2 text-left text-[11px] font-bold"
+                style={{ background: "var(--bg-elevated)", color: "var(--text-tertiary)", minWidth: 160, maxWidth: 200, borderBottom: "2px solid var(--border)", borderRight: "1px solid var(--border)" }}>
+                Category
+              </th>
+              <th className="sticky z-30 px-2 py-2 text-center text-[10px] font-bold"
+                style={{ background: "rgba(123,108,246,0.06)", color: "var(--accent)", minWidth: 80, borderBottom: "2px solid var(--border)", borderRight: "1px solid rgba(123,108,246,0.15)", left: 160 }}>
+                Universal
+              </th>
+              {monthCols.map(col => (
+                <th key={col.key} className="px-1 py-2 text-center text-[10px] font-bold"
                   style={{
-                    background: "var(--bg-elevated)",
-                    color: "var(--text-tertiary)",
-                    minWidth: 100, maxWidth: 100,
-                    borderBottom: "1px solid var(--border)",
-                    borderRight: "1px solid var(--border)",
+                    background: col.isCurrent ? "rgba(123,108,246,0.06)" : "var(--bg-elevated)",
+                    color: col.isCurrent ? "var(--accent)" : "var(--text-tertiary)",
+                    minWidth: 80, borderBottom: "2px solid var(--border)",
                   }}>
-                  Category
+                  {col.label}
                 </th>
-                {/* Universal column */}
-                <th className="sticky z-10 px-1 py-2 text-center text-[9px] font-bold"
+              ))}
+              <th className="px-2 py-2 text-center text-[10px] font-bold"
+                style={{ background: "var(--bg-elevated)", color: "var(--text-tertiary)", minWidth: 90, borderBottom: "2px solid var(--border)", borderLeft: "1px solid var(--border)" }}>
+                Year Total
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {renderSection("Monthly", monthlyCategories)}
+            {renderSection("Yearly", yearlyCategories)}
+
+            {/* Grand total */}
+            <tr>
+              <td className="sticky left-0 z-10 px-3 py-2 text-[12px] font-bold"
+                style={{ background: "var(--bg-elevated)", color: "var(--text-primary)", borderTop: "2px solid var(--border)", borderRight: "1px solid var(--border)" }}>
+                GRAND TOTAL
+              </td>
+              <td className="sticky px-2 py-2 text-center text-[12px] font-bold"
+                style={{ background: "rgba(123,108,246,0.06)", color: "var(--accent)", borderTop: "2px solid var(--border)", borderRight: "1px solid rgba(123,108,246,0.08)", left: 160 }}>
+                {inr(categories.reduce((s, c) => s + c.cap, 0))}
+              </td>
+              {monthCols.map(col => (
+                <td key={col.key} className="px-1 py-2 text-center text-[12px] font-bold"
                   style={{
-                    background: "rgba(123,108,246,0.06)",
-                    color: "var(--accent)",
-                    minWidth: 55, maxWidth: 55,
-                    borderBottom: "1px solid var(--border)",
-                    borderRight: "1px solid rgba(123,108,246,0.15)",
-                    left: 100,
+                    background: col.isCurrent ? "rgba(123,108,246,0.06)" : "var(--bg-elevated)",
+                    color: col.isCurrent ? "var(--accent)" : "var(--text-primary)",
+                    borderTop: "2px solid var(--border)",
                   }}>
-                  Univ
-                </th>
-                {/* Month columns */}
-                {monthCols.map(col => (
-                  <th key={col.key} className="px-1 py-2 text-center text-[9px] font-bold"
-                    style={{
-                      background: col.isCurrent ? "rgba(123,108,246,0.06)" : "var(--bg-elevated)",
-                      color: col.isCurrent ? "var(--accent)" : "var(--text-tertiary)",
-                      minWidth: 55, maxWidth: 55,
-                      borderBottom: "1px solid var(--border)",
-                    }}>
-                    {col.label}
-                  </th>
-                ))}
-                {/* Total column */}
-                <th className="px-2 py-2 text-center text-[9px] font-bold"
-                  style={{
-                    background: "var(--bg-elevated)",
-                    color: "var(--text-tertiary)",
-                    minWidth: 60,
-                    borderBottom: "1px solid var(--border)",
-                    borderLeft: "1px solid var(--border)",
-                  }}>
-                  Year
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {categories.map(cat => {
-                const months = grid.get(cat.id);
-                return (
-                  <tr key={cat.id}>
-                    {/* Category name — sticky left */}
-                    <td className="sticky left-0 z-10 px-2 py-1.5 text-[11px] font-medium truncate"
-                      style={{
-                        background: "var(--bg-base)",
-                        color: "var(--text-primary)",
-                        minWidth: 100, maxWidth: 100,
-                        borderBottom: "1px solid rgba(255,255,255,0.04)",
-                        borderRight: "1px solid var(--border)",
-                      }}>
-                      {cat.name}
-                    </td>
-
-                    {/* Universal cap cell */}
-                    <td className="sticky px-1 py-1 text-center text-[11px] cursor-pointer"
-                      style={{
-                        background: "rgba(123,108,246,0.03)",
-                        color: "var(--accent)",
-                        borderBottom: "1px solid rgba(255,255,255,0.04)",
-                        borderRight: "1px solid rgba(123,108,246,0.08)",
-                        left: 100,
-                      }}
-                      onClick={() => startEditUniversal(cat.id)}>
-                      {editingCell?.catId === cat.id && editingCell.monthKey === "universal" ? (
-                        <input ref={inputRef} type="number"
-                          className="w-full text-center text-[11px] bg-transparent outline-none"
-                          style={{ color: "var(--accent)" }}
-                          value={editValue}
-                          onChange={e => setEditValue(e.target.value)}
-                          onBlur={commitEditUniversal}
-                          onKeyDown={e => { if (e.key === "Enter") commitEditUniversal(); }}
-                        />
-                      ) : (
-                        <span>{fmt(cat.cap)}</span>
-                      )}
-                    </td>
-
-                    {/* Month cells */}
-                    {monthCols.map(col => {
-                      const cell = months?.get(col.key);
-                      if (!cell) return <td key={col.key} />;
-                      const isEditing = editingCell?.catId === cat.id && editingCell.monthKey === col.key;
-                      return (
-                        <td key={col.key}
-                          className="px-1 py-1 text-center text-[11px] cursor-pointer select-none"
-                          style={{
-                            background: cell.isDirty ? "rgba(123,108,246,0.08)"
-                              : cell.isModified ? "rgba(123,108,246,0.04)"
-                              : col.isCurrent ? "rgba(123,108,246,0.02)" : "transparent",
-                            color: !cell.isIncluded ? "var(--text-tertiary)"
-                              : cell.isModified ? "var(--accent)"
-                              : "var(--text-secondary)",
-                            borderBottom: "1px solid rgba(255,255,255,0.04)",
-                            opacity: cell.isIncluded ? 1 : 0.35,
-                            textDecoration: cell.isIncluded ? "none" : "line-through",
-                          }}
-                          onClick={() => !isEditing && startEdit(cat.id, col.key)}
-                          onTouchStart={e => handleLongPress(cat.id, col.key, e)}
-                          onTouchEnd={cancelLongPress}
-                          onMouseDown={e => handleLongPress(cat.id, col.key, e)}
-                          onMouseUp={cancelLongPress}
-                          onMouseLeave={cancelLongPress}
-                          onContextMenu={e => {
-                            e.preventDefault();
-                            const rect = (e.target as HTMLElement).getBoundingClientRect();
-                            setContextMenu({ catId: cat.id, monthKey: col.key, x: rect.left, y: rect.bottom + 4 });
-                          }}>
-                          {isEditing ? (
-                            <input ref={inputRef} type="number"
-                              className="w-full text-center text-[11px] bg-transparent outline-none"
-                              style={{ color: "var(--accent)" }}
-                              value={editValue}
-                              onChange={e => setEditValue(e.target.value)}
-                              onBlur={commitEdit}
-                              onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditingCell(null); }}
-                            />
-                          ) : (
-                            <span>{cell.isIncluded ? fmt(cell.cap) : "—"}</span>
-                          )}
-                        </td>
-                      );
-                    })}
-
-                    {/* Row total */}
-                    <td className="px-2 py-1 text-center text-[10px] font-semibold"
-                      style={{
-                        color: "var(--text-tertiary)",
-                        borderBottom: "1px solid rgba(255,255,255,0.04)",
-                        borderLeft: "1px solid var(--border)",
-                      }}>
-                      {fmt(rowTotal(cat.id))}
-                    </td>
-                  </tr>
-                );
-              })}
-
-              {/* Totals row */}
-              <tr>
-                <td className="sticky left-0 z-10 px-2 py-2 text-[10px] font-bold"
-                  style={{
-                    background: "var(--bg-elevated)",
-                    color: "var(--text-secondary)",
-                    borderTop: "1px solid var(--border)",
-                    borderRight: "1px solid var(--border)",
-                  }}>
-                  TOTAL
+                  {inr(colTotal(col.key, categories))}
                 </td>
-                <td className="sticky px-1 py-2 text-center text-[10px] font-bold"
-                  style={{
-                    background: "rgba(123,108,246,0.06)",
-                    color: "var(--accent)",
-                    borderTop: "1px solid var(--border)",
-                    borderRight: "1px solid rgba(123,108,246,0.08)",
-                    left: 100,
-                  }}>
-                  {fmt(categories.reduce((s, c) => s + c.cap, 0))}
-                </td>
-                {monthCols.map(col => (
-                  <td key={col.key} className="px-1 py-2 text-center text-[10px] font-bold"
-                    style={{
-                      background: col.isCurrent ? "rgba(123,108,246,0.06)" : "var(--bg-elevated)",
-                      color: col.isCurrent ? "var(--accent)" : "var(--text-secondary)",
-                      borderTop: "1px solid var(--border)",
-                    }}>
-                    {fmt(colTotal(col.key))}
-                  </td>
-                ))}
-                <td className="px-2 py-2 text-center text-[10px] font-bold"
-                  style={{
-                    background: "var(--bg-elevated)",
-                    color: "var(--text-primary)",
-                    borderTop: "1px solid var(--border)",
-                    borderLeft: "1px solid var(--border)",
-                  }}>
-                  {fmt(monthCols.reduce((s, col) => s + colTotal(col.key), 0))}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+              ))}
+              <td className="px-2 py-2 text-center text-[12px] font-bold"
+                style={{ background: "var(--bg-elevated)", color: "var(--text-primary)", borderTop: "2px solid var(--border)", borderLeft: "1px solid var(--border)" }}>
+                {inr(monthCols.reduce((s, col) => s + colTotal(col.key, categories), 0))}
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
 
       {/* Context menu */}
@@ -588,26 +514,29 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
           <div className="fixed inset-0 z-50" onClick={() => setContextMenu(null)} />
           <div className="fixed z-50 rounded-xl p-1 shadow-lg"
             style={{
-              left: Math.min(contextMenu.x, window.innerWidth - 180),
-              top: Math.min(contextMenu.y, window.innerHeight - 140),
-              background: "var(--bg-elevated)",
-              border: "1px solid var(--border)",
-              minWidth: 160,
+              left: Math.min(contextMenu.x, window.innerWidth - 220),
+              top: Math.min(contextMenu.y, window.innerHeight - 180),
+              background: "var(--bg-elevated)", border: "1px solid var(--border)", minWidth: 200,
             }}>
-            <button className="w-full text-left px-3 py-2 text-xs rounded-lg"
+            <button className="w-full text-left px-3 py-2 text-xs rounded-lg hover:bg-white/5"
               style={{ color: "var(--text-primary)" }}
               onClick={() => { toggleIncluded(contextMenu.catId, contextMenu.monthKey); setContextMenu(null); }}>
-              {grid.get(contextMenu.catId)?.get(contextMenu.monthKey)?.isIncluded ? "Exclude from month" : "Include in month"}
+              {grid.get(contextMenu.catId)?.get(contextMenu.monthKey)?.isIncluded ? "Exclude from this month" : "Include in this month"}
             </button>
-            <button className="w-full text-left px-3 py-2 text-xs rounded-lg"
+            <button className="w-full text-left px-3 py-2 text-xs rounded-lg hover:bg-white/5"
               style={{ color: "var(--accent)" }}
-              onClick={() => handlePushToUniversal(contextMenu.catId)}>
-              Push to universal
+              onClick={() => handlePushCellToUniversal(contextMenu.catId, contextMenu.monthKey)}>
+              Push this cell to universal
             </button>
-            <button className="w-full text-left px-3 py-2 text-xs rounded-lg"
+            <button className="w-full text-left px-3 py-2 text-xs rounded-lg hover:bg-white/5"
+              style={{ color: "var(--accent)" }}
+              onClick={() => handlePushRowToUniversal(contextMenu.catId)}>
+              Push entire row to universal
+            </button>
+            <button className="w-full text-left px-3 py-2 text-xs rounded-lg hover:bg-white/5"
               style={{ color: "var(--text-tertiary)" }}
               onClick={() => handleResetRow(contextMenu.catId)}>
-              Reset row to defaults
+              Reset row to universal defaults
             </button>
           </div>
         </>
@@ -618,19 +547,29 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
         style={{ background: "var(--bg-elevated)", borderTop: "1px solid var(--border)" }}>
         {showAddRow ? (
           <div className="flex items-center gap-2 flex-1">
-            <input type="text" placeholder="Name" className="px-2 py-1.5 text-xs rounded-lg flex-1"
-              style={{ maxWidth: 120 }}
+            <input type="text" placeholder="Category name" className="px-2 py-1.5 text-xs rounded-lg flex-1"
+              style={{ maxWidth: 160 }}
               value={newCatName} onChange={e => setNewCatName(e.target.value)} autoFocus />
             <div className="flex items-center gap-1">
               <span className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>₹</span>
               <input type="number" placeholder="Cap" className="px-2 py-1.5 text-xs rounded-lg"
-                style={{ width: 70 }}
+                style={{ width: 80 }}
                 value={newCatCap} onChange={e => setNewCatCap(e.target.value)} />
             </div>
-            <button className="text-[10px] px-2.5 py-1.5 rounded-lg font-semibold"
+            <div className="flex gap-1">
+              {(["Monthly", "Yearly"] as const).map(r => (
+                <button key={r} className="text-[10px] px-2 py-1 rounded"
+                  style={{
+                    background: newCatRecurrence === r ? "var(--accent)" : "rgba(255,255,255,0.06)",
+                    color: newCatRecurrence === r ? "#fff" : "var(--text-tertiary)",
+                  }}
+                  onClick={() => setNewCatRecurrence(r)}>{r}</button>
+              ))}
+            </div>
+            <button className="text-[11px] px-3 py-1.5 rounded-lg font-semibold"
               style={{ background: "var(--accent)", color: "#fff" }}
               onClick={handleAddCategory}>Add</button>
-            <button className="text-[10px] px-2 py-1.5"
+            <button className="text-[11px] px-2 py-1.5"
               style={{ color: "var(--text-tertiary)" }}
               onClick={() => setShowAddRow(false)}>Cancel</button>
           </div>
