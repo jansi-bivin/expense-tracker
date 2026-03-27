@@ -535,7 +535,7 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
             </td>
             <td className="sticky px-2 py-1.5 text-center text-[12px] cursor-pointer"
               style={{
-                background: "rgba(123,108,246,0.03)", color: "var(--accent)",
+                background: "var(--bg-base)", color: "var(--accent)",
                 borderBottom: "1px solid rgba(255,255,255,0.04)", borderRight: "1px solid rgba(123,108,246,0.08)",
                 left: 160,
               }}
@@ -628,7 +628,7 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
             Subtotal
           </td>
           <td className="sticky px-2 py-1.5 text-center text-[11px] font-bold"
-            style={{ background: "rgba(123,108,246,0.04)", color: "var(--accent)", borderBottom: "1px solid var(--border)", borderRight: "1px solid rgba(123,108,246,0.08)", left: 160 }}>
+            style={{ background: "var(--bg-elevated)", color: "var(--accent)", borderBottom: "1px solid var(--border)", borderRight: "1px solid rgba(123,108,246,0.08)", left: 160 }}>
             {inr(cats.reduce((s, c) => s + c.cap, 0))}
           </td>
           {isYearly ? (
@@ -723,7 +723,7 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
                 Category
               </th>
               <th className="sticky z-30 px-2 py-2 text-center text-[10px] font-bold"
-                style={{ background: "rgba(123,108,246,0.06)", color: "var(--accent)", minWidth: 80, borderBottom: "2px solid var(--border)", borderRight: "1px solid rgba(123,108,246,0.15)", left: 160 }}>
+                style={{ background: "var(--bg-elevated)", color: "var(--accent)", minWidth: 80, borderBottom: "2px solid var(--border)", borderRight: "1px solid rgba(123,108,246,0.15)", left: 160 }}>
                 <div className="flex items-center justify-center gap-1">
                   <span>Universal</span>
                   <button className="text-[10px] w-4 h-4 rounded flex items-center justify-center"
@@ -737,11 +737,13 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
                   style={{
                     background: col.isCurrent ? "rgba(123,108,246,0.06)" : "var(--bg-elevated)",
                     color: col.isCurrent ? "var(--accent)" : "var(--text-tertiary)",
-                    minWidth: 80, borderBottom: "2px solid var(--border)",
+                    minWidth: 80, width: 80, maxWidth: 80,
+                    borderBottom: "2px solid var(--border)",
+                    overflow: "hidden",
                   }}>
-                  <div className="flex items-center justify-center gap-0.5">
+                  <div className="flex items-center justify-center gap-0.5" style={{ whiteSpace: "nowrap" }}>
                     <span>{col.label}</span>
-                    <button className="text-[8px] w-3.5 h-3.5 rounded flex items-center justify-center opacity-40 hover:opacity-100"
+                    <button className="text-[8px] w-3.5 h-3.5 rounded flex-shrink-0 flex items-center justify-center opacity-40 hover:opacity-100"
                       style={{ background: "rgba(255,255,255,0.1)", color: "var(--text-tertiary)" }}
                       onClick={() => { setShowAddMonthly(col.key); setShowAddUniversal(false); }}
                       title={`Add category for ${col.label} only`}>+</button>
@@ -765,7 +767,7 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
                 GRAND TOTAL
               </td>
               <td className="sticky px-2 py-2 text-center text-[12px] font-bold"
-                style={{ background: "rgba(123,108,246,0.06)", color: "var(--accent)", borderTop: "2px solid var(--border)", borderRight: "1px solid rgba(123,108,246,0.08)", left: 160 }}>
+                style={{ background: "var(--bg-elevated)", color: "var(--accent)", borderTop: "2px solid var(--border)", borderRight: "1px solid rgba(123,108,246,0.08)", left: 160 }}>
                 {inr(monthlyCategories.reduce((s, c) => s + c.cap, 0) + yearlyCategories.reduce((s, c) => s + c.cap, 0))}
               </td>
               {monthCols.map(col => (
