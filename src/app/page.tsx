@@ -826,6 +826,7 @@ function HomeInner() {
         <ManualExpenseForm
           categories={categories}
           isPrimary={isPrimary}
+          transactions={categorizedTxns}
           onSave={handleManualExpense}
           onClose={() => setShowManualExpense(false)}
         />
