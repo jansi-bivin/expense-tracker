@@ -119,12 +119,20 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
         <div className="flex justify-between items-start mb-3">
           <div className="flex items-center gap-2.5">
             {/* Amount icon */}
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg"
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center"
               style={{
                 background: isCredit ? "rgba(0, 212, 161, 0.1)" : "rgba(255, 90, 110, 0.1)",
                 border: `1px solid ${isCredit ? "rgba(0, 212, 161, 0.2)" : "rgba(255, 90, 110, 0.2)"}`
               }}>
-              {isDebit ? "↗" : "↙"}
+              {isDebit ? (
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--accent-red)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M7 17L17 7" /><path d="M7 7h10v10" />
+                </svg>
+              ) : (
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--accent-green)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M17 7L7 17" /><path d="M17 17H7V7" />
+                </svg>
+              )}
             </div>
             <div>
               <div className={`amount-large ${isCredit ? "amount-credit" : "amount-debit"}`}>

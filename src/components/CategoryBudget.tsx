@@ -606,35 +606,40 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
       {monthlyBubbles.length > 0 && (
         <div className="card p-4 mb-4 animate-slide-up">
           {/* Month label + active days toggle */}
-          <div className="flex items-center justify-between mb-2 px-1">
-            <button className="flex items-center gap-1.5"
+          <div className="flex items-center justify-between mb-3 px-1">
+            <button className="flex items-center gap-2"
               onClick={() => { if (isPrimary) setShowActiveDays(!showActiveDays); }}>
-              <span className="text-[11px] font-bold" style={{ color: "var(--text-tertiary)" }}>
+              <span className="text-xs font-bold tracking-wider" style={{ color: "var(--text-secondary)" }}>
                 {now.toLocaleDateString("en-IN", { month: "short", year: "numeric" }).toUpperCase()}
               </span>
-              {isScaled && <span className="text-[9px] font-bold" style={{ color: "var(--accent-orange)" }}>{activeDays}d</span>}
+              {isScaled && (
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+                  style={{ background: "rgba(255,179,71,0.12)", color: "var(--accent-orange)", border: "1px solid rgba(255,179,71,0.2)" }}>
+                  {activeDays}d
+                </span>
+              )}
             </button>
           </div>
           {/* Inline summary row */}
-          <div className="flex justify-between items-center mb-2 px-1">
+          <div className="flex justify-between items-center mb-3 px-1">
             {isPrimary ? (
               <>
                 <div>
-                  <div className="text-[10px] font-medium" style={{ color: "var(--text-tertiary)" }}>Spent</div>
-                  <div className="text-base font-extrabold amount-debit">{fmt(totalSpent)}</div>
+                  <div className="section-label mb-0.5">Spent</div>
+                  <div className="text-lg font-extrabold amount-debit">{fmt(totalSpent)}</div>
                 </div>
-                <div className="text-center flex-1 mx-3">
-                  <div className="progress-track" style={{ height: "6px", borderRadius: 3 }}>
+                <div className="text-center flex-1 mx-4">
+                  <div className="progress-track" style={{ height: "5px", borderRadius: 3 }}>
                     <div className={`progress-fill ${totalPct >= 90 ? "progress-fill-red" : totalPct >= 75 ? "progress-fill-yellow" : "progress-fill-green"}`}
-                      style={{ width: `${Math.min(totalPct, 100)}%`, height: "6px", borderRadius: 3 }} />
+                      style={{ width: `${Math.min(totalPct, 100)}%`, height: "5px", borderRadius: 3 }} />
                   </div>
-                  <div className="text-[9px] mt-1 font-medium" style={{ color: "var(--text-tertiary)" }}>
+                  <div className="text-[9px] mt-1 font-semibold" style={{ color: "var(--text-tertiary)" }}>
                     {pctFmt(totalPct)} of {fmt(totalCap)}
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="text-[10px] font-medium" style={{ color: "var(--text-tertiary)" }}>Left</div>
-                  <div className="text-base font-extrabold" style={{ color: totalRemaining >= 0 ? "var(--accent-green)" : "var(--accent-red)" }}>
+                  <div className="section-label mb-0.5">Left</div>
+                  <div className="text-lg font-extrabold" style={{ color: totalRemaining >= 0 ? "var(--accent-green)" : "var(--accent-red)" }}>
                     {totalRemaining >= 0 ? fmt(totalRemaining) : "-" + fmt(-totalRemaining)}
                   </div>
                 </div>
@@ -642,18 +647,18 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
             ) : (
               <>
                 <div>
-                  <div className="text-[10px] font-medium" style={{ color: "var(--text-tertiary)" }}>Budget Left</div>
+                  <div className="section-label mb-0.5">Budget Left</div>
                   <div className="text-lg font-extrabold" style={{ color: totalRemainingPct > 25 ? "var(--accent-green)" : totalRemainingPct > 10 ? "var(--accent-orange)" : "var(--accent-red)" }}>
                     {pctFmt(totalRemainingPct)}
                   </div>
                 </div>
-                <div className="flex-1 mx-3">
-                  <div className="progress-track" style={{ height: "6px", borderRadius: 3 }}>
+                <div className="flex-1 mx-4">
+                  <div className="progress-track" style={{ height: "5px", borderRadius: 3 }}>
                     <div className={`progress-fill ${totalPct >= 90 ? "progress-fill-red" : totalPct >= 75 ? "progress-fill-yellow" : "progress-fill-green"}`}
-                      style={{ width: `${Math.min(totalPct, 100)}%`, height: "6px", borderRadius: 3 }} />
+                      style={{ width: `${Math.min(totalPct, 100)}%`, height: "5px", borderRadius: 3 }} />
                   </div>
                 </div>
-                <div className="text-[10px] font-medium text-right" style={{ color: "var(--text-tertiary)" }}>
+                <div className="text-lg" style={{ color: "var(--text-tertiary)" }}>
                   {totalRemainingPct > 50 ? "👍" : totalRemainingPct > 25 ? "🤔" : totalRemainingPct > 10 ? "😬" : "⚠️"}
                 </div>
               </>
@@ -679,34 +684,34 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
           {yearlyBubbles.length > 0 && (
             <div className="card p-4 mb-4 animate-slide-up">
               {/* Year label */}
-              <div className="flex items-center gap-1.5 mb-2 px-1">
-                <span className="text-[11px] font-bold" style={{ color: "var(--text-tertiary)" }}>
+              <div className="flex items-center gap-1.5 mb-3 px-1">
+                <span className="text-xs font-bold tracking-wider" style={{ color: "var(--text-secondary)" }}>
                   {currentYear}
                 </span>
               </div>
               {/* Inline yearly summary — same layout as monthly */}
-              <div className="flex justify-between items-center mb-2 px-1">
+              <div className="flex justify-between items-center mb-3 px-1">
                 {isPrimary ? (
                   <>
                     <div>
-                      <div className="text-[10px] font-medium" style={{ color: "var(--text-tertiary)" }}>Spent</div>
-                      <div className="text-base font-extrabold amount-debit">{fmt(yearlyTotalSpent)}</div>
+                      <div className="section-label mb-0.5">Spent</div>
+                      <div className="text-lg font-extrabold amount-debit">{fmt(yearlyTotalSpent)}</div>
                     </div>
-                    <div className="text-center flex-1 mx-3">
+                    <div className="text-center flex-1 mx-4">
                       <div className="relative">
-                        <div className="progress-track" style={{ height: "6px", borderRadius: 3 }}>
+                        <div className="progress-track" style={{ height: "5px", borderRadius: 3 }}>
                           <div className={`progress-fill ${yearlyPct > yearlyExpectedPct ? "progress-fill-red" : yearlyPct > yearlyExpectedPct * 0.8 ? "progress-fill-yellow" : "progress-fill-green"}`}
-                            style={{ width: `${yearlyPct}%`, height: "6px", borderRadius: 3 }} />
+                            style={{ width: `${yearlyPct}%`, height: "5px", borderRadius: 3 }} />
                         </div>
                         <div className="absolute top-0 h-1.5 w-0.5" style={{ left: `${yearlyExpectedPct}%`, background: "var(--text-tertiary)", opacity: 0.6 }} />
                       </div>
-                      <div className="text-[9px] mt-1 font-medium" style={{ color: "var(--text-tertiary)" }}>
+                      <div className="text-[9px] mt-1 font-semibold" style={{ color: "var(--text-tertiary)" }}>
                         {pctFmt(yearlyPct)} of {fmt(yearlyTotalCap)}
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="text-[10px] font-medium" style={{ color: "var(--text-tertiary)" }}>Left</div>
-                      <div className="text-base font-extrabold" style={{ color: yearlyRemaining >= 0 ? "var(--accent-green)" : "var(--accent-red)" }}>
+                      <div className="section-label mb-0.5">Left</div>
+                      <div className="text-lg font-extrabold" style={{ color: yearlyRemaining >= 0 ? "var(--accent-green)" : "var(--accent-red)" }}>
                         {yearlyRemaining >= 0 ? fmt(yearlyRemaining) : "-" + fmt(-yearlyRemaining)}
                       </div>
                     </div>
@@ -714,21 +719,21 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
                 ) : (
                   <>
                     <div>
-                      <div className="text-[10px] font-medium" style={{ color: "var(--text-tertiary)" }}>Budget Left</div>
+                      <div className="section-label mb-0.5">Budget Left</div>
                       <div className="text-lg font-extrabold" style={{ color: yearlyOnTrack ? "var(--accent-green)" : "var(--accent-red)" }}>
                         {pctFmt(Math.max(100 - yearlyPct, 0))}
                       </div>
                     </div>
-                    <div className="flex-1 mx-3">
+                    <div className="flex-1 mx-4">
                       <div className="relative">
-                        <div className="progress-track" style={{ height: "6px", borderRadius: 3 }}>
+                        <div className="progress-track" style={{ height: "5px", borderRadius: 3 }}>
                           <div className={`progress-fill ${yearlyPct > yearlyExpectedPct ? "progress-fill-red" : yearlyPct > yearlyExpectedPct * 0.8 ? "progress-fill-yellow" : "progress-fill-green"}`}
-                            style={{ width: `${yearlyPct}%`, height: "6px", borderRadius: 3 }} />
+                            style={{ width: `${yearlyPct}%`, height: "5px", borderRadius: 3 }} />
                         </div>
                         <div className="absolute top-0 h-1.5 w-0.5" style={{ left: `${yearlyExpectedPct}%`, background: "var(--text-tertiary)", opacity: 0.6 }} />
                       </div>
                     </div>
-                    <div className="text-[10px] font-medium text-right" style={{ color: "var(--text-tertiary)" }}>
+                    <div className="text-lg" style={{ color: "var(--text-tertiary)" }}>
                       {(100 - yearlyPct) > 50 ? "👍" : (100 - yearlyPct) > 25 ? "🤔" : (100 - yearlyPct) > 10 ? "😬" : "⚠️"}
                     </div>
                   </>

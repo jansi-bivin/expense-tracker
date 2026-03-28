@@ -658,17 +658,24 @@ function HomeInner() {
 
   return (
     <div className="max-w-2xl mx-auto px-4 pt-5 pb-24 animate-fade-in">
-      {/* Header — minimal */}
+      {/* Header */}
       <div className="flex justify-between items-center mb-5">
-        <div className="text-xl font-extrabold tracking-tight select-none"
-          onTouchStart={startLongPress} onTouchEnd={cancelLongPress} onTouchCancel={cancelLongPress}
-          onMouseDown={startLongPress} onMouseUp={cancelLongPress} onMouseLeave={cancelLongPress}>
-          {resetting ? <span style={{ color: "var(--accent-red)" }}>Resetting...</span> : <>Exp<span style={{ color: "var(--accent)" }}>Track</span></>}
+        <div className="flex items-center gap-2.5">
+          <div className="text-xl font-extrabold tracking-tight select-none"
+            onTouchStart={startLongPress} onTouchEnd={cancelLongPress} onTouchCancel={cancelLongPress}
+            onMouseDown={startLongPress} onMouseUp={cancelLongPress} onMouseLeave={cancelLongPress}>
+            {resetting ? <span style={{ color: "var(--accent-red)" }}>Resetting...</span> : <>Exp<span style={{ color: "var(--accent)" }}>Track</span></>}
+          </div>
+          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full tracking-wide"
+            style={{ background: "rgba(123,108,246,0.1)", color: "var(--text-tertiary)", border: "1px solid rgba(123,108,246,0.12)" }}>
+            {now.toLocaleDateString("en-IN", { month: "short", year: "numeric" }).toUpperCase()}
+          </span>
         </div>
         {currentUser && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 px-2.5 py-1 rounded-full"
+            style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}>
             <div className="pulse-dot" />
-            <span className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>{currentUser.name}</span>
+            <span className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>{currentUser.name}</span>
           </div>
         )}
       </div>
@@ -737,57 +744,59 @@ function HomeInner() {
       </div>
 
       {/* ═══ Bottom Navigation Bar ═══ */}
-      {/* ═══ Bottom Navigation Bar ═══ */}
       {!showManualExpense && !showAddCategory && !hasOverlay && !showBudgetPlanner && !showFeatureIdeas && (
         <nav className="fixed bottom-0 left-0 right-0 z-40"
           style={{
-            background: "rgba(10,10,26,0.92)",
-            backdropFilter: "blur(16px)",
-            WebkitBackdropFilter: "blur(16px)",
+            background: "rgba(10,10,22,0.95)",
+            backdropFilter: "blur(20px)",
+            WebkitBackdropFilter: "blur(20px)",
             borderTop: "1px solid rgba(255,255,255,0.06)",
           }}>
           <div className="max-w-2xl mx-auto grid px-4 pt-2 pb-5"
-            style={{ gridTemplateColumns: isPrimary ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr" }}>
+            style={{ gridTemplateColumns: isPrimary ? "1fr auto 1fr 1fr" : "1fr auto 1fr" }}>
             {/* Expenses */}
             <button
               onClick={() => setView("budget")}
-              className="flex flex-col items-center gap-1 py-1.5 transition-all"
-              style={activeView === "budget" ? { color: "var(--accent)" } : { color: "var(--text-tertiary)", opacity: 0.5 }}
+              className="flex flex-col items-center gap-1 py-1.5 transition-all relative"
+              style={activeView === "budget" ? { color: "var(--accent)" } : { color: "var(--text-tertiary)", opacity: 0.45 }}
             >
+              {activeView === "budget" && <div className="nav-tab-line" />}
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />
               </svg>
               <span className="text-[10px] font-semibold">Expenses</span>
             </button>
 
-            {/* Add */}
+            {/* Add — FAB */}
             <button
               onClick={() => setShowManualExpense(true)}
-              className="flex flex-col items-center gap-1 py-1.5 transition-all"
-              style={{ color: "var(--accent)" }}
+              className="flex flex-col items-center px-4"
+              style={{ color: "white" }}
             >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10" />
-                <path d="M12 8v8M8 12h8" />
-              </svg>
-              <span className="text-[10px] font-semibold">Add</span>
+              <div className="fab" style={{ marginTop: "-22px" }}>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+              </div>
+              <span className="text-[10px] font-semibold mt-1" style={{ color: "var(--accent-bright)" }}>Add</span>
             </button>
 
             {/* Dues */}
             <button
               onClick={() => setView("dues")}
               className="flex flex-col items-center gap-1 py-1.5 transition-all relative"
-              style={activeView === "dues" ? { color: "var(--accent)" } : { color: "var(--text-tertiary)", opacity: 0.5 }}
+              style={activeView === "dues" ? { color: "var(--accent)" } : { color: "var(--text-tertiary)", opacity: 0.45 }}
             >
+              {activeView === "dues" && <div className="nav-tab-line" />}
               <div className="relative">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="3" y="3" width="18" height="18" rx="2" />
                   <path d="M9 12h6M9 8h6M9 16h4" />
                 </svg>
                 {duesTotal > 0 && (
-                  <span className="absolute -top-2 -right-3 text-[7px] font-bold px-1 py-0.5 rounded-full"
+                  <span className="absolute -top-1.5 -right-2.5 text-[7px] font-bold px-1 py-0.5 rounded-full"
                     style={{ background: "var(--accent-red)", color: "#fff", minWidth: 14, textAlign: "center", lineHeight: 1 }}>
-                    {duesTotal > 999 ? Math.round(duesTotal/1000) + "K" : duesTotal}
+                    {duesTotal > 999 ? Math.round(duesTotal/1000) + "K" : Math.round(duesTotal)}
                   </span>
                 )}
               </div>
@@ -798,8 +807,8 @@ function HomeInner() {
             {isPrimary && (
               <button
                 onClick={() => setShowBudgetPlanner(true)}
-                className="flex flex-col items-center gap-1 py-1.5 transition-all"
-                style={{ color: "var(--text-tertiary)", opacity: 0.5 }}
+                className="flex flex-col items-center gap-1 py-1.5 transition-all relative"
+                style={{ color: "var(--text-tertiary)", opacity: 0.45 }}
               >
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="3" y="4" width="18" height="16" rx="2" />
