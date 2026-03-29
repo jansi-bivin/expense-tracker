@@ -15,7 +15,7 @@ import FeatureIdeas from "@/components/FeatureIdeas";
 import BudgetGrid from "@/components/BudgetGrid";
 
 /* ── DebitOverlay: self-contained so overlayIdx doesn't re-render parent ── */
-function DebitOverlay({ txns, categories, isPrimary, unclearedDues, settlementHints, merchantCategoryMap, onDone, onSnooze, onSettle, onDismissAll }: {
+function DebitOverlay({ txns, categories, isPrimary, unclearedDues, settlementHints, merchantCategoryMap, onDone, onSnooze, onSettle, onDismissAll, onSaveMapping }: {
   txns: Transaction[]; categories: Category[]; isPrimary: boolean;
   unclearedDues: Due[]; settlementHints: string[];
   merchantCategoryMap: Map<string, string>;
@@ -23,6 +23,7 @@ function DebitOverlay({ txns, categories, isPrimary, unclearedDues, settlementHi
   onSnooze: (id: number) => void;
   onSettle: (txnId: number, dueIds: number[]) => void;
   onDismissAll: () => void;
+  onSaveMapping: (merchant: string, category: string) => void;
 }) {
   const [idx, setIdx] = useState(0);
   const safeIdx = Math.min(idx, txns.length - 1);
@@ -69,6 +70,7 @@ function DebitOverlay({ txns, categories, isPrimary, unclearedDues, settlementHi
               settlementHints={settlementHints}
               onSnooze={(id) => { onSnooze(id); setIdx((i) => Math.max(0, i - 1)); }}
               merchantCategoryMap={merchantCategoryMap}
+              onSaveMapping={onSaveMapping}
             />
           </div>
         </div>
@@ -117,6 +119,9 @@ function HomeInner() {
 
   // Monthly cap overrides: { categoryId: overrideCap }
   const [monthlyOverrides, setMonthlyOverrides] = useState<Record<number, number>>({});
+
+  // Merchant category overrides: manually pinned mappings
+  const [merchantOverrides, setMerchantOverrides] = useState<Map<string, string>>(new Map());
 
   // Snooze: client-side only, resets on reload
   const [snoozedTxns, setSnoozedTxns] = useState<Transaction[]>([]);
@@ -201,8 +206,12 @@ function HomeInner() {
       .sort((a, b) => b.totalCount - a.totalCount)
       .slice(0, 20);
     for (const e of entries) result.set(e.merchant, e.category);
+    // Manual overrides take priority over history-based suggestions
+    for (const [merchant, category] of merchantOverrides) {
+      result.set(merchant, category);
+    }
     return result;
-  }, [categorizedTxns]);
+  }, [categorizedTxns, merchantOverrides]);
 
   // Store phone from URL param
   useEffect(() => {
@@ -246,6 +255,13 @@ function HomeInner() {
         } else {
           setActiveDays(null);
         }
+      }
+
+      // Load manual merchant→category overrides
+      const { data: mappingData } = await supabase.from("settings").select("*").eq("key", "merchant_category_overrides").single();
+      if (mappingData) {
+        const val = mappingData.value as { mappings?: Record<string, string> };
+        if (val.mappings) setMerchantOverrides(new Map(Object.entries(val.mappings)));
       }
 
       // Fetch monthly budgets for current month (replaces legacy category_overrides)
@@ -458,6 +474,20 @@ function HomeInner() {
       return prev.filter((t) => t.id !== id);
     });
   }, []);
+
+  async function handleSaveMapping(merchant: string, category: string) {
+    const key = merchant.toLowerCase().trim();
+    const updated = new Map(merchantOverrides);
+    updated.set(key, category);
+    setMerchantOverrides(updated);
+    const mappings: Record<string, string> = {};
+    for (const [m, c] of updated) mappings[m] = c;
+    await supabase.from("settings").upsert({
+      key: "merchant_category_overrides",
+      value: { mappings },
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "key" });
+  }
 
   function handleUnsnooze(id: number) {
     const txn = snoozedTxns.find((t) => t.id === id);
@@ -729,6 +759,7 @@ function HomeInner() {
           onSnooze={handleSnooze}
           onSettle={handleSettle}
           onDismissAll={handleDismissAll}
+          onSaveMapping={handleSaveMapping}
         />
       )}
 

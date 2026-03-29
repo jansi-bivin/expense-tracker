@@ -18,9 +18,10 @@ interface Props {
   settlementHints?: string[];
   onSnooze?: (id: number) => void;
   merchantCategoryMap?: Map<string, string>;
+  onSaveMapping?: (merchant: string, category: string) => void;
 }
 
-export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedDues, onSettle, settlementHints, onSnooze, merchantCategoryMap }: Props) {
+export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedDues, onSettle, settlementHints, onSnooze, merchantCategoryMap, onSaveMapping }: Props) {
   // Auto-detect category from merchant history
   const suggestedCategory = useMemo(() => {
     if (!merchantCategoryMap || !txn.merchant) return "";
@@ -33,6 +34,7 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
   const [expanded, setExpanded] = useState(false);
   const [settleMode, setSettleMode] = useState(false);
   const [selectedDues, setSelectedDues] = useState<Set<number>>(new Set());
+  const [mappingSaved, setMappingSaved] = useState(false);
 
   const fmtShort = (n: number) => "\u20B9" + n.toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
   const fmtDate = (ts: number) => new Date(ts).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" });
@@ -236,15 +238,17 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
         ) : (
           /* ── Normal categorization flow ── */
           <>
-            {suggestedCategory && category === suggestedCategory && (
-              <div className="text-[10px] mb-1 px-1 font-medium" style={{ color: "var(--accent-green)" }}>
-                ✦ Auto-detected: {suggestedCategory}
+            {suggestedCategory && (
+              <div className="flex items-center gap-1.5 mb-1 px-1">
+                <span className="text-[10px] font-medium" style={{ color: category === suggestedCategory ? "var(--accent-green)" : "var(--text-tertiary)" }}>
+                  {category === suggestedCategory ? "✦ Suggested from history:" : "💡 Was suggested:"} {suggestedCategory}
+                </span>
               </div>
             )}
             <select
               className="w-full px-3 py-2.5 mb-2 text-sm rounded-xl"
               value={category}
-              onChange={(e) => setCategory(e.target.value)}
+              onChange={(e) => { setCategory(e.target.value); setMappingSaved(false); }}
               style={suggestedCategory && category === suggestedCategory ? { borderColor: "rgba(0,212,161,0.3)" } : undefined}
             >
               <option value="">Select category...</option>
@@ -262,6 +266,27 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
                 );
               })}
             </select>
+
+            {/* Fix mapping: show when merchant is known and user wants to pin category */}
+            {txn.merchant && category && onSaveMapping && (!suggestedCategory || category !== suggestedCategory) && (
+              <div className="mb-2">
+                {mappingSaved ? (
+                  <span className="inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-full font-medium"
+                    style={{ background: "rgba(0,212,161,0.1)", color: "var(--accent-green)" }}>
+                    ✓ Mapping saved for {txn.merchant}
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-full transition-all"
+                    style={{ background: "rgba(123,108,246,0.1)", color: "var(--accent)", border: "1px solid rgba(123,108,246,0.2)" }}
+                    onClick={() => { onSaveMapping(txn.merchant!, category); setMappingSaved(true); }}
+                  >
+                    📌 Always use &ldquo;{category}&rdquo; for {txn.merchant}
+                  </button>
+                )}
+              </div>
+            )}
 
             <input
               type="text"
