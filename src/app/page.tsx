@@ -15,10 +15,11 @@ import FeatureIdeas from "@/components/FeatureIdeas";
 import BudgetGrid from "@/components/BudgetGrid";
 
 /* ── DebitOverlay: self-contained so overlayIdx doesn't re-render parent ── */
-function DebitOverlay({ txns, categories, isPrimary, unclearedDues, settlementHints, merchantCategoryMap, onDone, onSnooze, onSettle, onDismissAll, onSaveMapping }: {
+function DebitOverlay({ txns, categories, isPrimary, unclearedDues, settlementHints, merchantCategoryMap, categoryFrequencyMap, onDone, onSnooze, onSettle, onDismissAll, onSaveMapping }: {
   txns: Transaction[]; categories: Category[]; isPrimary: boolean;
   unclearedDues: Due[]; settlementHints: string[];
   merchantCategoryMap: Map<string, string>;
+  categoryFrequencyMap: Map<string, number>;
   onDone: (id: number, cat?: string, notes?: string) => void;
   onSnooze: (id: number) => void;
   onSettle: (txnId: number, dueIds: number[]) => void;
@@ -70,6 +71,7 @@ function DebitOverlay({ txns, categories, isPrimary, unclearedDues, settlementHi
               settlementHints={settlementHints}
               onSnooze={(id) => { onSnooze(id); setIdx((i) => Math.max(0, i - 1)); }}
               merchantCategoryMap={merchantCategoryMap}
+              categoryFrequencyMap={categoryFrequencyMap}
               onSaveMapping={onSaveMapping}
             />
           </div>
@@ -205,6 +207,16 @@ function HomeInner() {
 
   // Badge counts all uncategorized: new + snoozed (only update after data loaded)
   useEffect(() => { if (!loading) updateBadge(newTxns.length + snoozedTxns.length); }, [loading, newTxns.length, snoozedTxns.length, updateBadge]);
+
+  // Category usage frequency: count how often each category has been used
+  const categoryFrequencyMap = useMemo(() => {
+    const freq = new Map<string, number>();
+    for (const txn of categorizedTxns) {
+      if (!txn.category) continue;
+      freq.set(txn.category, (freq.get(txn.category) || 0) + 1);
+    }
+    return freq;
+  }, [categorizedTxns]);
 
   // Merchant → category auto-detect: build map from past categorized transactions
   const merchantCategoryMap = useMemo(() => {
@@ -866,6 +878,7 @@ function HomeInner() {
           unclearedDues={unclearedDues}
           settlementHints={settlementHints}
           merchantCategoryMap={merchantCategoryMap}
+          categoryFrequencyMap={categoryFrequencyMap}
           onDone={handleReviewDone}
           onSnooze={handleSnooze}
           onSettle={handleSettle}

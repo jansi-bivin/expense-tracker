@@ -18,10 +18,11 @@ interface Props {
   settlementHints?: string[];
   onSnooze?: (id: number) => void;
   merchantCategoryMap?: Map<string, string>;
+  categoryFrequencyMap?: Map<string, number>;
   onSaveMapping?: (merchant: string, category: string) => void;
 }
 
-export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedDues, onSettle, settlementHints, onSnooze, merchantCategoryMap, onSaveMapping }: Props) {
+export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedDues, onSettle, settlementHints, onSnooze, merchantCategoryMap, categoryFrequencyMap, onSaveMapping }: Props) {
   // Auto-detect category from merchant history
   const suggestedCategory = useMemo(() => {
     if (!merchantCategoryMap || !txn.merchant) return "";
@@ -44,12 +45,18 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
   const isDebit = txn.transaction_type === "DEBIT";
   const isCredit = txn.transaction_type === "CREDIT";
 
-  // Filter categories by visibility
+  // Filter categories by visibility, sorted by usage frequency (descending)
   const visibleCategories = useMemo(() => {
-    return categories.filter((c) =>
+    const filtered = categories.filter((c) =>
       isPrimary || c.visible_to === "all" || c.visible_to === "secondary"
     );
-  }, [categories, isPrimary]);
+    if (!categoryFrequencyMap || categoryFrequencyMap.size === 0) return filtered;
+    return [...filtered].sort((a, b) => {
+      const freqA = categoryFrequencyMap.get(a.name) || 0;
+      const freqB = categoryFrequencyMap.get(b.name) || 0;
+      return freqB - freqA;
+    });
+  }, [categories, isPrimary, categoryFrequencyMap]);
 
   // Auto-detect if this looks like a settlement payment
   const isLikelySettlement = useMemo(() => {
