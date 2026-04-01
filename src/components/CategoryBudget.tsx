@@ -165,7 +165,9 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
     });
   }
 
-  const monthlyBubbles = buildBubbles(monthlyActiveCats);
+  // B-17: When no spend yet (new month), show all categories as empty buckets
+  const monthlyBubbleCats = monthlyActiveCats.length > 0 ? monthlyActiveCats : monthlyCategories;
+  const monthlyBubbles = buildBubbles(monthlyBubbleCats);
   const yearlyBubbles = buildBubbles(yearlyActiveCats, true);
 
   function startEdit(cat: Category) {
