@@ -645,6 +645,12 @@ function HomeInner() {
       // remaining === 0 and more dues selected? leave them untouched
     }
 
+    // Treat near-zero partial due as fully cleared (floating point edge case)
+    if (partialDue && partialDue.newAmount < 0.01) {
+      fullyCleared.push(partialDue.id);
+      partialDue = null;
+    }
+
     // Clear fully covered dues
     if (fullyCleared.length > 0) {
       await supabase.from("dues").update({
@@ -670,6 +676,29 @@ function HomeInner() {
       }
       return d;
     }));
+  }
+
+  // B-20: Reload monthly budgets when planner closes so main view reflects changes
+  async function handlePlannerClose() {
+    setShowBudgetPlanner(false);
+    const m = viewMonth + 1;
+    const y = viewYear;
+    const { data: mbData } = await supabase
+      .from("monthly_budgets")
+      .select("*")
+      .eq("month", m)
+      .eq("year", y);
+    if (mbData) {
+      setMonthlyBudgets(mbData);
+      const overrides: Record<number, number> = {};
+      for (const mb of mbData) {
+        if (mb.is_included) overrides[mb.category_id] = mb.cap;
+      }
+      setMonthlyOverrides(overrides);
+    } else {
+      setMonthlyBudgets([]);
+      setMonthlyOverrides({});
+    }
   }
 
   // Categories excluded from this month's budget
@@ -906,7 +935,7 @@ function HomeInner() {
                   <rect x="3" y="3" width="18" height="18" rx="2" />
                   <path d="M9 12h6M9 8h6M9 16h4" />
                 </svg>
-                {duesTotal > 0 && (
+                {unclearedDues.length > 0 && Math.round(duesTotal) > 0 && (
                   <span className="absolute -top-1.5 -right-2.5 text-[7px] font-bold px-1 py-0.5 rounded-full"
                     style={{ background: "var(--accent-red)", color: "#fff", minWidth: 14, textAlign: "center", lineHeight: 1 }}>
                     {duesTotal > 999 ? Math.round(duesTotal/1000) + "K" : Math.round(duesTotal)}
@@ -961,7 +990,7 @@ function HomeInner() {
         <BudgetGrid
           categories={categories}
           onCategoriesChange={setCategories}
-          onClose={() => setShowBudgetPlanner(false)}
+          onClose={handlePlannerClose}
         />
       )}
     </div>

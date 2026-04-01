@@ -166,9 +166,8 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
     });
   }
 
-  // B-17: When no spend yet (new month), show all categories as empty buckets
-  const monthlyBubbleCats = monthlyActiveCats.length > 0 ? monthlyActiveCats : monthlyCategories;
-  const monthlyBubbles = buildBubbles(monthlyBubbleCats);
+  // Only show physics bubbles for categories with actual spend (B-18: empty month caused infinite physics loop)
+  const monthlyBubbles = buildBubbles(monthlyActiveCats);
   const yearlyBubbles = buildBubbles(yearlyActiveCats, true);
 
   function startEdit(cat: Category) {
@@ -606,7 +605,7 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
       )}
 
       {/* ═══ Monthly Bubble Basket with integrated summary ═══ */}
-      {monthlyBubbles.length > 0 && (
+      {monthlyCategories.length > 0 && (
         <div className="card p-4 mb-4 animate-slide-up">
           {/* Month label + active days toggle */}
           <div className="flex items-center justify-between mb-3 px-1">
@@ -667,7 +666,14 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
               </>
             )}
           </div>
-          <BubbleBasket bubbles={monthlyBubbles} />
+          {monthlyBubbles.length > 0 ? (
+            <BubbleBasket bubbles={monthlyBubbles} />
+          ) : (
+            <div className="text-center py-6 animate-fade-in">
+              <div className="text-3xl mb-2">🌙</div>
+              <div className="text-sm font-medium" style={{ color: "var(--text-tertiary)" }}>No expenses recorded yet this month</div>
+            </div>
+          )}
         </div>
       )}
       {/* F-7: Unused categories hidden from view */}
