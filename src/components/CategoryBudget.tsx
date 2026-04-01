@@ -19,12 +19,13 @@ interface Props {
   onReclassify?: (txnId: number, newCategory: string) => void;
   onDeleteTxn?: (txnId: number) => void;
   dues?: { id: number; transaction_id: number; cleared: boolean; settlement_transaction_id?: number | null }[];
+  viewMonth: number; // 0-indexed JS month
+  viewYear: number;
 }
 
-function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, monthlyOverrides, excludedCategoryIds, onCategoriesChange, onShowAddCategory, onMonthlyOverride, activeDays, daysInMonth, onActiveDaysUpdate, onReclassify, onDeleteTxn, dues }: Props) {
-  const now = new Date();
-  const currentMonth = now.getMonth();
-  const currentYear = now.getFullYear();
+function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, monthlyOverrides, excludedCategoryIds, onCategoriesChange, onShowAddCategory, onMonthlyOverride, activeDays, daysInMonth, onActiveDaysUpdate, onReclassify, onDeleteTxn, dues, viewMonth, viewYear }: Props) {
+  const currentMonth = viewMonth;
+  const currentYear = viewYear;
   const [editingId, setEditingId] = useState<number | null>(null);
   const [drillDownId, setDrillDownId] = useState<number | null>(null);
   const [editCap, setEditCap] = useState("");
@@ -612,7 +613,7 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
             <button className="flex items-center gap-2"
               onClick={() => { if (isPrimary) setShowActiveDays(!showActiveDays); }}>
               <span className="text-xs font-bold tracking-wider" style={{ color: "var(--text-secondary)" }}>
-                {now.toLocaleDateString("en-IN", { month: "short", year: "numeric" }).toUpperCase()}
+                {new Date(viewYear, viewMonth, 1).toLocaleDateString("en-IN", { month: "short", year: "numeric" }).toUpperCase()}
               </span>
               {isScaled && (
                 <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"

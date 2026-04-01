@@ -135,9 +135,17 @@ function HomeInner() {
   const [monthlyBudgets, setMonthlyBudgets] = useState<MonthlyBudget[]>([]);
   const [showBudgetPlanner, setShowBudgetPlanner] = useState(false);
 
-  // Compute days in current month & scale factor
+  // History navigation: which month/year is the user viewing? (0-indexed month)
+  const [viewDate, setViewDate] = useState<{ month: number; year: number }>(() => {
+    const n = new Date();
+    return { month: n.getMonth(), year: n.getFullYear() };
+  });
+  const { month: viewMonth, year: viewYear } = viewDate;
+
+  // Compute days in viewed month & scale factor
   const now = new Date();
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const isCurrentMonth = viewMonth === now.getMonth() && viewYear === now.getFullYear();
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
   const effectiveActiveDays = activeDays ?? daysInMonth;
   const scaleFactor = effectiveActiveDays / daysInMonth;
 
@@ -152,6 +160,23 @@ function HomeInner() {
   function cancelLongPress() {
     if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
   }
+
+  // History navigation helpers
+  function prevMonth() {
+    setViewDate(({ month, year }) =>
+      month === 0 ? { month: 11, year: year - 1 } : { month: month - 1, year }
+    );
+  }
+  function nextMonth() {
+    setViewDate(({ month, year }) =>
+      month === 11 ? { month: 0, year: year + 1 } : { month: month + 1, year }
+    );
+  }
+  function goToCurrentMonth() {
+    const n = new Date();
+    setViewDate({ month: n.getMonth(), year: n.getFullYear() });
+  }
+
   async function resetAllData() {
     setResetting(true);
     await supabase.from("dues").delete().gt("id", 0);
@@ -384,14 +409,50 @@ function HomeInner() {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
+  // Reload month-specific data (active_days + monthly_budgets) when user navigates to a different month
+  const skipFirstMonthLoad = useRef(true);
+  useEffect(() => {
+    if (skipFirstMonthLoad.current) { skipFirstMonthLoad.current = false; return; }
+    async function loadMonthData() {
+      const m = viewMonth + 1; // 1-indexed
+      const y = viewYear;
+
+      // Active days for this month
+      const { data: settingsData } = await supabase.from("settings").select("*").eq("key", "active_days").single();
+      if (settingsData) {
+        const val = settingsData.value as { days?: number | null; month?: number; year?: number };
+        setActiveDays(val.month === m && val.year === y && val.days != null ? val.days : null);
+      } else {
+        setActiveDays(null);
+      }
+
+      // Monthly budgets for this month
+      const { data: mbData } = await supabase
+        .from("monthly_budgets")
+        .select("*")
+        .eq("month", m)
+        .eq("year", y);
+      if (mbData && mbData.length > 0) {
+        setMonthlyBudgets(mbData);
+        const overrides: Record<number, number> = {};
+        for (const mb of mbData) {
+          if (mb.is_included) overrides[mb.category_id] = mb.cap;
+        }
+        setMonthlyOverrides(overrides);
+      } else {
+        setMonthlyBudgets([]);
+        setMonthlyOverrides({});
+      }
+    }
+    loadMonthData();
+  }, [viewMonth, viewYear]);
+
   // Feature 3: Save active days to Supabase
   async function handleActiveDaysUpdate(days: number) {
     setActiveDays(days === daysInMonth ? null : days);
-    const currentMonth = now.getMonth() + 1;
-    const currentYear = now.getFullYear();
     await supabase.from("settings").upsert({
       key: "active_days",
-      value: { days: days === daysInMonth ? null : days, month: currentMonth, year: currentYear },
+      value: { days: days === daysInMonth ? null : days, month: viewMonth + 1, year: viewYear },
       updated_at: new Date().toISOString(),
     }, { onConflict: "key" });
   }
@@ -406,8 +467,8 @@ function HomeInner() {
     }
     setMonthlyOverrides(updated);
 
-    const currentMonth = now.getMonth() + 1;
-    const currentYear = now.getFullYear();
+    const currentMonth = viewMonth + 1;
+    const currentYear = viewYear;
     const cat = categories.find(c => c.id === catId);
 
     if (cap === null) {
@@ -696,10 +757,29 @@ function HomeInner() {
             onMouseDown={startLongPress} onMouseUp={cancelLongPress} onMouseLeave={cancelLongPress}>
             {resetting ? <span style={{ color: "var(--accent-red)" }}>Resetting...</span> : <>Exp<span style={{ color: "var(--accent)" }}>Track</span></>}
           </div>
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full tracking-wide"
-            style={{ background: "rgba(123,108,246,0.1)", color: "var(--text-tertiary)", border: "1px solid rgba(123,108,246,0.12)" }}>
-            {now.toLocaleDateString("en-IN", { month: "short", year: "numeric" }).toUpperCase()}
-          </span>
+          <div className="flex items-center gap-0.5">
+            <button onClick={prevMonth} className="flex items-center justify-center w-5 h-5 rounded-full transition-opacity hover:opacity-100" style={{ opacity: 0.5, background: "transparent", border: "none", cursor: "pointer", padding: 0 }} aria-label="Previous month">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+            </button>
+            <button
+              onClick={!isCurrentMonth ? goToCurrentMonth : undefined}
+              className="text-[10px] font-bold px-2 py-0.5 rounded-full tracking-wide"
+              style={{
+                background: isCurrentMonth ? "rgba(123,108,246,0.1)" : "rgba(251,191,36,0.12)",
+                color: isCurrentMonth ? "var(--text-tertiary)" : "rgba(251,191,36,0.9)",
+                border: isCurrentMonth ? "1px solid rgba(123,108,246,0.12)" : "1px solid rgba(251,191,36,0.25)",
+                cursor: isCurrentMonth ? "default" : "pointer",
+              }}
+              title={!isCurrentMonth ? "Tap to return to current month" : undefined}
+            >
+              {new Date(viewYear, viewMonth, 1).toLocaleDateString("en-IN", { month: "short", year: "numeric" }).toUpperCase()}
+            </button>
+            {!isCurrentMonth && (
+              <button onClick={nextMonth} className="flex items-center justify-center w-5 h-5 rounded-full transition-opacity hover:opacity-100" style={{ opacity: 0.5, background: "transparent", border: "none", cursor: "pointer", padding: 0 }} aria-label="Next month">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+              </button>
+            )}
+          </div>
         </div>
         {currentUser && (
           <div className="flex items-center gap-2 px-2.5 py-1 rounded-full"
@@ -740,6 +820,8 @@ function HomeInner() {
               onActiveDaysUpdate={handleActiveDaysUpdate}
               onReclassify={handleReclassify}
               onDeleteTxn={handleDeleteTxn}
+              viewMonth={viewMonth}
+              viewYear={viewYear}
               dues={dues}
             />
           </>
