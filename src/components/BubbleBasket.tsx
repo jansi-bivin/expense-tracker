@@ -174,7 +174,10 @@ export default function BubbleBasket({ bubbles, title, onBasketClick }: { bubble
           return;
         }
       }
-      // Tap landed on basket body (not a bubble)
+      // Tap landed on basket body (not a bubble).
+      // Prevent the synthetic click that browsers fire after touchend — without this,
+      // the click lands on the freshly-rendered overlay and immediately dismisses it.
+      if ("touches" in e) e.preventDefault();
       basketDownPos.current = { x: p.x, y: p.y };
     };
 
