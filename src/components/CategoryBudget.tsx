@@ -28,6 +28,7 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
   const currentYear = viewYear;
   const [editingId, setEditingId] = useState<number | null>(null);
   const [drillDownId, setDrillDownId] = useState<number | null>(null);
+  const [showComparison, setShowComparison] = useState(false);
   const [editCap, setEditCap] = useState("");
   const [editVisibility, setEditVisibility] = useState<"all" | "primary" | "secondary">("all");
   const [editMode, setEditMode] = useState<"general" | "month">("general");
@@ -419,6 +420,99 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
   }
 
   // ═══════════════════════════════════
+  // Planned vs Spent comparison overlay
+  // ═══════════════════════════════════
+  function ComparisonOverlay() {
+    if (!showComparison) return null;
+
+    const sortedCats = [...monthlyCategories].sort((a, b) => {
+      const spentA = categorySpend.get(a.name) || 0;
+      const spentB = categorySpend.get(b.name) || 0;
+      const capA = getEffectiveCap(a);
+      const capB = getEffectiveCap(b);
+      const overA = capA > 0 && spentA > capA ? 1 : 0;
+      const overB = capB > 0 && spentB > capB ? 1 : 0;
+      if (overA !== overB) return overB - overA;
+      const pctA = capA > 0 ? spentA / capA : 0;
+      const pctB = capB > 0 ? spentB / capB : 0;
+      return pctB - pctA;
+    });
+
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col animate-fade-in" style={{ background: "var(--bg-base)" }}>
+        {/* Header */}
+        <div className="shrink-0 px-5 pt-5 pb-4" style={{ background: "var(--bg-elevated)", borderBottom: "1px solid var(--border)" }}>
+          <div className="flex justify-between items-center mb-4">
+            <button className="flex items-center gap-1.5 text-sm font-medium" style={{ color: "var(--accent)" }}
+              onClick={() => setShowComparison(false)}>
+              <span>←</span> Back
+            </button>
+          </div>
+          <div className="text-lg font-bold mb-1" style={{ color: "var(--text-primary)" }}>Planned vs Spent</div>
+          <div className="text-xs mb-3" style={{ color: "var(--text-tertiary)" }}>
+            {new Date(viewYear, viewMonth, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" })}
+          </div>
+          {/* Total row */}
+          <div className="flex justify-between items-baseline mb-2">
+            <span className="text-2xl font-bold amount-debit">{fmt(totalSpent)}</span>
+            <span className="text-sm" style={{ color: "var(--text-tertiary)" }}>/ {fmt(totalCap)}</span>
+            <span className="text-sm font-semibold" style={{ color: totalRemaining >= 0 ? "var(--accent-green)" : "var(--accent-red)" }}>
+              {totalRemaining >= 0 ? fmt(totalRemaining) + " left" : fmt(-totalRemaining) + " over"}
+            </span>
+          </div>
+          <div className="progress-track" style={{ height: "6px" }}>
+            <div className={`progress-fill ${totalPct >= 90 ? "progress-fill-red" : totalPct >= 75 ? "progress-fill-yellow" : "progress-fill-green"}`}
+              style={{ width: `${Math.min(totalPct, 100)}%`, height: "6px" }} />
+          </div>
+        </div>
+
+        {/* Per-category list */}
+        <div className="flex-1 overflow-y-auto">
+          {sortedCats.map((cat) => {
+            const eCap = getEffectiveCap(cat);
+            const spent = categorySpend.get(cat.name) || 0;
+            const noCap = eCap === 0 && cat.cap === 0 && monthlyOverrides[cat.id] == null;
+            const pct = eCap > 0 ? Math.min((spent / eCap) * 100, 100) : 0;
+            const rem = eCap - spent;
+            const isOver = !noCap && spent > eCap;
+            const fillClass = pct >= 90 ? "progress-fill-red" : pct >= 75 ? "progress-fill-yellow" : "progress-fill-green";
+            const accentColor = noCap ? "var(--text-secondary)" : isOver ? "var(--accent-red)" : pct >= 75 ? "var(--accent-orange)" : "var(--accent-green)";
+            return (
+              <div key={cat.id} className="px-5 py-3" style={{ borderBottom: "1px solid var(--border)", cursor: "pointer" }}
+                onClick={() => { setShowComparison(false); setDrillDownId(cat.id); }}>
+                <div className="flex justify-between items-baseline mb-1.5">
+                  <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{cat.name}</span>
+                  {noCap ? (
+                    <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>no cap</span>
+                  ) : (
+                    <span className="text-xs font-semibold" style={{ color: accentColor }}>
+                      {isOver ? fmt(-rem) + " over" : fmt(rem) + " left"}
+                    </span>
+                  )}
+                </div>
+                {noCap ? (
+                  <span className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>{fmt(spent)}</span>
+                ) : (
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1">
+                      <div className="progress-track" style={{ height: "5px" }}>
+                        <div className={`progress-fill ${fillClass}`} style={{ width: `${Math.min(pct, 100)}%`, height: "5px" }} />
+                      </div>
+                    </div>
+                    <span className="text-xs shrink-0" style={{ color: "var(--text-tertiary)" }}>
+                      {fmt(spent)} / {fmt(eCap)}
+                    </span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  // ═══════════════════════════════════
   // Category card (normal + edit)
   // ═══════════════════════════════════
   function CategoryCard({ cat, index }: { cat: Category; index: number }) {
@@ -572,6 +666,8 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
     <div className="animate-fade-in">
       {/* Full-screen drill-down overlay */}
       <DrillDownOverlay />
+      {/* Planned vs Spent comparison overlay */}
+      <ComparisonOverlay />
 
       {/* Active days control — compact, only when needed */}
       {showActiveDays && isPrimary && (
@@ -667,7 +763,7 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
             )}
           </div>
           {monthlyBubbles.length > 0 ? (
-            <BubbleBasket bubbles={monthlyBubbles} />
+            <BubbleBasket bubbles={monthlyBubbles} onBasketClick={() => setShowComparison(true)} />
           ) : (
             <div className="text-center py-6 animate-fade-in">
               <div className="text-3xl mb-2">🌙</div>

@@ -21,7 +21,7 @@ interface Body {
 const G = 0.35, DAMP = 0.92, BOUNCE = 0.25, BOWL = 45, PAD = 12, LABEL_H = 22, RIM = 32;
 const WALL_MARGIN = 4; // extra inset so bubbles never clip the basket edge
 
-export default function BubbleBasket({ bubbles, title }: { bubbles: BubbleItem[]; title?: string }) {
+export default function BubbleBasket({ bubbles, title, onBasketClick }: { bubbles: BubbleItem[]; title?: string; onBasketClick?: () => void }) {
   const cRef = useRef<HTMLDivElement>(null);
   const bRef = useRef<Body[]>([]);
   const eRef = useRef<(HTMLDivElement | null)[]>([]);
@@ -29,6 +29,9 @@ export default function BubbleBasket({ bubbles, title }: { bubbles: BubbleItem[]
   const drg = useRef<{ i: number; dist: number } | null>(null);
   const bblRef = useRef(bubbles);
   bblRef.current = bubbles;
+  const basketDownPos = useRef<{ x: number; y: number } | null>(null);
+  const onBasketClickRef = useRef(onBasketClick);
+  onBasketClickRef.current = onBasketClick;
   const [w, setW] = useState(0);
 
   const avgSize = bubbles.length > 0 ? bubbles.reduce((s, b) => s + b.size, 0) / bubbles.length : 60;
@@ -171,9 +174,17 @@ export default function BubbleBasket({ bubbles, title }: { bubbles: BubbleItem[]
           return;
         }
       }
+      // Tap landed on basket body (not a bubble)
+      basketDownPos.current = { x: p.x, y: p.y };
     };
 
     const move = (e: TouchEvent | MouseEvent) => {
+      if (basketDownPos.current) {
+        const p = pos(e);
+        if (Math.abs(p.x - basketDownPos.current.x) + Math.abs(p.y - basketDownPos.current.y) > 10) {
+          basketDownPos.current = null; // moved too much — not a tap
+        }
+      }
       if (!drg.current) return;
       e.preventDefault();
       const p = pos(e), b = bRef.current[drg.current.i];
@@ -184,6 +195,10 @@ export default function BubbleBasket({ bubbles, title }: { bubbles: BubbleItem[]
     };
 
     const up = () => {
+      if (basketDownPos.current) {
+        onBasketClickRef.current?.();
+        basketDownPos.current = null;
+      }
       if (!drg.current) return;
       const { i, dist } = drg.current;
       bRef.current[i].held = false;
