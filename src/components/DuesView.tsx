@@ -51,6 +51,7 @@ function DuesView({ dues, transactions, categories, onDuesChange, payeeUpi, paye
   }, [transactions]);
 
   const [showPaySheet, setShowPaySheet] = useState<number | null>(null);
+  const [expandedSmsId, setExpandedSmsId] = useState<number | null>(null);
 
   const upiApps = [
     { name: "GPay", pkg: "com.google.android.apps.nbu.paisa.user", icon: "G", gradient: "linear-gradient(135deg, #fff, #f0f0f0)", textColor: "#333" },
@@ -227,30 +228,48 @@ function DuesView({ dues, transactions, categories, onDuesChange, payeeUpi, paye
                   {/* Items */}
                   {categoryDues.map((due, i) => {
                     const txn = txnMap.get(due.transaction_id);
+                    const smsExpanded = expandedSmsId === due.id;
                     return (
-                      <div key={due.id} className="flex justify-between items-center py-3"
+                      <div key={due.id} className="py-3"
                         style={{ borderBottom: i < categoryDues.length - 1 ? "1px solid var(--border)" : "none" }}>
-                        <div>
-                          <div className="text-sm font-medium" style={{ color: "var(--text-secondary)" }}>{txn?.merchant ?? txn?.notes ?? "Transaction #" + due.transaction_id}</div>
-                          <div className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>{txn ? fmtDate(txn.sms_date) : ""}</div>
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <div className="text-sm font-medium" style={{ color: "var(--text-secondary)" }}>{txn?.merchant ?? txn?.notes ?? "Transaction #" + due.transaction_id}</div>
+                            <div className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>{txn ? fmtDate(txn.sms_date) : ""}</div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>{fmt(Number(due.amount))}</span>
+                            {txn?.body && (
+                              <button
+                                className={`badge text-[10px] cursor-pointer ${smsExpanded ? "badge-purple" : ""}`}
+                                style={smsExpanded ? {} : { background: "rgba(255,255,255,0.06)", color: "var(--text-tertiary)", border: "1px solid var(--border-light)" }}
+                                onClick={() => setExpandedSmsId(smsExpanded ? null : due.id)}
+                              >
+                                SMS
+                              </button>
+                            )}
+                            {isPrimary && payeeUpi && (
+                              <button className="badge badge-purple text-[10px] cursor-pointer" onClick={() => openUpiPay(Number(due.amount))}>
+                                Pay
+                              </button>
+                            )}
+                            {isPrimary && (
+                              <button
+                                className="badge badge-green text-[10px] cursor-pointer disabled:opacity-35"
+                                disabled={clearing.has(due.id)}
+                                onClick={() => clearDue(due.id)}
+                              >
+                                {clearing.has(due.id) ? "..." : "Clear"}
+                              </button>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>{fmt(Number(due.amount))}</span>
-                          {isPrimary && payeeUpi && (
-                            <button className="badge badge-purple text-[10px] cursor-pointer" onClick={() => openUpiPay(Number(due.amount))}>
-                              Pay
-                            </button>
-                          )}
-                          {isPrimary && (
-                            <button
-                              className="badge badge-green text-[10px] cursor-pointer disabled:opacity-35"
-                              disabled={clearing.has(due.id)}
-                              onClick={() => clearDue(due.id)}
-                            >
-                              {clearing.has(due.id) ? "..." : "Clear"}
-                            </button>
-                          )}
-                        </div>
+                        {smsExpanded && txn?.body && (
+                          <div className="mt-2 px-3 py-2 rounded-xl text-[11px] leading-relaxed animate-fade-in"
+                            style={{ background: "rgba(255,255,255,0.04)", border: "1px solid var(--border)", color: "var(--text-tertiary)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                            {txn.body}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
