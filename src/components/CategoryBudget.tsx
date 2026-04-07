@@ -55,7 +55,9 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
       const cat = visibleCategories.find((c) => c.name === txn.category);
       if (!cat) continue;
       const d = new Date(txn.sms_date);
-      const inPeriod = cat.recurrence === "Monthly"
+      // Yearly categories with a monthly plan (override) are accounted for that specific month
+      const monthPlanned = cat.recurrence === "Yearly" && monthlyOverrides[cat.id] != null;
+      const inPeriod = (cat.recurrence === "Monthly" || monthPlanned)
         ? d.getMonth() === currentMonth && d.getFullYear() === currentYear
         : d.getFullYear() === currentYear;
       if (inPeriod) {
@@ -75,8 +77,11 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
   }, [categoryTxns]);
 
   function getEffectiveCap(cat: Category): number {
-    // Yearly categories always use their universal cap — no monthly overrides
-    if (cat.recurrence === "Yearly") return cat.cap;
+    if (cat.recurrence === "Yearly") {
+      // If a specific month is planned via monthly override, use that cap
+      if (monthlyOverrides[cat.id] != null) return monthlyOverrides[cat.id];
+      return cat.cap;
+    }
     const hasOverride = monthlyOverrides[cat.id] != null;
     if (hasOverride) return monthlyOverrides[cat.id];
     if (cat.cap === 0) return 0;
@@ -93,8 +98,13 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
     });
   }
 
-  const monthlyCategories = sortByActivity(visibleCategories.filter((c) => c.recurrence === "Monthly"));
-  const yearlyCategories = sortByActivity(visibleCategories.filter((c) => c.recurrence === "Yearly"));
+  // F-22: Yearly categories with a monthly override (month-pinned) appear in the monthly section
+  const monthlyCategories = sortByActivity(visibleCategories.filter((c) =>
+    c.recurrence === "Monthly" || (c.recurrence === "Yearly" && monthlyOverrides[c.id] != null)
+  ));
+  const yearlyCategories = sortByActivity(visibleCategories.filter((c) =>
+    c.recurrence === "Yearly" && monthlyOverrides[c.id] == null
+  ));
 
   const totalCap = useMemo(() => {
     return monthlyCategories.reduce((sum, c) => {
@@ -118,8 +128,11 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
 
   // Yearly totals
   const yearlyTotalCap = useMemo(() => {
-    return yearlyCategories.reduce((sum, c) => c.cap > 0 ? sum + c.cap : sum, 0);
-  }, [yearlyCategories]);
+    return yearlyCategories.reduce((sum, c) => {
+      const cap = monthlyOverrides[c.id] != null ? monthlyOverrides[c.id] : c.cap;
+      return cap > 0 ? sum + cap : sum;
+    }, 0);
+  }, [yearlyCategories, monthlyOverrides]);
   const yearlyTotalSpent = useMemo(() => {
     return yearlyCategories.reduce((sum, c) => sum + (categorySpend.get(c.name) || 0), 0);
   }, [yearlyCategories, categorySpend]);
@@ -145,8 +158,8 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
     const MIN = 48, MAX = 100;
     return cats.map((c) => {
       const spent = categorySpend.get(c.name) || 0;
-      const eCap = yearly ? c.cap : getEffectiveCap(c);
-      const noCap = yearly ? c.cap === 0 : (eCap === 0 && c.cap === 0 && monthlyOverrides[c.id] == null);
+      const eCap = getEffectiveCap(c);
+      const noCap = eCap === 0 && c.cap === 0 && monthlyOverrides[c.id] == null;
       const pct = eCap > 0 ? (spent / eCap) * 100 : 0;
       const isOver = !noCap && spent > eCap;
       const norm = range > 0 ? Math.sqrt((spent - minS) / range) : (cats.length === 1 ? 1 : 0.5);

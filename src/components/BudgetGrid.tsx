@@ -109,8 +109,10 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
       const newGrid: GridData = new Map();
       for (const cat of categories) {
         const monthMap = new Map<string, CellData>();
+        // Yearly categories default to 0 per month (planned for a specific month, not spread across all)
+        const defaultCap = cat.recurrence === "Yearly" ? 0 : cat.cap;
         for (const col of monthCols) {
-          monthMap.set(col.key, { cap: cat.cap, isIncluded: true, isModified: false, isDirty: false });
+          monthMap.set(col.key, { cap: defaultCap, isIncluded: true, isModified: false, isDirty: false });
         }
         newGrid.set(cat.id, monthMap);
       }
@@ -122,9 +124,13 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
           if (catMap) {
             const cat = categories.find(c => c.id === mb.category_id);
             const univCap = cat?.cap ?? 0;
+            // For yearly categories, a non-zero cell means a specific month is planned
+            const isModified = cat?.recurrence === "Yearly"
+              ? mb.cap !== 0 || !mb.is_included
+              : mb.cap !== univCap || !mb.is_included;
             catMap.set(key, {
               cap: mb.cap, isIncluded: mb.is_included,
-              isModified: mb.cap !== univCap || !mb.is_included, isDirty: false,
+              isModified, isDirty: false,
             });
           }
         }
@@ -261,9 +267,9 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
     const name = newCatName.trim();
     if (!name) return;
     const cap = Number(newCatCap) || 0;
-    // Create in categories table first (needed for FK)
+    // Create as Yearly — a one-time yearly expense planned for a specific month
     const { data, error } = await supabase.from("categories")
-      .insert({ name, cap: 0, recurrence: "Monthly", visible_to: "all" })
+      .insert({ name, cap: 0, recurrence: "Yearly", visible_to: "all" })
       .select().single();
     if (error) { console.error("Add category error:", error); return; }
     if (!data) return;
@@ -271,26 +277,25 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
     skipNextReload.current = true;
     onCategoriesChange([...categories, newCat]);
 
-    // Set all months to excluded except the target month
+    // Set monthly budget only for the target month
     const [y, m] = showAddMonthly.split("-").map(Number);
-    const monthBudgetRows = monthCols.map(col => ({
-      month: col.month, year: col.year,
+    await supabase.from("monthly_budgets").upsert([{
+      month: m, year: y,
       category_id: newCat.id, category_name: name,
-      cap: col.key === showAddMonthly ? cap : 0,
-      is_included: col.key === showAddMonthly,
+      cap,
+      is_included: true,
       updated_at: new Date().toISOString(),
-    }));
-    await supabase.from("monthly_budgets").upsert(monthBudgetRows, { onConflict: "month,year,category_id" });
+    }], { onConflict: "month,year,category_id" });
 
-    // Update local grid immediately
+    // Update local grid — yearly categories default to 0 for all months; target month is planned
     setGrid(prev => {
       const next = new Map(prev);
       const mm = new Map<string, CellData>();
       for (const col of monthCols) {
         mm.set(col.key, {
           cap: col.key === showAddMonthly ? cap : 0,
-          isIncluded: col.key === showAddMonthly,
-          isModified: true,
+          isIncluded: true,
+          isModified: col.key === showAddMonthly,
           isDirty: false, // already saved
         });
       }
@@ -553,25 +558,10 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
                 <span>{inrPlain(cat.cap)}</span>
               )}
             </td>
-            {isYearly ? (
-              /* Yearly categories: month cells are empty — cap is yearly, not per-month */
-              <>
-                {monthCols.map(col => (
-                  <td key={col.key} className="px-1 py-1.5 text-center text-[11px]"
-                    style={{
-                      color: "var(--text-tertiary)", opacity: 0.2,
-                      borderBottom: "1px solid rgba(255,255,255,0.04)",
-                    }}>
-                    ·
-                  </td>
-                ))}
-              </>
-            ) : (
-              monthCols.map(col => renderCell(cat, col))
-            )}
+            {monthCols.map(col => renderCell(cat, col))}
             <td className="px-2 py-1.5 text-center text-[11px] font-semibold"
               style={{ color: "var(--text-tertiary)", borderBottom: editMode ? "none" : "1px solid rgba(255,255,255,0.04)", borderLeft: "1px solid var(--border)" }}>
-              {isYearly ? inr(cat.cap) : inr(rowTotal(cat.id))}
+              {inr(rowTotal(cat.id))}
             </td>
           </tr>
           {/* Inline edit row — shown for every category when edit mode is on */}
@@ -631,24 +621,15 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
             style={{ background: "var(--bg-elevated)", color: "var(--accent)", borderBottom: "1px solid var(--border)", borderRight: "1px solid rgba(123,108,246,0.08)", left: 160 }}>
             {inr(cats.reduce((s, c) => s + c.cap, 0))}
           </td>
-          {isYearly ? (
-            monthCols.map(col => (
-              <td key={col.key} className="px-1 py-1.5"
-                style={{ borderBottom: "1px solid var(--border)" }} />
-            ))
-          ) : (
-            monthCols.map(col => (
-              <td key={col.key} className="px-1 py-1.5 text-center text-[11px] font-bold"
-                style={{ background: col.isCurrent ? "rgba(123,108,246,0.04)" : "rgba(255,255,255,0.02)", color: col.isCurrent ? "var(--accent)" : "var(--text-secondary)", borderBottom: "1px solid var(--border)" }}>
-                {inr(colTotal(col.key, cats))}
-              </td>
-            ))
-          )}
+          {monthCols.map(col => (
+            <td key={col.key} className="px-1 py-1.5 text-center text-[11px] font-bold"
+              style={{ background: col.isCurrent ? "rgba(123,108,246,0.04)" : "rgba(255,255,255,0.02)", color: col.isCurrent ? "var(--accent)" : "var(--text-secondary)", borderBottom: "1px solid var(--border)" }}>
+              {inr(colTotal(col.key, cats))}
+            </td>
+          ))}
           <td className="px-2 py-1.5 text-center text-[11px] font-bold"
             style={{ color: "var(--text-secondary)", borderBottom: "1px solid var(--border)", borderLeft: "1px solid var(--border)" }}>
-            {isYearly
-              ? inr(cats.reduce((s, c) => s + c.cap, 0))
-              : inr(cats.reduce((s, c) => s + rowTotal(c.id), 0))}
+            {inr(cats.reduce((s, c) => s + rowTotal(c.id), 0))}
           </td>
         </tr>
       </>
@@ -892,7 +873,7 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
           <div className="text-[10px] font-bold mb-2" style={{ color: showAddUniversal ? "var(--accent)" : "var(--text-secondary)" }}>
             {showAddUniversal
               ? "Add Universal Category (applies to all months)"
-              : `Add Category for ${monthCols.find(c => c.key === showAddMonthly)?.label} only`}
+              : `Add Yearly One-time Expense for ${monthCols.find(c => c.key === showAddMonthly)?.label}`}
           </div>
           <div className="flex items-center gap-2">
             <input type="text" placeholder="Category name" className="px-2 py-1.5 text-xs rounded-lg flex-1"
