@@ -774,7 +774,7 @@ function HomeInner() {
           ))}
         </div>
         {/* F-17: APK download link */}
-        <a href="/ExpTrack-SmsReader.apk" download
+        <a href="/api/download-apk" download
           className="inline-flex items-center gap-2 mt-10 px-4 py-2.5 rounded-xl text-xs font-semibold transition-all"
           style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "var(--text-tertiary)" }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -907,7 +907,7 @@ function HomeInner() {
         >
           v{process.env.APP_VERSION}
         </button>
-        <a href="/ExpTrack-SmsReader.apk" download
+        <a href="/api/download-apk" download
           className="text-[10px] no-underline"
           style={{ color: "var(--text-tertiary)", opacity: 0.4 }}>
           APK

@@ -296,13 +296,13 @@ export default function FeatureIdeas({ ideas, onAdd, onDelete, onUpdate, onClose
 
       {/* APK download */}
       <div className="shrink-0 px-5 py-4" style={{ borderTop: "1px solid var(--border)", background: "var(--bg-elevated)" }}>
-        <a href="/ExpTrack-SmsReader.apk" download="ExpTrack-SmsReader.apk"
+        <a href="/api/download-apk" download="ExpTrack-SmsReader.apk"
           className="flex items-center justify-center gap-2 w-full py-3 rounded-xl text-sm font-semibold no-underline"
           style={{ background: "rgba(123,108,246,0.1)", color: "var(--accent)", border: "1px solid rgba(123,108,246,0.2)" }}
           onClick={(e) => {
             e.preventDefault();
             const a = document.createElement("a");
-            a.href = "/ExpTrack-SmsReader.apk";
+            a.href = "/api/download-apk";
             a.download = "ExpTrack-SmsReader.apk";
             document.body.appendChild(a);
             a.click();
