@@ -773,6 +773,17 @@ function HomeInner() {
             </button>
           ))}
         </div>
+        {/* F-17: APK download link */}
+        <a href="/ExpTrack-SmsReader.apk" download
+          className="inline-flex items-center gap-2 mt-10 px-4 py-2.5 rounded-xl text-xs font-semibold transition-all"
+          style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "var(--text-tertiary)" }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+          Download SMS Reader APK
+        </a>
       </div>
     );
   }
@@ -888,7 +899,7 @@ function HomeInner() {
       )}
 
       {/* Version footer — tap to open feature ideas */}
-      <div className="text-center mt-8 mb-2">
+      <div className="flex items-center justify-center gap-3 mt-8 mb-2">
         <button
           className="text-[10px] bg-transparent border-0 cursor-pointer"
           style={{ color: "var(--text-tertiary)", opacity: 0.4 }}
@@ -896,6 +907,11 @@ function HomeInner() {
         >
           v{process.env.APP_VERSION}
         </button>
+        <a href="/ExpTrack-SmsReader.apk" download
+          className="text-[10px] no-underline"
+          style={{ color: "var(--text-tertiary)", opacity: 0.4 }}>
+          APK
+        </a>
       </div>
 
       {/* ═══ Bottom Navigation Bar ═══ */}
