@@ -758,7 +758,7 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
                     color: col.isCurrent ? "var(--accent)" : "var(--text-primary)",
                     borderTop: "2px solid var(--border)",
                   }}>
-                  {inr(colTotal(col.key, monthlyCategories))}
+                  {inr(colTotal(col.key, monthlyCategories) + colTotal(col.key, yearlyCategories))}
                 </td>
               ))}
               <td className="px-2 py-2 text-center text-[12px] font-bold"
