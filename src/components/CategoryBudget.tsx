@@ -28,12 +28,14 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
   const currentYear = viewYear;
   const [editingId, setEditingId] = useState<number | null>(null);
   const [drillDownId, setDrillDownId] = useState<number | null>(null);
-  const [showComparison, setShowComparison] = useState(false);
+  const [showComparison, setShowComparison] = useState<false | "monthly" | "yearly">(false);
   const [editCap, setEditCap] = useState("");
   const [editVisibility, setEditVisibility] = useState<"all" | "primary" | "secondary">("all");
   const [editMode, setEditMode] = useState<"general" | "month">("general");
   const [savingEdit, setSavingEdit] = useState(false);
   const [showActiveDays, setShowActiveDays] = useState(false);
+  const [showMonthlyList, setShowMonthlyList] = useState(false);
+  const [showYearlyList, setShowYearlyList] = useState(false);
   const isScaled = activeDays !== daysInMonth;
 
   const fmt = (n: number) => "\u20B9" + n.toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -439,8 +441,14 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
   // ═══════════════════════════════════
   function ComparisonOverlay() {
     if (!showComparison) return null;
+    const isYearlyView = showComparison === "yearly";
+    const sourceCats = isYearlyView ? yearlyCategories : monthlyCategories;
+    const totalSpentForView = isYearlyView ? yearlyTotalSpent : totalSpent;
+    const totalCapForView = isYearlyView ? yearlyTotalCap : totalCap;
+    const totalRemForView = totalCapForView - totalSpentForView;
+    const totalPctForView = totalCapForView > 0 ? Math.min((totalSpentForView / totalCapForView) * 100, 100) : 0;
 
-    const sortedCats = [...monthlyCategories].sort((a, b) => {
+    const sortedCats = [...sourceCats].sort((a, b) => {
       const spentA = categorySpend.get(a.name) || 0;
       const spentB = categorySpend.get(b.name) || 0;
       const capA = getEffectiveCap(a);
@@ -465,19 +473,21 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
           </div>
           <div className="text-lg font-bold mb-1" style={{ color: "var(--text-primary)" }}>Planned vs Spent</div>
           <div className="text-xs mb-3" style={{ color: "var(--text-tertiary)" }}>
-            {new Date(viewYear, viewMonth, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" })}
+            {isYearlyView
+              ? String(currentYear) + " — Yearly"
+              : new Date(viewYear, viewMonth, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" })}
           </div>
           {/* Total row */}
           <div className="flex justify-between items-baseline mb-2">
-            <span className="text-2xl font-bold amount-debit">{fmt(totalSpent)}</span>
-            <span className="text-sm" style={{ color: "var(--text-tertiary)" }}>/ {fmt(totalCap)}</span>
-            <span className="text-sm font-semibold" style={{ color: totalRemaining >= 0 ? "var(--accent-green)" : "var(--accent-red)" }}>
-              {totalRemaining >= 0 ? fmt(totalRemaining) + " left" : fmt(-totalRemaining) + " over"}
+            <span className="text-2xl font-bold amount-debit">{fmt(totalSpentForView)}</span>
+            <span className="text-sm" style={{ color: "var(--text-tertiary)" }}>/ {fmt(totalCapForView)}</span>
+            <span className="text-sm font-semibold" style={{ color: totalRemForView >= 0 ? "var(--accent-green)" : "var(--accent-red)" }}>
+              {totalRemForView >= 0 ? fmt(totalRemForView) + " left" : fmt(-totalRemForView) + " over"}
             </span>
           </div>
           <div className="progress-track" style={{ height: "6px" }}>
-            <div className={`progress-fill ${totalPct >= 90 ? "progress-fill-red" : totalPct >= 75 ? "progress-fill-yellow" : "progress-fill-green"}`}
-              style={{ width: `${Math.min(totalPct, 100)}%`, height: "6px" }} />
+            <div className={`progress-fill ${totalPctForView >= 90 ? "progress-fill-red" : totalPctForView >= 75 ? "progress-fill-yellow" : "progress-fill-green"}`}
+              style={{ width: `${Math.min(totalPctForView, 100)}%`, height: "6px" }} />
           </div>
         </div>
 
@@ -526,6 +536,61 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
       </div>
     );
   }
+
+  // ═══════════════════════════════════
+  // All-expenses list overlay (monthly or yearly)
+  // ═══════════════════════════════════
+  function AllExpensesOverlay({ title, txns, onClose }: { title: string; txns: Transaction[]; onClose: () => void }) {
+    const sorted = [...txns].sort((a, b) => b.sms_date - a.sms_date);
+    const total = sorted.reduce((s, t) => s + Number(t.amount), 0);
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col animate-fade-in" style={{ background: "var(--bg-base)" }}>
+        {/* Header */}
+        <div className="shrink-0 px-5 pt-5 pb-4" style={{ background: "var(--bg-elevated)", borderBottom: "1px solid var(--border)" }}>
+          <div className="flex justify-between items-center mb-4">
+            <button className="flex items-center gap-1.5 text-sm font-medium" style={{ color: "var(--accent)" }}
+              onClick={onClose}>
+              <span>←</span> Back
+            </button>
+          </div>
+          <div className="text-lg font-bold mb-1" style={{ color: "var(--text-primary)" }}>{title}</div>
+          <div className="flex justify-between items-baseline mt-2">
+            <span className="text-2xl font-bold amount-debit">{fmt(total)}</span>
+            <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>{sorted.length} transaction{sorted.length !== 1 ? "s" : ""}</span>
+          </div>
+        </div>
+        {/* Scrollable list */}
+        <div className="flex-1 overflow-y-auto">
+          {sorted.length === 0 ? (
+            <div className="p-8 text-center text-sm" style={{ color: "var(--text-tertiary)" }}>No expenses yet</div>
+          ) : (
+            sorted.map((txn) => {
+              const catName = txn.category || "";
+              return (
+                <div key={txn.id} style={{ borderBottom: "1px solid var(--border)" }}>
+                  {catName && (
+                    <div className="px-5 pt-2 text-[10px] font-semibold tracking-wider" style={{ color: "var(--text-tertiary)" }}>
+                      {catName}
+                    </div>
+                  )}
+                  <ExpenseRow txn={txn} currentCatName={catName} />
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  const allMonthlyTxns = useMemo(() =>
+    monthlyCategories.flatMap((c) => categoryTxns.get(c.name) || []),
+    [monthlyCategories, categoryTxns]
+  );
+  const allYearlyTxns = useMemo(() =>
+    yearlyCategories.flatMap((c) => categoryTxns.get(c.name) || []),
+    [yearlyCategories, categoryTxns]
+  );
 
   // ═══════════════════════════════════
   // Category card (normal + edit)
@@ -683,6 +748,22 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
       <DrillDownOverlay />
       {/* Planned vs Spent comparison overlay */}
       <ComparisonOverlay />
+      {/* Monthly flat list overlay */}
+      {showMonthlyList && (
+        <AllExpensesOverlay
+          title={new Date(viewYear, viewMonth, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" }) + " Expenses"}
+          txns={allMonthlyTxns}
+          onClose={() => setShowMonthlyList(false)}
+        />
+      )}
+      {/* Yearly flat list overlay */}
+      {showYearlyList && (
+        <AllExpensesOverlay
+          title={String(currentYear) + " Yearly Expenses"}
+          txns={allYearlyTxns}
+          onClose={() => setShowYearlyList(false)}
+        />
+      )}
 
       {/* Active days control — compact, only when needed */}
       {showActiveDays && isPrimary && (
@@ -734,7 +815,7 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
             </button>
           </div>
           {/* Inline summary row */}
-          <div className="flex justify-between items-center mb-3 px-1">
+          <div className="flex justify-between items-center mb-3 px-1" style={{ cursor: "pointer" }} onClick={() => setShowMonthlyList(true)}>
             {isPrimary ? (
               <>
                 <div>
@@ -778,7 +859,7 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
             )}
           </div>
           {monthlyBubbles.length > 0 ? (
-            <BubbleBasket bubbles={monthlyBubbles} onBasketClick={() => setShowComparison(true)} />
+            <BubbleBasket bubbles={monthlyBubbles} onBasketClick={() => setShowComparison("monthly")} />
           ) : (
             <div className="text-center py-6 animate-fade-in">
               <div className="text-3xl mb-2">🌙</div>
@@ -810,7 +891,7 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
                 </span>
               </div>
               {/* Inline yearly summary — same layout as monthly */}
-              <div className="flex justify-between items-center mb-3 px-1">
+              <div className="flex justify-between items-center mb-3 px-1" style={{ cursor: "pointer" }} onClick={() => setShowYearlyList(true)}>
                 {isPrimary ? (
                   <>
                     <div>
@@ -859,7 +940,7 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
                   </>
                 )}
               </div>
-              <BubbleBasket bubbles={yearlyBubbles} />
+              <BubbleBasket bubbles={yearlyBubbles} onBasketClick={() => setShowComparison("yearly")} />
             </div>
           )}
 
