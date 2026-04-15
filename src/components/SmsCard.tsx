@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { supabase, Transaction, Category, Due } from "@/lib/supabase";
+import AddCategoryForm from "./AddCategoryForm";
 
 const CATEGORY_GROUPS = [
   { label: "Monthly", filter: (c: Category) => c.recurrence === "Monthly" },
@@ -20,9 +21,10 @@ interface Props {
   merchantCategoryMap?: Map<string, string>;
   categoryFrequencyMap?: Map<string, number>;
   onSaveMapping?: (merchant: string, category: string) => void;
+  onCategoryCreated?: (cat: Category) => void;
 }
 
-export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedDues, onSettle, settlementHints, onSnooze, merchantCategoryMap, categoryFrequencyMap, onSaveMapping }: Props) {
+export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedDues, onSettle, settlementHints, onSnooze, merchantCategoryMap, categoryFrequencyMap, onSaveMapping, onCategoryCreated }: Props) {
   // Auto-detect category from merchant history
   const suggestedCategory = useMemo(() => {
     if (!merchantCategoryMap || !txn.merchant) return "";
@@ -36,6 +38,7 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
   const [settleMode, setSettleMode] = useState(false);
   const [selectedDues, setSelectedDues] = useState<Set<number>>(new Set());
   const [mappingSaved, setMappingSaved] = useState(false);
+  const [showAddCategory, setShowAddCategory] = useState(false);
 
   const fmtShort = (n: number) => "\u20B9" + n.toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
   const fmtDate = (ts: number) => new Date(ts).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" });
@@ -252,27 +255,39 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
                 </span>
               </div>
             )}
-            <select
-              className="w-full px-3 py-2.5 mb-2 text-sm rounded-xl"
-              value={category}
-              onChange={(e) => { setCategory(e.target.value); setMappingSaved(false); }}
-              style={suggestedCategory && category === suggestedCategory ? { borderColor: "rgba(0,212,161,0.3)" } : undefined}
-            >
-              <option value="">Select category...</option>
-              {CATEGORY_GROUPS.map((group) => {
-                const items = visibleCategories.filter(group.filter);
-                if (items.length === 0) return null;
-                return (
-                  <optgroup key={group.label} label={group.label}>
-                    {items.map((c) => (
-                      <option key={c.id} value={c.name}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </optgroup>
-                );
-              })}
-            </select>
+            <div className="flex gap-2 mb-2">
+              <select
+                className="flex-1 px-3 py-2.5 text-sm rounded-xl"
+                value={category}
+                onChange={(e) => { setCategory(e.target.value); setMappingSaved(false); }}
+                style={suggestedCategory && category === suggestedCategory ? { borderColor: "rgba(0,212,161,0.3)" } : undefined}
+              >
+                <option value="">Select category...</option>
+                {CATEGORY_GROUPS.map((group) => {
+                  const items = visibleCategories.filter(group.filter);
+                  if (items.length === 0) return null;
+                  return (
+                    <optgroup key={group.label} label={group.label}>
+                      {items.map((c) => (
+                        <option key={c.id} value={c.name}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  );
+                })}
+              </select>
+              {isPrimary && onCategoryCreated && (
+                <button
+                  type="button"
+                  className="shrink-0 px-3 py-2.5 text-xs font-semibold rounded-xl transition-all"
+                  style={{ background: "rgba(123,108,246,0.1)", color: "var(--accent)", border: "1px solid rgba(123,108,246,0.2)" }}
+                  onClick={() => setShowAddCategory(true)}
+                >
+                  + New
+                </button>
+              )}
+            </div>
 
             {/* Fix mapping: show when merchant is known and user wants to pin category */}
             {txn.merchant && category && onSaveMapping && (!suggestedCategory || category !== suggestedCategory) && (
@@ -341,6 +356,18 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
           </>
         )}
       </div>
+
+      {showAddCategory && onCategoryCreated && (
+        <AddCategoryForm
+          onSave={(cat) => {
+            onCategoryCreated(cat);
+            setCategory(cat.name);
+            setMappingSaved(false);
+            setShowAddCategory(false);
+          }}
+          onClose={() => setShowAddCategory(false)}
+        />
+      )}
     </div>
   );
 }

@@ -15,7 +15,7 @@ import FeatureIdeas from "@/components/FeatureIdeas";
 import BudgetGrid from "@/components/BudgetGrid";
 
 /* ── DebitOverlay: self-contained so overlayIdx doesn't re-render parent ── */
-function DebitOverlay({ txns, categories, isPrimary, unclearedDues, settlementHints, merchantCategoryMap, categoryFrequencyMap, onDone, onSnooze, onSettle, onDismissAll, onSaveMapping }: {
+function DebitOverlay({ txns, categories, isPrimary, unclearedDues, settlementHints, merchantCategoryMap, categoryFrequencyMap, onDone, onSnooze, onSettle, onDismissAll, onSaveMapping, onCategoryCreated }: {
   txns: Transaction[]; categories: Category[]; isPrimary: boolean;
   unclearedDues: Due[]; settlementHints: string[];
   merchantCategoryMap: Map<string, string>;
@@ -25,6 +25,7 @@ function DebitOverlay({ txns, categories, isPrimary, unclearedDues, settlementHi
   onSettle: (txnId: number, dueIds: number[]) => void;
   onDismissAll: () => void;
   onSaveMapping: (merchant: string, category: string) => void;
+  onCategoryCreated: (cat: Category) => void;
 }) {
   const [idx, setIdx] = useState(0);
   const safeIdx = Math.min(idx, txns.length - 1);
@@ -73,6 +74,7 @@ function DebitOverlay({ txns, categories, isPrimary, unclearedDues, settlementHi
               merchantCategoryMap={merchantCategoryMap}
               categoryFrequencyMap={categoryFrequencyMap}
               onSaveMapping={onSaveMapping}
+              onCategoryCreated={onCategoryCreated}
             />
           </div>
         </div>
@@ -895,6 +897,7 @@ function HomeInner() {
           onSettle={handleSettle}
           onDismissAll={handleDismissAll}
           onSaveMapping={handleSaveMapping}
+          onCategoryCreated={handleAddCategory}
         />
       )}
 
