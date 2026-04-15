@@ -448,12 +448,19 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
   }
 
   function rowTotal(catId: number): number {
+    const cat = categories.find(c => c.id === catId);
     const months = grid.get(catId);
-    if (!months) return 0;
+    if (!months) return cat?.cap ?? 0;
     let sum = 0;
     for (const col of monthCols) {
       const cell = months.get(col.key);
       if (cell?.isIncluded) sum += cell.cap;
+    }
+    // Yearly lump-sum categories keep per-month cells at 0 — the yearly cap
+    // is the real annual commitment. Fall back to cat.cap when the month
+    // sum is smaller so the Year Total column reflects the yearly allocation.
+    if (cat?.recurrence === "Yearly") {
+      return Math.max(sum, cat.cap);
     }
     return sum;
   }
