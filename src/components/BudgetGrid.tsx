@@ -271,9 +271,11 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
     const name = newCatName.trim();
     if (!name) return;
     const cap = Number(newCatCap) || 0;
-    // Create as Yearly — a one-time yearly expense planned for a specific month
+    // Create as Yearly — one-time yearly expense planned for a specific month.
+    // Save `cap` on the category too so the yearly total is visible in any month's
+    // Planned-vs-Spent view (not just the pinned month).
     const { data, error } = await supabase.from("categories")
-      .insert({ name, cap: 0, recurrence: "Yearly", visible_to: "all" })
+      .insert({ name, cap, recurrence: "Yearly", visible_to: "all" })
       .select().single();
     if (error) { console.error("Add category error:", error); return; }
     if (!data) return;

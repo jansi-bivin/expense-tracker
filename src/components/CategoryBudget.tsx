@@ -448,7 +448,14 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
     const totalRemForView = totalCapForView - totalSpentForView;
     const totalPctForView = totalCapForView > 0 ? Math.min((totalSpentForView / totalCapForView) * 100, 100) : 0;
 
-    const sortedCats = [...sourceCats].sort((a, b) => {
+    // For yearly view, hide categories with no cap AND no spend — they're
+    // either month-pinned yearlies (cap stored only in monthly_budgets for a
+    // specific month) or empty placeholders that just add noise.
+    const filteredCats = isYearlyView
+      ? sourceCats.filter((c) => getEffectiveCap(c) > 0 || (categorySpend.get(c.name) || 0) > 0)
+      : sourceCats;
+
+    const sortedCats = [...filteredCats].sort((a, b) => {
       const spentA = categorySpend.get(a.name) || 0;
       const spentB = categorySpend.get(b.name) || 0;
       const capA = getEffectiveCap(a);
