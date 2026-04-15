@@ -252,8 +252,12 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
       setGrid(prev => {
         const next = new Map(prev);
         const mm = new Map<string, CellData>();
+        // Yearly cap is a lump sum for the whole year — per-month cells stay 0
+        // (spending can happen any month and counts against the yearly cap).
+        // Monthly cap applies every month — fill each cell with the cap.
+        const perMonthCap = newCat.recurrence === "Yearly" ? 0 : newCat.cap;
         for (const col of monthCols) {
-          mm.set(col.key, { cap: newCat.cap, isIncluded: true, isModified: false, isDirty: false });
+          mm.set(col.key, { cap: perMonthCap, isIncluded: true, isModified: false, isDirty: false });
         }
         next.set(newCat.id, mm);
         return next;
