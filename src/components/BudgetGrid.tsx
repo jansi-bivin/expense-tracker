@@ -872,23 +872,16 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
           style={{ background: "var(--bg-elevated)", borderTop: "1px solid var(--border)" }}>
           <div className="text-[10px] font-bold mb-2" style={{ color: showAddUniversal ? "var(--accent)" : "var(--text-secondary)" }}>
             {showAddUniversal
-              ? "Add Universal Category (applies to all months)"
+              ? (newCatRecurrence === "Yearly"
+                  ? "Add Yearly Category (lump-sum cap for the whole year — spend any month)"
+                  : "Add Monthly Category (cap applies every month)")
               : `Add Yearly One-time Expense for ${monthCols.find(c => c.key === showAddMonthly)?.label}`}
           </div>
-          <div className="flex items-center gap-2">
-            <input type="text" placeholder="Category name" className="px-2 py-1.5 text-xs rounded-lg flex-1"
-              style={{ maxWidth: 180 }}
-              value={newCatName} onChange={e => setNewCatName(e.target.value)} autoFocus />
-            <div className="flex items-center gap-1">
-              <span className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>₹</span>
-              <input type="number" placeholder="Cap" className="px-2 py-1.5 text-xs rounded-lg"
-                style={{ width: 80 }}
-                value={newCatCap} onChange={e => setNewCatCap(e.target.value)} />
-            </div>
+          <div className="flex items-center gap-2 flex-wrap">
             {showAddUniversal && (
               <div className="flex gap-1">
                 {(["Monthly", "Yearly"] as const).map(r => (
-                  <button key={r} className="text-[10px] px-2 py-1 rounded"
+                  <button key={r} className="text-[10px] px-2 py-1 rounded font-semibold"
                     style={{
                       background: newCatRecurrence === r ? "var(--accent)" : "rgba(255,255,255,0.06)",
                       color: newCatRecurrence === r ? "#fff" : "var(--text-tertiary)",
@@ -897,6 +890,17 @@ export default function BudgetGrid({ categories, onCategoriesChange, onClose }: 
                 ))}
               </div>
             )}
+            <input type="text" placeholder="Category name" className="px-2 py-1.5 text-xs rounded-lg flex-1"
+              style={{ maxWidth: 180 }}
+              value={newCatName} onChange={e => setNewCatName(e.target.value)} autoFocus />
+            <div className="flex items-center gap-1">
+              <span className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>₹</span>
+              <input type="number"
+                placeholder={showAddUniversal && newCatRecurrence === "Yearly" ? "Yearly cap" : "Cap"}
+                className="px-2 py-1.5 text-xs rounded-lg"
+                style={{ width: 100 }}
+                value={newCatCap} onChange={e => setNewCatCap(e.target.value)} />
+            </div>
             <button className="text-[11px] px-3 py-1.5 rounded-lg font-semibold"
               style={{ background: "var(--accent)", color: "#fff" }}
               onClick={showAddUniversal ? handleAddUniversal : handleAddMonthSpecific}>Add</button>
