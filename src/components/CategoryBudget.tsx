@@ -348,6 +348,10 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
   // Full-screen drill-down overlay
   // ═══════════════════════════════════
   function DrillDownOverlay() {
+    const [editingMonthCap, setEditingMonthCap] = useState(false);
+    const [monthCapInput, setMonthCapInput] = useState("");
+    const [savingMonthCap, setSavingMonthCap] = useState(false);
+
     if (drillDownId === null) return null;
     const cat = visibleCategories.find((c) => c.id === drillDownId);
     if (!cat) return null;
@@ -361,6 +365,28 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
     const fillClass = pct >= 90 ? "progress-fill-red" : pct >= 75 ? "progress-fill-yellow" : "progress-fill-green";
     const accentColor = isNoCap ? "var(--text-secondary)" : pct >= 90 ? "var(--accent-red)" : pct >= 75 ? "var(--accent-orange)" : "var(--accent-green)";
     const txnsForCat = (categoryTxns.get(cat.name) || []).sort((a, b) => b.sms_date - a.sms_date);
+    const viewMonthLabel = new Date(viewYear, viewMonth, 1).toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
+
+    function startMonthCapEdit() {
+      setMonthCapInput(String(effectiveCap || 0));
+      setEditingMonthCap(true);
+    }
+
+    function saveMonthCap() {
+      const newCap = Number(monthCapInput);
+      if (isNaN(newCap) || newCap < 0) return;
+      setSavingMonthCap(true);
+      onMonthlyOverride(cat!.id, newCap);
+      setSavingMonthCap(false);
+      setEditingMonthCap(false);
+    }
+
+    function clearMonthCap() {
+      setSavingMonthCap(true);
+      onMonthlyOverride(cat!.id, null);
+      setSavingMonthCap(false);
+      setEditingMonthCap(false);
+    }
 
     return (
       <div className="fixed inset-0 z-50 flex flex-col animate-fade-in" style={{ background: "var(--bg-base)" }}>
@@ -375,15 +401,73 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
             >
               <span>←</span> Back
             </button>
-            {isPrimary && (
-              <button
-                className="text-xs font-semibold px-3 py-1.5 rounded-lg btn-ghost"
-                onClick={() => { startEdit(cat); setDrillDownId(null); }}
-              >
-                ✎ Edit
-              </button>
+            {isPrimary && !editingMonthCap && (
+              <div className="flex items-center gap-2">
+                <button
+                  className="text-xs font-semibold px-3 py-1.5 rounded-lg"
+                  style={{ color: "var(--accent-orange)", background: "rgba(255,179,71,0.1)", border: "1px solid rgba(255,179,71,0.2)" }}
+                  onClick={startMonthCapEdit}
+                  title={`Adopt a cap just for ${viewMonthLabel}`}
+                >
+                  {hasMonthOverride ? `✎ Cap (${viewMonthLabel})` : `✎ Adopt cap for ${viewMonthLabel}`}
+                </button>
+                <button
+                  className="text-xs font-semibold px-3 py-1.5 rounded-lg btn-ghost"
+                  onClick={() => { startEdit(cat); setDrillDownId(null); }}
+                  title="Edit general cap / visibility"
+                >
+                  ⚙
+                </button>
+              </div>
             )}
           </div>
+
+          {/* Inline month-specific cap editor */}
+          {isPrimary && editingMonthCap && (
+            <div className="mb-3 p-3 rounded-xl animate-fade-in"
+              style={{ background: "rgba(255,179,71,0.08)", border: "1px solid rgba(255,179,71,0.2)" }}>
+              <div className="text-[10px] font-semibold mb-2" style={{ color: "var(--accent-orange)" }}>
+                Cap for {viewMonthLabel} only
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: "var(--text-tertiary)" }}>₹</span>
+                  <input type="number" inputMode="numeric" autoFocus
+                    className="w-full pl-7 pr-3 py-2 text-sm rounded-lg"
+                    style={{ background: "var(--bg-base)", border: "1px solid var(--border)" }}
+                    value={monthCapInput}
+                    onChange={(e) => setMonthCapInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") saveMonthCap(); if (e.key === "Escape") setEditingMonthCap(false); }}
+                  />
+                </div>
+                <button
+                  className="py-2 px-3 rounded-lg text-xs font-semibold disabled:opacity-35"
+                  style={{ background: "var(--accent-orange)", color: "#fff" }}
+                  disabled={savingMonthCap}
+                  onClick={saveMonthCap}
+                >
+                  {savingMonthCap ? "…" : "Save"}
+                </button>
+                {hasMonthOverride && (
+                  <button
+                    className="py-2 px-3 rounded-lg text-xs font-semibold"
+                    style={{ color: "var(--accent-red)", background: "rgba(255,90,110,0.1)" }}
+                    disabled={savingMonthCap}
+                    onClick={clearMonthCap}
+                    title="Remove this month's override, fall back to general cap"
+                  >
+                    Clear
+                  </button>
+                )}
+                <button
+                  className="py-2 px-3 rounded-lg text-xs btn-ghost"
+                  onClick={() => setEditingMonthCap(false)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Category name */}
           <div className="text-lg font-bold mb-3" style={{ color: "var(--text-primary)" }}>{cat.name}</div>
