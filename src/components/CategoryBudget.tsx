@@ -36,10 +36,9 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
   const [showActiveDays, setShowActiveDays] = useState(false);
   const [showMonthlyList, setShowMonthlyList] = useState(false);
   const [showYearlyList, setShowYearlyList] = useState(false);
-  // Inline per-row month-cap editor inside ComparisonOverlay
+  // Inline per-row month-cap editor inside ComparisonOverlay (double-click the cap)
   const [editingRowCatId, setEditingRowCatId] = useState<number | null>(null);
   const [rowCapInput, setRowCapInput] = useState("");
-  const [savingRowCap, setSavingRowCap] = useState(false);
   const isScaled = activeDays !== daysInMonth;
 
   const fmt = (n: number) => "\u20B9" + n.toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -518,31 +517,14 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
             // Month-specific editing only makes sense in the monthly view
             const canEditMonthCap = isPrimary && !isYearlyView;
 
-            const startRowEdit = (e: React.MouseEvent) => {
-              e.stopPropagation();
-              setEditingRowCatId(cat.id);
-              setRowCapInput(String(hasMonthOverride ? monthlyOverrides[cat.id] : cat.cap));
-            };
-            const cancelRowEdit = (e: React.MouseEvent) => {
-              e.stopPropagation();
-              setEditingRowCatId(null);
-              setRowCapInput("");
-            };
-            const saveRowEdit = async (e: React.MouseEvent) => {
-              e.stopPropagation();
+            const commitRowEdit = () => {
               const newCap = Number(rowCapInput);
-              if (isNaN(newCap) || newCap < 0) return;
-              setSavingRowCap(true);
+              if (isNaN(newCap) || newCap < 0) {
+                setEditingRowCatId(null);
+                setRowCapInput("");
+                return;
+              }
               onMonthlyOverride(cat.id, newCap);
-              setSavingRowCap(false);
-              setEditingRowCatId(null);
-              setRowCapInput("");
-            };
-            const clearRowEdit = async (e: React.MouseEvent) => {
-              e.stopPropagation();
-              setSavingRowCap(true);
-              onMonthlyOverride(cat.id, null);
-              setSavingRowCap(false);
               setEditingRowCatId(null);
               setRowCapInput("");
             };
@@ -557,66 +539,16 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
                       <span className="badge badge-orange text-[9px] py-0">This Mo</span>
                     )}
                   </div>
-                  <div className="flex items-center gap-2">
-                    {noCap ? (
-                      <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>no cap</span>
-                    ) : (
-                      <span className="text-xs font-semibold" style={{ color: accentColor }}>
-                        {isOver ? fmt(-rem) + " over" : fmt(rem) + " left"}
-                      </span>
-                    )}
-                    {canEditMonthCap && !isEditingRow && (
-                      <button
-                        className="text-[10px] px-1.5 py-0.5 rounded-md"
-                        style={{ color: "var(--accent)", background: "rgba(123,108,246,0.08)" }}
-                        onClick={startRowEdit}
-                        title="Edit this month's cap"
-                      >
-                        ✎
-                      </button>
-                    )}
-                  </div>
+                  {noCap ? (
+                    <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>no cap</span>
+                  ) : (
+                    <span className="text-xs font-semibold" style={{ color: accentColor }}>
+                      {isOver ? fmt(-rem) + " over" : fmt(rem) + " left"}
+                    </span>
+                  )}
                 </div>
 
-                {isEditingRow ? (
-                  <div className="flex items-center gap-2 mt-2 animate-fade-in" onClick={(e) => e.stopPropagation()}>
-                    <div className="relative flex-1">
-                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs" style={{ color: "var(--text-tertiary)" }}>₹</span>
-                      <input
-                        type="number"
-                        className="w-full pl-6 pr-2 py-1.5 text-xs rounded-lg"
-                        value={rowCapInput}
-                        onChange={(e) => setRowCapInput(e.target.value)}
-                        placeholder="This month cap"
-                        autoFocus
-                      />
-                    </div>
-                    <button
-                      className="px-2.5 py-1.5 btn-primary text-[11px] rounded-lg font-semibold disabled:opacity-35"
-                      disabled={savingRowCap}
-                      onClick={saveRowEdit}
-                    >
-                      ✓
-                    </button>
-                    {hasMonthOverride && (
-                      <button
-                        className="px-2.5 py-1.5 text-[11px] rounded-lg font-semibold disabled:opacity-35"
-                        style={{ color: "var(--accent-orange)", background: "rgba(255,179,71,0.1)" }}
-                        disabled={savingRowCap}
-                        onClick={clearRowEdit}
-                        title="Clear this month's override"
-                      >
-                        ↺
-                      </button>
-                    )}
-                    <button
-                      className="px-2.5 py-1.5 btn-ghost text-[11px] rounded-lg font-semibold"
-                      onClick={cancelRowEdit}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ) : noCap ? (
+                {noCap ? (
                   <span className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>{fmt(spent)}</span>
                 ) : (
                   <div className="flex items-center gap-3">
@@ -625,9 +557,40 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
                         <div className={`progress-fill ${fillClass}`} style={{ width: `${Math.min(pct, 100)}%`, height: "5px" }} />
                       </div>
                     </div>
-                    <span className="text-xs shrink-0" style={{ color: "var(--text-tertiary)" }}>
-                      {fmt(spent)} / {fmt(eCap)}
-                    </span>
+                    {isEditingRow ? (
+                      <input
+                        type="number"
+                        className="text-xs shrink-0 w-20 px-2 py-0.5 rounded-md"
+                        style={{ background: "var(--bg-base)", border: "1px solid var(--accent)", color: "var(--text-primary)" }}
+                        value={rowCapInput}
+                        autoFocus
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => setRowCapInput(e.target.value)}
+                        onBlur={commitRowEdit}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") { e.preventDefault(); commitRowEdit(); }
+                          else if (e.key === "Escape") { setEditingRowCatId(null); setRowCapInput(""); }
+                        }}
+                      />
+                    ) : (
+                      <span
+                        className="text-xs shrink-0"
+                        style={{ color: "var(--text-tertiary)", textDecoration: canEditMonthCap ? "underline dotted" : "none", textUnderlineOffset: "3px" }}
+                        onClick={(e) => {
+                          if (!canEditMonthCap) return;
+                          e.stopPropagation();
+                        }}
+                        onDoubleClick={(e) => {
+                          if (!canEditMonthCap) return;
+                          e.stopPropagation();
+                          setEditingRowCatId(cat.id);
+                          setRowCapInput(String(hasMonthOverride ? monthlyOverrides[cat.id] : cat.cap));
+                        }}
+                        title={canEditMonthCap ? "Double-click to set this month's cap" : undefined}
+                      >
+                        {fmt(spent)} / {fmt(eCap)}
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
