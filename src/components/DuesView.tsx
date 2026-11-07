@@ -70,6 +70,15 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
 
   const groups = groupBy === "month" ? byMonth : byCategory;
 
+  /** Month view: split a month's dues by category (largest total first). Category view: one plain list. */
+  function subGroups(list: SettleDue[]): [string | null, SettleDue[]][] {
+    if (groupBy !== "month") return [[null, list]];
+    const map = new Map<string, SettleDue[]>();
+    for (const d of list) map.set(d.category, [...(map.get(d.category) || []), d]);
+    const total = (arr: SettleDue[]) => arr.reduce((s, d) => s + Number(d.amount), 0);
+    return Array.from(map.entries()).sort((a, b) => total(b[1]) - total(a[1]));
+  }
+
   const txnMap = useMemo(() => {
     const m = new Map<number, Transaction>();
     for (const t of transactions) m.set(t.id, t);
@@ -243,6 +252,10 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
                     <div className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{groupBy === "month" ? monthLabel(category) : category}</div>
                     <div className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
                       {categoryDues.length} item{categoryDues.length !== 1 ? "s" : ""}
+                      {groupBy === "month" && (() => {
+                        const n = new Set(categoryDues.map((d) => d.category)).size;
+                        return ` · ${n} categor${n !== 1 ? "ies" : "y"}`;
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -278,18 +291,32 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
                     </div>
                   )}
 
-                  {/* Items */}
-                  {categoryDues.map((due, i) => {
+                  {/* Items — in month view, sub-grouped by category */}
+                  {subGroups(categoryDues).map(([subCat, subDues]) => (
+                  <div key={subCat ?? "all"} className={subCat ? "mt-3" : undefined}>
+                  {subCat && (
+                    <div className="flex justify-between items-center px-2 py-1.5 rounded-lg"
+                      style={{ background: "rgba(255,255,255,0.04)" }}>
+                      <span className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>
+                        {subCat}
+                        <span className="ml-1 font-normal" style={{ color: "var(--text-tertiary)" }}>· {subDues.length}</span>
+                      </span>
+                      <span className="text-xs font-bold" style={{ color: "var(--accent-red)" }}>
+                        {fmt(subDues.reduce((s, d) => s + Number(d.amount), 0))}
+                      </span>
+                    </div>
+                  )}
+                  {subDues.map((due, i) => {
                     const txn = txnMap.get(due.transaction_id);
                     const smsExpanded = expandedSmsId === due.id;
                     return (
-                      <div key={due.id} className="py-3"
-                        style={{ borderBottom: i < categoryDues.length - 1 ? "1px solid var(--border)" : "none" }}>
+                      <div key={due.id} className={subCat ? "py-3 pl-2" : "py-3"}
+                        style={{ borderBottom: i < subDues.length - 1 ? "1px solid var(--border)" : "none" }}>
                         <div className="flex justify-between items-center">
                           <div>
                             <div className="text-sm font-medium" style={{ color: "var(--text-secondary)" }}>{txn?.merchant ?? txn?.notes ?? "Transaction #" + due.transaction_id}</div>
                             <div className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-                              {fmtDate(due.paid_on)}{groupBy === "month" ? ` · ${due.category}` : ""}
+                              {fmtDate(due.paid_on)}
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
@@ -333,6 +360,8 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
                       </div>
                     );
                   })}
+                  </div>
+                  ))}
                 </div>
               )}
             </div>
