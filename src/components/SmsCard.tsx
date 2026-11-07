@@ -41,7 +41,12 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
   const [showAddCategory, setShowAddCategory] = useState(false);
 
   const fmtShort = (n: number) => "\u20B9" + n.toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-  const fmtDate = (ts: number) => new Date(ts).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" });
+  const fmtDate = (ts: number) => {
+    const d = new Date(ts);
+    const date = d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" });
+    const time = d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
+    return `${date}, ${time}`;
+  };
 
   const txnAmount = Number(txn.amount) || 0;
   const hasDues = unclearedDues && unclearedDues.length > 0;
