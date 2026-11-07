@@ -70,13 +70,22 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
 
   const groups = groupBy === "month" ? byMonth : byCategory;
 
-  /** Month view: split a month's dues by category (largest total first). Category view: one plain list. */
-  function subGroups(list: SettleDue[]): [string | null, SettleDue[]][] {
-    if (groupBy !== "month") return [[null, list]];
+  /**
+   * Second level of grouping, returned as [label, dues]:
+   * month view → split by category (largest total first);
+   * category view → split by month (newest first), items newest first.
+   */
+  function subGroups(list: SettleDue[]): [string, SettleDue[]][] {
     const map = new Map<string, SettleDue[]>();
-    for (const d of list) map.set(d.category, [...(map.get(d.category) || []), d]);
-    const total = (arr: SettleDue[]) => arr.reduce((s, d) => s + Number(d.amount), 0);
-    return Array.from(map.entries()).sort((a, b) => total(b[1]) - total(a[1]));
+    const keyOf = (d: SettleDue) => (groupBy === "month" ? d.category : monthKey(d.paid_on));
+    for (const d of list) map.set(keyOf(d), [...(map.get(keyOf(d)) || []), d]);
+    if (groupBy === "month") {
+      const total = (arr: SettleDue[]) => arr.reduce((s, d) => s + Number(d.amount), 0);
+      return Array.from(map.entries()).sort((a, b) => total(b[1]) - total(a[1]));
+    }
+    return Array.from(map.entries())
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([k, arr]) => [monthLabel(k), [...arr].sort((a, b) => b.paid_on - a.paid_on)]);
   }
 
   const txnMap = useMemo(() => {
@@ -252,9 +261,13 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
                     <div className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{groupBy === "month" ? monthLabel(category) : category}</div>
                     <div className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
                       {categoryDues.length} item{categoryDues.length !== 1 ? "s" : ""}
-                      {groupBy === "month" && (() => {
-                        const n = new Set(categoryDues.map((d) => d.category)).size;
-                        return ` · ${n} categor${n !== 1 ? "ies" : "y"}`;
+                      {(() => {
+                        if (groupBy === "month") {
+                          const n = new Set(categoryDues.map((d) => d.category)).size;
+                          return ` · ${n} categor${n !== 1 ? "ies" : "y"}`;
+                        }
+                        const n = new Set(categoryDues.map((d) => monthKey(d.paid_on))).size;
+                        return ` · ${n} month${n !== 1 ? "s" : ""}`;
                       })()}
                     </div>
                   </div>
