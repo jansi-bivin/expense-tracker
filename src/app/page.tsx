@@ -5,6 +5,40 @@ import { useState, useEffect, useCallback, useRef, useMemo, Suspense } from "rea
 import { useSearchParams } from "next/navigation";
 import { supabase, RawSms, Transaction, Category, User, Due, FeatureIdea, MonthlyBudget } from "@/lib/supabase";
 import { detectFields } from "@/lib/smsDetector";
+import { SettleDue, SettlementPlan, applyAdvance, round2 } from "@/lib/dues";
+
+const ADVANCE_KEY = "dues_advance";
+
+async function fetchAdvance(): Promise<number> {
+  const { data } = await supabase.from("settings").select("*").eq("key", ADVANCE_KEY).maybeSingle();
+  const v = (data?.value as { amount?: number } | undefined)?.amount;
+  return typeof v === "number" && v > 0 ? v : 0;
+}
+
+async function saveAdvance(amount: number) {
+  await supabase.from("settings").upsert({
+    key: ADVANCE_KEY,
+    value: { amount: round2(Math.max(0, amount)) },
+    updated_at: new Date().toISOString(),
+  });
+}
+
+/** Create a due for a secondary-user expense, using up any advance first. */
+async function createDue(transactionId: number, category: string, amount: number): Promise<number> {
+  const advance = await fetchAdvance();
+  const { dueLeft, advanceLeft, used } = applyAdvance(amount, advance);
+  if (used > 0) await saveAdvance(advanceLeft);
+  if (used > 0 && dueLeft <= 0) {
+    // Fully covered by the advance: record it as already settled.
+    await supabase.from("dues").insert({
+      transaction_id: transactionId, category, amount,
+      cleared: true, cleared_at: new Date().toISOString(),
+    });
+  } else {
+    await supabase.from("dues").insert({ transaction_id: transactionId, category, amount: dueLeft });
+  }
+  return advanceLeft;
+}
 import NewSmsReview from "@/components/NewSmsReview";
 import SmsCard from "@/components/SmsCard";
 import CategoryBudget from "@/components/CategoryBudget";
@@ -17,12 +51,12 @@ import BudgetGrid from "@/components/BudgetGrid";
 /* ── DebitOverlay: self-contained so overlayIdx doesn't re-render parent ── */
 function DebitOverlay({ txns, categories, isPrimary, unclearedDues, settlementHints, merchantCategoryMap, categoryFrequencyMap, onDone, onSnooze, onSettle, onDismissAll, onSaveMapping, onCategoryCreated }: {
   txns: Transaction[]; categories: Category[]; isPrimary: boolean;
-  unclearedDues: Due[]; settlementHints: string[];
+  unclearedDues: SettleDue[]; settlementHints: string[];
   merchantCategoryMap: Map<string, string>;
   categoryFrequencyMap: Map<string, number>;
   onDone: (id: number, cat?: string, notes?: string) => void;
   onSnooze: (id: number) => void;
-  onSettle: (txnId: number, dueIds: number[]) => void;
+  onSettle: (txnId: number, plan: SettlementPlan) => void;
   onDismissAll: () => void;
   onSaveMapping: (merchant: string, category: string) => void;
   onCategoryCreated: (cat: Category) => void;
@@ -105,6 +139,7 @@ function HomeInner() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [dues, setDues] = useState<Due[]>([]);
+  const [duesAdvance, setDuesAdvance] = useState(0);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"review" | "budget" | "dues">("budget");
   const [resetting, setResetting] = useState(false);
@@ -380,6 +415,7 @@ function HomeInner() {
       // Fetch dues
       const { data: duesData } = await supabase.from("dues").select("*").order("created_at", { ascending: false });
       if (duesData) setDues(duesData);
+      setDuesAdvance(await fetchAdvance());
 
       setLoading(false);
     }
@@ -522,13 +558,9 @@ function HomeInner() {
       const enriched = enrichSms(inserted as RawSms);
       setCategorizedTxns((prev) => [enriched, ...prev]);
 
-      // If secondary user, create a due
+      // If secondary user, create a due (an advance, if any, is used up first)
       if (currentUser && !currentUser.is_primary) {
-        await supabase.from("dues").insert({
-          transaction_id: inserted.id,
-          category: expense.category,
-          amount: expense.amount,
-        });
+        setDuesAdvance(await createDue(inserted.id, expense.category, expense.amount));
       }
     }
 
@@ -581,9 +613,10 @@ function HomeInner() {
   }
 
   // Reclassify: change category of an already-categorized transaction
-  async function handleReclassify(txnId: number, newCategory: string) {
-    await supabase.from("transactions").update({ category: newCategory }).eq("id", txnId);
-    setCategorizedTxns((prev) => prev.map((t) => t.id === txnId ? { ...t, category: newCategory } : t));
+  async function handleReclassify(txnId: number, newCategory: string, note?: string) {
+    const update: { category: string; notes?: string } = note ? { category: newCategory, notes: note } : { category: newCategory };
+    await supabase.from("transactions").update(update).eq("id", txnId);
+    setCategorizedTxns((prev) => prev.map((t) => t.id === txnId ? { ...t, ...update } : t));
     // Update associated due if any
     await supabase.from("dues").update({ category: newCategory }).eq("transaction_id", txnId);
     setDues((prev) => prev.map((d) => d.transaction_id === txnId ? { ...d, category: newCategory } : d));
@@ -620,19 +653,14 @@ function HomeInner() {
       // If secondary user categorized, create a due
       const user = currentUser;
       if (user && !user.is_primary && foundTxn.amount) {
-        await supabase.from("dues").insert({
-          transaction_id: id,
-          category,
-          amount: foundTxn.amount,
-        });
+        setDuesAdvance(await createDue(id, category, foundTxn.amount));
       }
     }
   }, [currentUser]);
 
   // Settlement: primary user marks a debit as payment, partially settles dues
-  async function handleSettle(txnId: number, dueIds: number[]) {
+  async function handleSettle(txnId: number, plan: SettlementPlan) {
     const txn = newTxns.find((t) => t.id === txnId);
-    const paymentAmount = txn?.amount || 0;
     setNewTxns((prev) => prev.filter((t) => t.id !== txnId));
 
     await supabase.from("transactions").update({ category: "Settlement", status: "categorized" }).eq("id", txnId);
@@ -640,29 +668,17 @@ function HomeInner() {
       setCategorizedTxns((prev) => [{ ...txn, category: "Settlement", status: "categorized" as const }, ...prev]);
     }
 
+    // The plan was computed on the card (oldest first / chosen month / manual,
+    // round-off, extra → advance). Apply it as-is.
     const nowIso = new Date().toISOString();
-    const selectedDues = dues.filter((d) => dueIds.includes(d.id));
-    let remaining = paymentAmount;
-    const fullyCleared: number[] = [];
-    let partialDue: { id: number; newAmount: number } | null = null;
+    const fullyCleared = plan.clearIds;
+    const partialDue = plan.partial;
 
-    for (const due of selectedDues) {
-      const dueAmt = Number(due.amount);
-      if (remaining >= dueAmt) {
-        fullyCleared.push(due.id);
-        remaining -= dueAmt;
-      } else if (remaining > 0) {
-        // Partial: reduce the due amount by what's left
-        partialDue = { id: due.id, newAmount: dueAmt - remaining };
-        remaining = 0;
-      }
-      // remaining === 0 and more dues selected? leave them untouched
-    }
-
-    // Treat near-zero partial due as fully cleared (floating point edge case)
-    if (partialDue && partialDue.newAmount < 0.01) {
-      fullyCleared.push(partialDue.id);
-      partialDue = null;
+    // Payment beyond all dues becomes an advance used by future dues
+    if (plan.extra > 0) {
+      const newAdvance = round2((await fetchAdvance()) + plan.extra);
+      await saveAdvance(newAdvance);
+      setDuesAdvance(newAdvance);
     }
 
     // Clear fully covered dues
@@ -725,7 +741,18 @@ function HomeInner() {
   }, [monthlyBudgets]);
 
   // Memoize derived data (must be before early returns for Rules of Hooks)
-  const unclearedDues = useMemo(() => dues.filter((d) => !d.cleared), [dues]);
+  // Dues enriched with the original amount and payment date of their transaction
+  const settleDues = useMemo<SettleDue[]>(() => {
+    const txnById = new Map<number, Transaction>();
+    for (const t of categorizedTxns) txnById.set(t.id, t);
+    return dues.map((d) => {
+      const t = txnById.get(d.transaction_id);
+      const paidOn = t?.sms_date ?? Date.parse(d.created_at);
+      const original = Math.max(Number(t?.amount ?? 0), Number(d.amount));
+      return { ...d, original_amount: original, paid_on: paidOn };
+    });
+  }, [dues, categorizedTxns]);
+  const unclearedDues = useMemo(() => settleDues.filter((d) => !d.cleared), [settleDues]);
   const duesTotal = useMemo(() => unclearedDues.reduce((sum, d) => sum + Number(d.amount), 0), [unclearedDues]);
 
   // Build settlement hints from non-primary user's details
@@ -848,7 +875,8 @@ function HomeInner() {
       <div className="animate-fade-in">
         {activeView === "dues" ? (
           <DuesView
-            dues={dues}
+            dues={settleDues}
+            advance={duesAdvance}
             transactions={categorizedTxns}
             categories={categories}
             onDuesChange={setDues}

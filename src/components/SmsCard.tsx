@@ -1,7 +1,11 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { supabase, Transaction, Category, Due } from "@/lib/supabase";
+import { supabase, Transaction, Category } from "@/lib/supabase";
+import {
+  SettleDue, SettlementPlan, planSettlement, roundOffCandidate, smallLimit,
+  monthKey, monthLabel, sortOldestFirst, categoryNeedsNote,
+} from "@/lib/dues";
 import AddCategoryForm from "./AddCategoryForm";
 
 const CATEGORY_GROUPS = [
@@ -14,8 +18,8 @@ interface Props {
   categories: Category[];
   onDone: (id: number, category?: string, notes?: string) => void;
   isPrimary?: boolean;
-  unclearedDues?: Due[];
-  onSettle?: (txnId: number, dueIds: number[]) => void;
+  unclearedDues?: SettleDue[];
+  onSettle?: (txnId: number, plan: SettlementPlan) => void;
   settlementHints?: string[];
   onSnooze?: (id: number) => void;
   merchantCategoryMap?: Map<string, string>;
@@ -37,6 +41,9 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
   const [expanded, setExpanded] = useState(false);
   const [settleMode, setSettleMode] = useState(false);
   const [selectedDues, setSelectedDues] = useState<Set<number>>(new Set());
+  const [manualPick, setManualPick] = useState(false);
+  const [settleMonth, setSettleMonth] = useState<string | null>(null);
+  const [roundOff, setRoundOff] = useState(true);
   const [mappingSaved, setMappingSaved] = useState(false);
   const [showAddCategory, setShowAddCategory] = useState(false);
 
@@ -76,17 +83,54 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
 
   function enterSettleMode() {
     if (!unclearedDues) return;
-    const totalAll = unclearedDues.reduce((s, d) => s + Number(d.amount), 0);
-    let preSelected = new Set<number>();
-    if (Math.abs(totalAll - txnAmount) < 0.01) {
-      preSelected = new Set(unclearedDues.map((d) => d.id));
-    } else {
-      const match = unclearedDues.find((d) => Math.abs(Number(d.amount) - txnAmount) < 0.01);
-      if (match) preSelected = new Set([match.id]);
-    }
-    setSelectedDues(preSelected);
+    setManualPick(false);
+    setSettleMonth(null);
+    setRoundOff(true);
+    setSelectedDues(new Set());
     setSettleMode(true);
   }
+
+  const oldestDues = useMemo(() => sortOldestFirst(unclearedDues ?? []), [unclearedDues]);
+  const outstanding = useMemo(() => oldestDues.reduce((s, d) => s + Number(d.amount), 0), [oldestDues]);
+
+  // Months that have open dues, oldest first, with totals
+  const dueMonths = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const d of oldestDues) m.set(monthKey(d.paid_on), (m.get(monthKey(d.paid_on)) || 0) + Number(d.amount));
+    return Array.from(m.entries());
+  }, [oldestDues]);
+
+  const roundOffAmt = useMemo(
+    () => (manualPick ? 0 : roundOffCandidate(txnAmount, oldestDues, settleMonth)),
+    [manualPick, txnAmount, oldestDues, settleMonth]
+  );
+
+  const plan = useMemo(
+    () => planSettlement(txnAmount, oldestDues, {
+      targetMonth: settleMonth,
+      onlyIds: manualPick ? selectedDues : null,
+      roundOff: roundOff && roundOffAmt > 0,
+    }),
+    [txnAmount, oldestDues, settleMonth, manualPick, selectedDues, roundOff, roundOffAmt]
+  );
+
+  // Human summary of which months get closed fully
+  const planSummary = useMemo(() => {
+    const cleared = new Set(plan.clearIds);
+    const months = new Map<string, { total: number; cleared: number }>();
+    for (const d of oldestDues) {
+      const k = monthKey(d.paid_on);
+      const e = months.get(k) || { total: 0, cleared: 0 };
+      e.total++;
+      if (cleared.has(d.id)) e.cleared++;
+      months.set(k, e);
+    }
+    const full = Array.from(months.entries()).filter(([, e]) => e.cleared === e.total && e.total > 0).map(([k]) => monthLabel(k));
+    const partialDue = plan.partial ? oldestDues.find((d) => d.id === plan.partial!.id) : undefined;
+    return { full, partialDue };
+  }, [plan, oldestDues]);
+
+  const bigExtra = plan.extra > 0 && plan.extra > smallLimit(txnAmount);
 
   function toggleDue(id: number) {
     setSelectedDues((prev) => {
@@ -101,8 +145,11 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
     return unclearedDues.filter((d) => selectedDues.has(d.id)).reduce((s, d) => s + Number(d.amount), 0);
   }, [unclearedDues, selectedDues]);
 
+  const noteRequired = categoryNeedsNote(category);
+
   async function handleSave() {
     if (!category) return;
+    if (noteRequired && !comment.trim()) return;
     setSaving(true);
     await supabase.from("transactions").update({ category, notes: comment || null, status: "categorized" }).eq("id", txn.id);
     onDone(txn.id, category, comment || undefined);
@@ -115,12 +162,11 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
   }
 
   async function handleConfirmSettle() {
-    if (selectedDues.size === 0 || !onSettle) return;
+    if (!onSettle) return;
+    if (manualPick && selectedDues.size === 0) return;
     setSaving(true);
-    onSettle(txn.id, Array.from(selectedDues));
+    onSettle(txn.id, plan);
   }
-
-  const amountMatches = Math.abs(selectedTotal - txnAmount) < 0.01;
 
   return (
     <div className="card p-0 mb-4 overflow-hidden animate-slide-up">
@@ -199,45 +245,108 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
             onClick={enterSettleMode}
           >
             <span>⚡</span>
-            <span>Settle Dues — {fmtShort(unclearedDues!.reduce((s, d) => s + Number(d.amount), 0))} outstanding</span>
+            <span>Settle Dues — {fmtShort(outstanding)} outstanding</span>
           </button>
         )}
 
         {settleMode ? (
           /* ── Dues Picker ── */
           <div className="card-gradient-red p-4 mb-3 rounded-2xl animate-scale-in" style={{ background: "linear-gradient(135deg, rgba(255,179,71,0.08) 0%, rgba(255,159,67,0.03) 100%)", border: "1px solid rgba(255,179,71,0.15)" }}>
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-base">📋</span>
-              <span className="text-sm font-bold" style={{ color: "var(--accent-orange)" }}>Select dues to settle</span>
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <span className="text-sm font-bold" style={{ color: "var(--accent-orange)" }}>
+                Settle {fmtShort(txnAmount)} · {fmtShort(outstanding)} owed
+              </span>
+              <button
+                type="button"
+                className="text-[11px] font-medium underline"
+                style={{ color: "var(--text-tertiary)" }}
+                onClick={() => { setManualPick(!manualPick); setSelectedDues(new Set()); }}
+              >
+                {manualPick ? "Auto (oldest first)" : "Choose manually"}
+              </button>
             </div>
 
-            <div className="space-y-1.5 max-h-48 overflow-y-auto mb-3">
-              {unclearedDues!.map((due) => (
-                <label key={due.id} className="flex items-center gap-3 cursor-pointer p-2 rounded-xl transition-all"
-                  style={{ background: selectedDues.has(due.id) ? "rgba(255,179,71,0.08)" : "transparent" }}>
-                  <input
-                    type="checkbox"
-                    checked={selectedDues.has(due.id)}
-                    onChange={() => toggleDue(due.id)}
-                  />
-                  <span className="text-sm flex-1" style={{ color: "var(--text-secondary)" }}>{due.category}</span>
-                  <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{fmtShort(Number(due.amount))}</span>
-                </label>
-              ))}
-            </div>
+            {!manualPick && (
+              /* Month chips: pay a specific month first; default is oldest first */
+              <div className="flex gap-1.5 flex-wrap mb-3">
+                <button
+                  type="button"
+                  className={`badge text-[11px] py-1 ${settleMonth === null ? "badge-orange" : "badge-muted"}`}
+                  onClick={() => setSettleMonth(null)}
+                >
+                  Oldest first
+                </button>
+                {dueMonths.map(([k, total]) => (
+                  <button
+                    key={k}
+                    type="button"
+                    className={`badge text-[11px] py-1 ${settleMonth === k ? "badge-orange" : "badge-muted"}`}
+                    onClick={() => setSettleMonth(k)}
+                  >
+                    {monthLabel(k)} · {fmtShort(total)}
+                  </button>
+                ))}
+              </div>
+            )}
 
-            {/* Running total */}
-            <div className={`badge w-full justify-center py-1.5 mb-3 text-xs ${amountMatches ? "badge-green" : "badge-orange"}`}>
-              Selected: {fmtShort(selectedTotal)} / Payment: {fmtShort(txnAmount)}
-              {!amountMatches && selectedTotal > 0 && (
-                <span className="ml-1">— {selectedTotal > txnAmount ? "over" : "under"} by {fmtShort(Math.abs(selectedTotal - txnAmount))}</span>
+            {manualPick && (
+              <div className="space-y-1.5 max-h-48 overflow-y-auto mb-3">
+                {oldestDues.map((due) => (
+                  <label key={due.id} className="flex items-center gap-3 cursor-pointer p-2 rounded-xl transition-all"
+                    style={{ background: selectedDues.has(due.id) ? "rgba(255,179,71,0.08)" : "transparent" }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedDues.has(due.id)}
+                      onChange={() => toggleDue(due.id)}
+                    />
+                    <span className="text-sm flex-1" style={{ color: "var(--text-secondary)" }}>
+                      {due.category}
+                      <span className="text-[10px] ml-1" style={{ color: "var(--text-tertiary)" }}>
+                        {new Date(due.paid_on).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}
+                      </span>
+                    </span>
+                    <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{fmtShort(Number(due.amount))}</span>
+                  </label>
+                ))}
+                <div className="text-[11px] text-center" style={{ color: "var(--text-tertiary)" }}>
+                  Selected {fmtShort(selectedTotal)} of {fmtShort(txnAmount)}
+                </div>
+              </div>
+            )}
+
+            {/* Preview of what this payment does */}
+            <div className="rounded-xl p-3 mb-3 text-xs space-y-1" style={{ background: "var(--bg-base)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}>
+              {plan.clearIds.length > 0 && (
+                <div>
+                  ✓ Clears <b>{plan.clearIds.length}</b> due{plan.clearIds.length !== 1 ? "s" : ""}
+                  {planSummary.full.length > 0 && <> · <b>{planSummary.full.join(", ")}</b> fully</>}
+                </div>
               )}
+              {plan.partial && planSummary.partialDue && (
+                <div>
+                  ◐ {planSummary.partialDue.category}: {fmtShort(Number(planSummary.partialDue.amount))} → <b>{fmtShort(plan.partial.newAmount)} left</b>
+                </div>
+              )}
+              {roundOffAmt > 0 && (
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={roundOff} onChange={(e) => setRoundOff(e.target.checked)} />
+                  <span>Round off {fmtShort(roundOffAmt)} — mark as fully settled</span>
+                </label>
+              )}
+              {plan.extra > 0 && (
+                <div style={{ color: bigExtra ? "var(--accent-orange)" : undefined }}>
+                  {bigExtra ? "⚠ " : "↪ "}{fmtShort(plan.extra)} more than {manualPick ? "selected" : "all"} dues — kept as advance for future dues
+                </div>
+              )}
+              <div className="pt-1" style={{ color: "var(--text-tertiary)" }}>
+                {plan.remaining > 0 ? `${fmtShort(plan.remaining)} still owed after this` : "All dues cleared"}
+              </div>
             </div>
 
             <div className="flex gap-2">
               <button
                 className="flex-1 py-2.5 btn-orange rounded-xl text-sm disabled:opacity-35"
-                disabled={selectedDues.size === 0 || saving}
+                disabled={(manualPick && selectedDues.size === 0) || saving}
                 onClick={handleConfirmSettle}
               >
                 {saving ? "Settling..." : "✓ Confirm Settlement"}
@@ -317,16 +426,17 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
 
             <input
               type="text"
-              placeholder="Comment (optional)"
+              placeholder={noteRequired ? "Comment (required for Unsorted)" : "Comment (optional)"}
               className="w-full px-3 py-2.5 mb-4 text-sm rounded-xl"
               value={comment}
               onChange={(e) => setComment(e.target.value)}
+              style={noteRequired && !comment.trim() ? { borderColor: "var(--accent)", borderWidth: 1 } : undefined}
             />
 
             <div className="flex gap-2">
               <button
                 className="flex-1 btn-primary py-2.5 text-sm disabled:opacity-35"
-                disabled={!category || saving}
+                disabled={!category || saving || (noteRequired && !comment.trim())}
                 onClick={handleSave}
               >
                 {saving ? "Saving..." : "✓ Save"}

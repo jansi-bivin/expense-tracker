@@ -1,21 +1,32 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import { supabase, Transaction, Category, Due } from "@/lib/supabase";
+import { supabase, Transaction, Category } from "@/lib/supabase";
+import { SettleDue, monthKey, monthLabel } from "@/lib/dues";
 
 interface Props {
-  dues: Due[];
+  dues: SettleDue[];
+  /** Extra paid beyond all dues, used up by future dues. */
+  advance: number;
   transactions: Transaction[];
   categories: Category[];
-  onDuesChange: (dues: Due[]) => void;
+  onDuesChange: (dues: SettleDue[]) => void;
   payeeUpi: string | null;
   payeeName: string;
   isPrimary: boolean;
   primaryName: string;
 }
 
-function DuesView({ dues, transactions, categories, onDuesChange, payeeUpi, payeeName, isPrimary, primaryName }: Props) {
+function DuesView({ dues, advance, transactions, categories, onDuesChange, payeeUpi, payeeName, isPrimary, primaryName }: Props) {
   const [expandedCat, setExpandedCat] = useState<string | null>(null);
+  const [groupBy, setGroupBy] = useState<"category" | "month">(() => {
+    try { return localStorage.getItem("duesGroupBy") === "month" ? "month" : "category"; } catch { return "category"; }
+  });
+  function changeGroupBy(g: "category" | "month") {
+    setGroupBy(g);
+    setExpandedCat(null);
+    try { localStorage.setItem("duesGroupBy", g); } catch { /* ignore */ }
+  }
   const [showCleared, setShowCleared] = useState(false);
   const [clearing, setClearing] = useState<Set<number>>(new Set());
 
@@ -31,7 +42,7 @@ function DuesView({ dues, transactions, categories, onDuesChange, payeeUpi, paye
   );
 
   const byCategory = useMemo(() => {
-    const map = new Map<string, Due[]>();
+    const map = new Map<string, SettleDue[]>();
     for (const d of unclearedDues) {
       const arr = map.get(d.category) || [];
       arr.push(d);
@@ -43,6 +54,21 @@ function DuesView({ dues, transactions, categories, onDuesChange, payeeUpi, paye
       return totalB - totalA;
     });
   }, [unclearedDues]);
+
+  // Month of the original payment, newest month first; items newest first
+  const byMonth = useMemo(() => {
+    const map = new Map<string, SettleDue[]>();
+    for (const d of unclearedDues) {
+      const k = monthKey(d.paid_on);
+      const arr = map.get(k) || [];
+      arr.push(d);
+      map.set(k, arr);
+    }
+    for (const arr of map.values()) arr.sort((a, b) => b.paid_on - a.paid_on);
+    return Array.from(map.entries()).sort((a, b) => b[0].localeCompare(a[0]));
+  }, [unclearedDues]);
+
+  const groups = groupBy === "month" ? byMonth : byCategory;
 
   const txnMap = useMemo(() => {
     const m = new Map<number, Transaction>();
@@ -82,8 +108,8 @@ function DuesView({ dues, transactions, categories, onDuesChange, payeeUpi, paye
     setClearing((prev) => { const s = new Set(prev); s.delete(dueId); return s; });
   }
 
-  async function clearCategory(category: string) {
-    const ids = unclearedDues.filter((d) => d.category === category).map((d) => d.id);
+  async function clearGroup(groupDues: SettleDue[]) {
+    const ids = groupDues.map((d) => d.id);
     setClearing((prev) => { const s = new Set(prev); ids.forEach((id) => s.add(id)); return s; });
     const now = new Date().toISOString();
     await supabase.from("dues").update({ cleared: true, cleared_at: now }).in("id", ids);
@@ -92,7 +118,7 @@ function DuesView({ dues, transactions, categories, onDuesChange, payeeUpi, paye
     setExpandedCat(null);
   }
 
-  if (unclearedDues.length === 0 && clearedDues.length === 0) {
+  if (unclearedDues.length === 0 && clearedDues.length === 0 && advance <= 0) {
     return (
       <div className="text-center py-20 animate-fade-in">
         <div className="text-5xl mb-4">✨</div>
@@ -120,7 +146,7 @@ function DuesView({ dues, transactions, categories, onDuesChange, payeeUpi, paye
             {fmt(totalOutstanding)}
           </div>
           <div className="text-xs mb-4" style={{ color: "var(--text-tertiary)" }}>
-            {unclearedDues.length} transaction{unclearedDues.length !== 1 ? "s" : ""} across {byCategory.length} categor{byCategory.length !== 1 ? "ies" : "y"}
+            {unclearedDues.length} transaction{unclearedDues.length !== 1 ? "s" : ""} across {byCategory.length} categor{byCategory.length !== 1 ? "ies" : "y"} · {byMonth.length} month{byMonth.length !== 1 ? "s" : ""}
           </div>
 
           {isPrimary && payeeUpi && (
@@ -169,9 +195,36 @@ function DuesView({ dues, transactions, categories, onDuesChange, payeeUpi, paye
         </div>
       )}
 
-      {/* ═══ Category Rows ═══ */}
+      {/* ═══ Advance (paid beyond all dues) ═══ */}
+      {advance > 0 && (
+        <div className="card p-3 mb-4 flex justify-between items-center text-sm animate-slide-up">
+          <span style={{ color: "var(--text-secondary)" }}>
+            {isPrimary ? `Advance paid to ${payeeName}` : "Advance you hold"}
+            <span className="block text-[11px]" style={{ color: "var(--text-tertiary)" }}>Used up automatically by the next dues</span>
+          </span>
+          <span className="font-bold" style={{ color: "var(--accent-green)" }}>{fmt(advance)}</span>
+        </div>
+      )}
+
+      {/* ═══ Group-by toggle ═══ */}
+      {unclearedDues.length > 0 && (
+        <div className="flex gap-1.5 mb-3">
+          {(["category", "month"] as const).map((g) => (
+            <button
+              key={g}
+              type="button"
+              className={`badge text-[11px] py-1 px-3 cursor-pointer ${groupBy === g ? "badge-purple" : "badge-muted"}`}
+              onClick={() => changeGroupBy(g)}
+            >
+              By {g}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ═══ Group Rows (category or month) ═══ */}
       <div className="stagger">
-        {byCategory.map(([category, categoryDues]) => {
+        {groups.map(([category, categoryDues]) => {
           const catTotal = categoryDues.reduce((s, d) => s + Number(d.amount), 0);
           const isExpanded = expandedCat === category;
 
@@ -187,7 +240,7 @@ function DuesView({ dues, transactions, categories, onDuesChange, payeeUpi, paye
                     {categoryDues.length}
                   </div>
                   <div>
-                    <div className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{category}</div>
+                    <div className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{groupBy === "month" ? monthLabel(category) : category}</div>
                     <div className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
                       {categoryDues.length} item{categoryDues.length !== 1 ? "s" : ""}
                     </div>
@@ -218,7 +271,7 @@ function DuesView({ dues, transactions, categories, onDuesChange, payeeUpi, paye
                       <button
                         className={`${payeeUpi ? "flex-1" : "w-full"} py-2.5 btn-green text-sm rounded-xl disabled:opacity-35`}
                         disabled={categoryDues.some((d) => clearing.has(d.id))}
-                        onClick={(e) => { e.stopPropagation(); clearCategory(category); }}
+                        onClick={(e) => { e.stopPropagation(); clearGroup(categoryDues); }}
                       >
                         ✓ Clear All
                       </button>
@@ -235,10 +288,17 @@ function DuesView({ dues, transactions, categories, onDuesChange, payeeUpi, paye
                         <div className="flex justify-between items-center">
                           <div>
                             <div className="text-sm font-medium" style={{ color: "var(--text-secondary)" }}>{txn?.merchant ?? txn?.notes ?? "Transaction #" + due.transaction_id}</div>
-                            <div className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>{txn ? fmtDate(txn.sms_date) : ""}</div>
+                            <div className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                              {fmtDate(due.paid_on)}{groupBy === "month" ? ` · ${due.category}` : ""}
+                            </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            <span className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>{fmt(Number(due.amount))}</span>
+                            <span className="text-right">
+                              <span className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>{fmt(Number(due.amount))}</span>
+                              {due.original_amount - Number(due.amount) >= 0.5 && (
+                                <span className="block text-[10px]" style={{ color: "var(--accent-orange)" }}>left of {fmt(due.original_amount)}</span>
+                              )}
+                            </span>
                             {txn?.body && (
                               <button
                                 className={`badge text-[10px] cursor-pointer ${smsExpanded ? "badge-purple" : ""}`}

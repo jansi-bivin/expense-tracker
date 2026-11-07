@@ -1,6 +1,7 @@
 "use client";
 
-import { Transaction, Category, Due } from "@/lib/supabase";
+import { Transaction, Category } from "@/lib/supabase";
+import { SettleDue, SettlementPlan } from "@/lib/dues";
 import SmsCard from "./SmsCard";
 
 interface Props {
@@ -9,8 +10,8 @@ interface Props {
   onDone: (id: number, category?: string, notes?: string) => void;
   userName?: string;
   isPrimary?: boolean;
-  unclearedDues?: Due[];
-  onSettle?: (txnId: number, dueIds: number[]) => void;
+  unclearedDues?: SettleDue[];
+  onSettle?: (txnId: number, plan: SettlementPlan) => void;
   settlementHints?: string[];
   onSnooze?: (id: number) => void;
   merchantCategoryMap?: Map<string, string>;

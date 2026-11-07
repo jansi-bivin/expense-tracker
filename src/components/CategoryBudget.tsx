@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState } from "react";
 import { supabase, Transaction, Category } from "@/lib/supabase";
+import { categoryNeedsNote } from "@/lib/dues";
 import BubbleBasket from "./BubbleBasket";
 interface Props {
   transactions: Transaction[];
@@ -16,7 +17,7 @@ interface Props {
   activeDays: number;
   daysInMonth: number;
   onActiveDaysUpdate: (days: number) => void;
-  onReclassify?: (txnId: number, newCategory: string) => void;
+  onReclassify?: (txnId: number, newCategory: string, note?: string) => void;
   onDeleteTxn?: (txnId: number) => void;
   dues?: { id: number; transaction_id: number; cleared: boolean; settlement_transaction_id?: number | null }[];
   viewMonth: number; // 0-indexed JS month
@@ -311,10 +312,15 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
               className="w-full px-3 py-2 text-xs rounded-xl"
               defaultValue=""
               onChange={(e) => {
-                if (e.target.value) {
-                  onReclassify(txn.id, e.target.value);
-                  setShowReclassify(false);
+                const target = e.target.value;
+                if (!target) return;
+                let note: string | undefined;
+                if (categoryNeedsNote(target) && !txn.notes?.trim()) {
+                  note = window.prompt(`A comment is required for "${target}". What was this expense?`)?.trim();
+                  if (!note) { e.target.value = ""; return; }
                 }
+                onReclassify(txn.id, target, note);
+                setShowReclassify(false);
               }}
             >
               <option value="">Move to category...</option>
