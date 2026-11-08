@@ -5,7 +5,8 @@ import { useState, useEffect, useCallback, useRef, useMemo, Suspense } from "rea
 import { useSearchParams } from "next/navigation";
 import { supabase, RawSms, Transaction, Category, User, Due, FeatureIdea, MonthlyBudget } from "@/lib/supabase";
 import { detectFields } from "@/lib/smsDetector";
-import { SettleDue, SettlementPlan, applyAdvance, round2 } from "@/lib/dues";
+import { SettleDue, SettlementPlan, applyAdvance, round2, planSettlement } from "@/lib/dues";
+import { PendingPayment, fetchPendingPayment, savePendingPayment, findPaymentSms, MATCH_WINDOW_MS, ASK_AFTER_MS } from "@/lib/pendingPayment";
 import { computePositions, fetchLockedCategories, saveLockedCategories, saveSetting } from "@/lib/budget";
 import { SyncHealth, fetchSyncHealth, syncIssues, fmtAgo } from "@/lib/syncHealth";
 import {
@@ -150,6 +151,11 @@ function HomeInner() {
   const [dismissedIssues, setDismissedIssues] = useState<Set<string>>(new Set());
   // Fixed monthly auto-debits (EMIs) to watch for
   const [expectedDebits, setExpectedDebits] = useState<ExpectedDebits>({ items: {}, dismissed: {} });
+  // A dues payment started from Pay, waiting for its bank SMS (or the user's word)
+  const [pendingPay, setPendingPay] = useState<PendingPayment | null>(null);
+  const [payNotice, setPayNotice] = useState<string | null>(null);
+  // Bumped on every new SMS so the pending payment is checked again
+  const [txnTick, setTxnTick] = useState(0);
   // Pick up lock and sync changes when the app comes back to the foreground
   useEffect(() => {
     const refresh = () => {
@@ -448,6 +454,7 @@ function HomeInner() {
       setLockedCatIds(await fetchLockedCategories());
       setSyncHealth(await fetchSyncHealth());
       setExpectedDebits(await fetchExpectedDebits());
+      setPendingPay(await fetchPendingPayment());
 
       setLoading(false);
     }
@@ -458,6 +465,7 @@ function HomeInner() {
       .channel("all-realtime")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "transactions" }, (payload) => {
         const enriched = enrichSms(payload.new as RawSms);
+        setTxnTick((n) => n + 1);
         const phone = localStorage.getItem("userPhone");
         if (enriched.status === "new" && enriched.phone_number === phone) {
           setNewTxns((prev) => prev.some((t) => t.id === enriched.id) ? prev : [enriched, ...prev]);
@@ -692,14 +700,28 @@ function HomeInner() {
 
   // Settlement: primary user marks a debit as payment, partially settles dues
   async function handleSettle(txnId: number, plan: SettlementPlan) {
-    const txn = newTxns.find((t) => t.id === txnId);
-    setNewTxns((prev) => prev.filter((t) => t.id !== txnId));
+    await markSettlementTxn(txnId);
+    await applySettlementPlan(plan, txnId);
+    // Settled by hand from review: the payment started from Pay is done
+    if (pendingPay && Math.abs(plan.payment - pendingPay.amount) < 0.01) {
+      setPendingPay(null);
+      await savePendingPayment(null);
+    }
+  }
 
+  /** Record an SMS as a dues payment (kept out of the budget, off the review list). */
+  async function markSettlementTxn(txnId: number, txnHint?: Transaction) {
+    const txn = newTxns.find((t) => t.id === txnId) ?? txnHint;
+    setNewTxns((prev) => prev.filter((t) => t.id !== txnId));
     await supabase.from("transactions").update({ category: "Settlement", status: "categorized" }).eq("id", txnId);
     if (txn) {
-      setCategorizedTxns((prev) => [{ ...txn, category: "Settlement", status: "categorized" as const }, ...prev]);
+      setCategorizedTxns((prev) => prev.some((t) => t.id === txnId) ? prev
+        : [{ ...txn, category: "Settlement", status: "categorized" as const }, ...prev]);
     }
+  }
 
+  /** Clear / reduce dues as planned; `txnId` is the SMS proving the payment, if any. */
+  async function applySettlementPlan(plan: SettlementPlan, txnId: number | null) {
     // The plan was computed on the card (oldest first / chosen month / manual,
     // round-off, extra → advance). Apply it as-is.
     const nowIso = new Date().toISOString();
@@ -882,6 +904,106 @@ function HomeInner() {
     ? [secondaryUser.name, secondaryUser.phone_number, secondaryUser.upi_id].filter(Boolean) as string[]
     : [];
 
+  // ── Dues payment started from Pay: settle it from the bank SMS ──
+  const settleDuesRef = useRef(settleDues);
+  settleDuesRef.current = settleDues;
+  const checkingPayRef = useRef(false);
+
+  async function startPayment(p: { amount: number; dueIds: number[]; label: string }) {
+    const next: PendingPayment = { ...p, amount: round2(p.amount), created: Date.now() };
+    setPendingPay(next);
+    setPayNotice(null);
+    await savePendingPayment(next);
+  }
+
+  const openDueIds = (ids: number[]) =>
+    new Set(ids.filter((id) => settleDuesRef.current.some((d) => d.id === id && !d.cleared)));
+
+  useEffect(() => {
+    const p = pendingPay;
+    const payer = currentUser;
+    const payee = secondaryUser;
+    if (!p || !payer?.is_primary || !payee || checkingPayRef.current) return;
+    checkingPayRef.current = true;
+    (async () => {
+      try {
+        const m = await findPaymentSms(p, payer, payee, enrichSms);
+        // The debit was already handled by hand (settled or categorized): nothing to do
+        const handled = m.debit && m.debit.status !== "new";
+        const proof = handled ? undefined
+          : m.debit ?? (m.credit?.status === "new" ? m.credit : undefined);
+        if (!proof && !handled) {
+          if (Date.now() - p.created > MATCH_WINDOW_MS) {
+            if (p.confirmed) { setPendingPay(null); await savePendingPayment(null); }
+          }
+          return;
+        }
+        // Another device may have settled it meanwhile
+        const latest = await fetchPendingPayment();
+        if (!latest || latest.created !== p.created) { setPendingPay(latest); return; }
+        setPendingPay(null);
+        await savePendingPayment(null);
+        if (!proof) return;
+
+        const open = openDueIds(p.dueIds);
+        if (p.confirmed || open.size === 0) {
+          // Dues were already cleared: just keep the SMS as the payment's record
+          await markSettlementTxn(proof.id, proof);
+          const linkIds = p.dueIds;
+          await supabase.from("dues").update({ settlement_transaction_id: proof.id })
+            .in("id", linkIds).is("settlement_transaction_id", null);
+          setDues((prev) => prev.map((d) => linkIds.includes(d.id) && d.settlement_transaction_id == null
+            ? { ...d, settlement_transaction_id: proof.id } : d));
+          setPayNotice(`Bank SMS for ₹${p.amount.toLocaleString("en-IN")} received and linked to that payment.`);
+        } else {
+          const plan = planSettlement(p.amount, settleDuesRef.current, { onlyIds: open });
+          await markSettlementTxn(proof.id, proof);
+          await applySettlementPlan(plan, proof.id);
+          const n = plan.clearIds.length;
+          setPayNotice(`✓ Paid ₹${p.amount.toLocaleString("en-IN")} to ${payee.name}: ${n} due${n !== 1 ? "s" : ""} cleared${plan.partial ? ", 1 part-paid" : ""}${plan.extra > 0 ? `, ₹${plan.extra} kept as advance` : ""}.`);
+        }
+        // Her matching credit is part of the same payment: take it off her review list
+        if (m.credit && m.credit.id !== proof.id && m.credit.status === "new") {
+          await markSettlementTxn(m.credit.id, m.credit);
+        }
+      } finally {
+        checkingPayRef.current = false;
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingPay, txnTick, newTxns.length, clockNow, currentUser, secondaryUser?.id]);
+
+  // Re-check (and show the "did you pay?" card) once the SMS had time to arrive
+  useEffect(() => {
+    if (!pendingPay || pendingPay.confirmed) return;
+    const wait = pendingPay.created + ASK_AFTER_MS - Date.now();
+    if (wait <= 0) return;
+    const t = setTimeout(() => setClockNow(Date.now()), wait + 500);
+    return () => clearTimeout(t);
+  }, [pendingPay]);
+
+  const askAboutPayment = !!(currentUser?.is_primary && pendingPay && !pendingPay.confirmed
+    && clockNow - pendingPay.created >= ASK_AFTER_MS);
+
+  /** No SMS yet, but the user says it went through: clear now, link the SMS if it comes. */
+  async function confirmPaid() {
+    const p = pendingPay;
+    if (!p) return;
+    const open = openDueIds(p.dueIds);
+    if (open.size > 0) {
+      await applySettlementPlan(planSettlement(p.amount, settleDuesRef.current, { onlyIds: open }), null);
+    }
+    const next = { ...p, confirmed: Date.now() };
+    setPendingPay(next);
+    await savePendingPayment(next);
+    setPayNotice(`✓ Dues cleared for ₹${p.amount.toLocaleString("en-IN")}. The bank SMS will be linked when it arrives.`);
+  }
+
+  async function cancelPayment() {
+    setPendingPay(null);
+    await savePendingPayment(null);
+  }
+
   function handleSelectUser(user: User) {
     localStorage.setItem("userPhone", user.phone_number);
     setCurrentUser(user);
@@ -1011,6 +1133,30 @@ function HomeInner() {
         </div>
       )}
 
+      {/* Dues payment started from Pay: no bank SMS yet */}
+      {askAboutPayment && pendingPay && (
+        <div className="card p-3.5 mb-4" style={{ borderLeft: "3px solid var(--accent-orange)" }}>
+          <div className="text-sm font-semibold mb-0.5" style={{ color: "var(--text-primary)" }}>
+            Paid ₹{pendingPay.amount.toLocaleString("en-IN")} to {secondaryUser?.name ?? "payee"}?
+          </div>
+          <div className="text-xs mb-3" style={{ color: "var(--text-tertiary)" }}>
+            {pendingPay.label} · waiting for the bank SMS
+          </div>
+          <div className="flex gap-2">
+            <button className="flex-1 py-2 btn-green text-sm rounded-xl" onClick={confirmPaid}>Yes, clear dues</button>
+            <button className="flex-1 py-2 text-sm rounded-xl" style={{ border: "1px solid var(--border-light)", color: "var(--text-secondary)" }}
+              onClick={cancelPayment}>Didn&apos;t pay</button>
+          </div>
+        </div>
+      )}
+      {payNotice && (
+        <div className="card px-3 py-2.5 mb-4 flex items-start gap-2" style={{ borderLeft: "3px solid var(--accent-green)" }}>
+          <span className="flex-1 text-xs leading-5" style={{ color: "var(--text-secondary)" }}>{payNotice}</span>
+          <button className="text-xs px-1 bg-transparent border-0 cursor-pointer" style={{ color: "var(--text-tertiary)" }}
+            onClick={() => setPayNotice(null)} aria-label="Close">✕</button>
+        </div>
+      )}
+
       {/* Content */}
       <div className="animate-fade-in">
         {activeView === "dues" ? (
@@ -1029,6 +1175,7 @@ function HomeInner() {
             periodYear={viewYear}
             lockedNames={lockedCatNames}
             onToggleLock={isPrimary ? toggleCategoryLock : undefined}
+            onPayStarted={isPrimary ? startPayment : undefined}
           />
         ) : (
           <>

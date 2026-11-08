@@ -5,6 +5,7 @@ import QRCode from "qrcode";
 import { supabase, Transaction, Category } from "@/lib/supabase";
 import { SettleDue, monthKey, monthLabel } from "@/lib/dues";
 import { CategoryPosition } from "@/lib/budget";
+import { upiNote } from "@/lib/pendingPayment";
 
 interface Props {
   dues: SettleDue[];
@@ -24,6 +25,8 @@ interface Props {
   lockedNames: Set<string>;
   /** Primary only: lock/unlock a category for new expenses. */
   onToggleLock?: (categoryName: string) => void;
+  /** Primary only: a payment was started for these dues (Pay → UPI app or QR). */
+  onPayStarted?: (p: { amount: number; dueIds: number[]; label: string }) => void;
 }
 
 const STATUS_COLOR: Record<CategoryPosition["status"], string> = {
@@ -33,7 +36,7 @@ const STATUS_COLOR: Record<CategoryPosition["status"], string> = {
   over: "var(--accent-red)",
 };
 
-function DuesView({ dues, advance, transactions, categories, onDuesChange, payeeUpi, payeeName, isPrimary, primaryName, positions, periodLabel, periodYear, lockedNames, onToggleLock }: Props) {
+function DuesView({ dues, advance, transactions, categories, onDuesChange, payeeUpi, payeeName, isPrimary, primaryName, positions, periodLabel, periodYear, lockedNames, onToggleLock, onPayStarted }: Props) {
   const [expandedCat, setExpandedCat] = useState<string | null>(null);
   const [groupBy, setGroupBy] = useState<"category" | "month">(() => {
     try { return localStorage.getItem("duesGroupBy") === "month" ? "month" : "category"; } catch { return "category"; }
@@ -152,27 +155,37 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
     { name: "Paytm", pkg: "net.one97.paytm", icon: "₹", gradient: "linear-gradient(135deg, #00b9f1, #0091c8)", textColor: "#fff" },
   ];
 
-  function openUpiPay(amount: number) {
+  // What the open Pay sheet is paying for: reported when the UPI app opens, so
+  // the bank SMS can settle exactly these dues later.
+  const [payCtx, setPayCtx] = useState<{ dueIds: number[]; label: string }>({ dueIds: [], label: "" });
+
+  function openUpiPay(amount: number, dueIds: number[], label: string) {
     if (!payeeUpi) return;
     navigator.clipboard.writeText(amount.toFixed(2)).catch(() => {});
+    setPayCtx({ dueIds, label: upiNote(label) });
     setShowPaySheet(amount);
+  }
+
+  function reportPayStarted(amount: number) {
+    if (isPrimary && payCtx.dueIds.length > 0) onPayStarted?.({ amount, dueIds: payCtx.dueIds, label: payCtx.label });
   }
 
   // UPI QR with the amount built in. Shown on one phone and scanned with the UPI
   // app's camera on the other — UPI allows that, unlike app-to-app prefilled links.
   const [qrAmount, setQrAmount] = useState<number | null>(null);
+  const [qrNote, setQrNote] = useState("ExpTrack dues");
   const [qrSrc, setQrSrc] = useState("");
-  const qrDataUrl = (amount: number) =>
+  const qrDataUrl = (amount: number, note: string) =>
     QRCode.toDataURL(
       `upi://pay?pa=${payeeUpi}&pn=${encodeURIComponent(payeeName || "Payee")}` +
-        `&am=${amount.toFixed(2)}&cu=INR&tn=${encodeURIComponent("ExpTrack dues")}`,
+        `&am=${amount.toFixed(2)}&cu=INR&tn=${encodeURIComponent(upiNote(note))}`,
       { width: 360, margin: 2, errorCorrectionLevel: "M" },
     );
   useEffect(() => {
     if (qrAmount === null || !payeeUpi) { setQrSrc(""); return; }
-    qrDataUrl(qrAmount).then(setQrSrc).catch(() => setQrSrc(""));
+    qrDataUrl(qrAmount, qrNote).then(setQrSrc).catch(() => setQrSrc(""));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [qrAmount, payeeUpi, payeeName]);
+  }, [qrAmount, qrNote, payeeUpi, payeeName]);
 
   // UPI apps accept QRs picked from the gallery up to this amount.
   const GALLERY_QR_LIMIT = 2000;
@@ -184,19 +197,23 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
   const canGalleryQr = (amount: number) =>
     amount <= GALLERY_QR_LIMIT && !!bridge?.saveQrAndOpen && !!bridge.canSaveQr?.();
 
-  function showQr(amount: number) {
+  /** From the Pay sheet (payer) or the payee's "get paid" button. */
+  function showQr(amount: number, fromPaySheet: boolean) {
     setShowPaySheet(null);
+    if (fromPaySheet) reportPayStarted(amount);
+    setQrNote(fromPaySheet ? payCtx.label : "ExpTrack dues");
     setQrAmount(amount);
   }
 
   async function launchApp(pkg: string) {
     const amount = showPaySheet;
     setShowPaySheet(null);
+    if (amount !== null) reportPayStarted(amount);
     if (amount !== null && canGalleryQr(amount)) {
       // Save this due's QR as the newest gallery picture, then open the app:
       // Scan → gallery → pick it → amount and payee are filled in.
       try {
-        const dataUrl = await qrDataUrl(amount);
+        const dataUrl = await qrDataUrl(amount, payCtx.label);
         bridge!.saveQrAndOpen!(dataUrl.split(",")[1], pkg);
         return;
       } catch { /* fall through to a plain open */ }
@@ -255,7 +272,7 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
           {isPrimary && payeeUpi && (
             <button
               className="w-full py-3 btn-primary rounded-xl text-sm"
-              onClick={() => openUpiPay(totalOutstanding)}
+              onClick={() => openUpiPay(totalOutstanding, unclearedDues.map((d) => d.id), `ExpTrack dues till ${fmtDate(Date.now())}`)}
             >
               Pay {fmt(totalOutstanding)} via UPI →
             </button>
@@ -263,7 +280,7 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
           {!isPrimary && payeeUpi && (
             <button
               className="w-full py-3 btn-green rounded-xl text-sm"
-              onClick={() => showQr(totalOutstanding)}
+              onClick={() => showQr(totalOutstanding, false)}
             >
               Show QR to get paid {fmt(totalOutstanding)}
             </button>
@@ -332,7 +349,7 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
             <button
               className="w-full py-3 mb-2 rounded-xl text-sm font-semibold"
               style={{ border: "1px solid var(--border-light)", color: "var(--text-primary)" }}
-              onClick={() => showQr(showPaySheet)}
+              onClick={() => showQr(showPaySheet, true)}
             >
               Show QR to scan from another phone
             </button>
@@ -426,7 +443,7 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
                       {payeeUpi && (
                         <button
                           className="flex-1 py-2.5 btn-primary text-sm rounded-xl"
-                          onClick={(e) => { e.stopPropagation(); openUpiPay(catTotal); }}
+                          onClick={(e) => { e.stopPropagation(); openUpiPay(catTotal, categoryDues.map((d) => d.id), `${category} dues (${categoryDues.length})`); }}
                         >
                           Pay {fmt(catTotal)}
                         </button>
@@ -514,7 +531,7 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
                               </button>
                             )}
                             {isPrimary && payeeUpi && (
-                              <button className="badge badge-purple text-[10px] cursor-pointer" onClick={() => openUpiPay(Number(due.amount))}>
+                              <button className="badge badge-purple text-[10px] cursor-pointer" onClick={() => openUpiPay(Number(due.amount), [due.id], `${due.category} ${txn?.merchant ?? ""} ${fmtDate(due.paid_on)}`)}>
                                 Pay
                               </button>
                             )}
