@@ -6,25 +6,21 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.util.Log;
 
+import com.example.smsreader.sync.BankSenders;
+import com.example.smsreader.sync.Ingest;
+
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.regex.Pattern;
 
 /**
- * Background-only SMS receiver.
- * Catches incoming bank SMS and pushes raw (address, body, sms_date) to Supabase.
- * No field detection, no Room DB — all intelligence lives in the web app.
+ * Live SMS path. Saves each bank SMS to the on-phone outbox while Android still
+ * holds the broadcast open (goAsync), so it survives the app being killed right
+ * after. The upload itself runs as a WorkManager job with retries.
  */
 public class SmsReceiver extends BroadcastReceiver {
 
     private static final String TAG = "SmsReceiver";
-
-    // Known bank sender pattern — only process SMS from real banks
-    private static final Pattern KNOWN_BANK_SENDER = Pattern.compile(
-        "^[A-Z]{2}-(ICICI[TB]?(-[ST])?|SBIUPI(-[ST])?|CBSSBI|SBIBNK|SBIINB|ATMSBI|SBIPSG|" +
-        "HDFCBK|AXISBK|KOTAKB|IDBIBK(-[ST])?|PNBSMS|BOBTXN|CANBNK|INDBNK|UNBINB|FEDBK|" +
-        "PAYTMB|YESBK|EPFOHO|ICICIB)",
-        Pattern.CASE_INSENSITIVE
-    );
+    private static final ExecutorService EXEC = Executors.newSingleThreadExecutor();
 
     @Override
     public void onReceive(Context context, Intent intent) {
@@ -45,6 +41,7 @@ public class SmsReceiver extends BroadcastReceiver {
 
         for (Object pdu : pdus) {
             android.telephony.SmsMessage sms = android.telephony.SmsMessage.createFromPdu((byte[]) pdu, format);
+            if (sms == null) continue;
             if (sender == null) {
                 sender = sms.getOriginatingAddress();
                 smsTimestamp = sms.getTimestampMillis();
@@ -53,39 +50,21 @@ public class SmsReceiver extends BroadcastReceiver {
         }
 
         if (sender == null || fullBody.length() == 0) return;
+        if (!BankSenders.isBankAddress(sender)) return;
 
-        String finalSender = sender;
-        String body = fullBody.toString();
-        long finalTimestamp = (smsTimestamp / 1000) * 1000; // Round to nearest second
+        final String finalSender = sender;
+        final String body = fullBody.toString();
+        final long timestamp = smsTimestamp;
+        final Context app = context.getApplicationContext();
+        final PendingResult pending = goAsync();
 
-        // Only process known bank senders
-        if (!KNOWN_BANK_SENDER.matcher(finalSender).find()) return;
-
-        // Push raw SMS to Supabase — no field detection, no local DB
-        String phoneNumber = context.getSharedPreferences("sms_reader", Context.MODE_PRIVATE)
-            .getString("phone_number", null);
-
-        Executors.newSingleThreadExecutor().execute(() -> {
+        EXEC.execute(() -> {
             try {
-                SupabasePusher.pushRawSms(finalSender, body, finalTimestamp, phoneNumber);
-                Log.d(TAG, "Pushed bank SMS to Supabase: " + finalSender);
-
-                // Extract amount for notification display
-                java.util.regex.Matcher m = java.util.regex.Pattern
-                    .compile("(?:Rs\\.?|INR|₹)\\s*([0-9,]+\\.?\\d{0,2})", java.util.regex.Pattern.CASE_INSENSITIVE)
-                    .matcher(body);
-                String amount = m.find() ? m.group(1) : "?";
-
-                // Determine debit/credit
-                String type = "Transaction";
-                if (body.toLowerCase().contains("debit")) type = "Debited";
-                else if (body.toLowerCase().contains("credit")) type = "Credited";
-
-                NotificationHelper.showTransactionNotification(
-                    context, type + " Rs." + amount, "Tap to categorize"
-                );
+                Ingest.add(app, "sms", finalSender, body, timestamp);
             } catch (Exception e) {
-                Log.e(TAG, "Failed to push SMS", e);
+                Log.e(TAG, "Could not queue bank SMS", e);
+            } finally {
+                pending.finish();
             }
         });
     }

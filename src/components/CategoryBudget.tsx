@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from "react";
 import { supabase, Transaction, Category } from "@/lib/supabase";
 import { categoryNeedsNote } from "@/lib/dues";
+import { ExpectedDebit } from "@/lib/expectedDebits";
 import BubbleBasket from "./BubbleBasket";
 interface Props {
   transactions: Transaction[];
@@ -25,9 +26,13 @@ interface Props {
   lockedNames?: Set<string>;
   /** Primary only: lock/unlock a category for new expenses. */
   onToggleLock?: (categoryName: string) => void;
+  /** Fixed monthly auto-debits, keyed by category id. */
+  expectedDebits?: Record<string, ExpectedDebit>;
+  /** Primary only: set (or clear with null) a category's auto-debit day and amount. */
+  onSaveExpectedDebit?: (categoryId: number, item: ExpectedDebit | null) => void;
 }
 
-function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, monthlyOverrides, excludedCategoryIds, onCategoriesChange, onShowAddCategory, onMonthlyOverride, activeDays, daysInMonth, onActiveDaysUpdate, onReclassify, onDeleteTxn, dues, viewMonth, viewYear, lockedNames, onToggleLock }: Props) {
+function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, monthlyOverrides, excludedCategoryIds, onCategoriesChange, onShowAddCategory, onMonthlyOverride, activeDays, daysInMonth, onActiveDaysUpdate, onReclassify, onDeleteTxn, dues, viewMonth, viewYear, lockedNames, onToggleLock, expectedDebits, onSaveExpectedDebit }: Props) {
   const currentMonth = viewMonth;
   const currentYear = viewYear;
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -37,6 +42,8 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
   const [editVisibility, setEditVisibility] = useState<"all" | "primary" | "secondary">("all");
   const [editMode, setEditMode] = useState<"general" | "month">("general");
   const [savingEdit, setSavingEdit] = useState(false);
+  const [editDueDay, setEditDueDay] = useState("");
+  const [editDueAmount, setEditDueAmount] = useState("");
   const [showActiveDays, setShowActiveDays] = useState(false);
   const [showMonthlyList, setShowMonthlyList] = useState(false);
   const [showYearlyList, setShowYearlyList] = useState(false);
@@ -200,12 +207,26 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
     setEditMode(hasOverride ? "month" : "general");
     setEditCap(String(hasOverride ? monthlyOverrides[cat.id] : cat.cap));
     setEditVisibility(cat.visible_to);
+    const due = expectedDebits?.[String(cat.id)];
+    setEditDueDay(due ? String(due.day) : "");
+    setEditDueAmount(due ? String(due.amount) : "");
+  }
+
+  /** Save the auto-debit fields if they changed (blank day clears it). */
+  function saveExpectedDebit(cat: Category) {
+    if (!onSaveExpectedDebit) return;
+    const current = expectedDebits?.[String(cat.id)] ?? null;
+    const day = parseInt(editDueDay, 10);
+    const amount = Number(editDueAmount || cat.cap);
+    const next = day >= 1 && day <= 31 && amount > 0 ? { day, amount } : null;
+    if (JSON.stringify(next) !== JSON.stringify(current)) onSaveExpectedDebit(cat.id, next);
   }
 
   async function saveEdit(cat: Category) {
     const newCap = Number(editCap);
     if (newCap < 0) return;
     setSavingEdit(true);
+    saveExpectedDebit(cat);
     if (editMode === "month") {
       if (editVisibility !== cat.visible_to) {
         await supabase.from("categories").update({ visible_to: editVisibility }).eq("id", cat.id);
@@ -752,6 +773,35 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
               </button>
             ))}
           </div>
+
+          {isPrimary && onSaveExpectedDebit && (
+            <>
+              <div className="section-label mb-1.5">
+                Auto-debit <span className="text-[10px] font-normal" style={{ color: "var(--text-tertiary)" }}>(warns if it doesn&apos;t show up · blank = off)</span>
+              </div>
+              <div className="flex gap-2 mb-3">
+                <input
+                  type="number"
+                  min={1}
+                  max={31}
+                  placeholder="Day"
+                  className="w-20 px-3 py-2 text-sm rounded-xl"
+                  value={editDueDay}
+                  onChange={(e) => setEditDueDay(e.target.value)}
+                />
+                <div className="relative flex-1">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: "var(--text-tertiary)" }}>₹</span>
+                  <input
+                    type="number"
+                    placeholder={String(cat.cap)}
+                    className="w-full pl-7 pr-3 py-2 text-sm rounded-xl"
+                    value={editDueAmount}
+                    onChange={(e) => setEditDueAmount(e.target.value)}
+                  />
+                </div>
+              </div>
+            </>
+          )}
 
           {isPrimary && onToggleLock && (
             <>

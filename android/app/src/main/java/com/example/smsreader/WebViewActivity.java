@@ -1,12 +1,10 @@
 package com.example.smsreader;
 
 import android.annotation.SuppressLint;
+import android.app.AlertDialog;
 import android.content.Intent;
-import android.content.pm.PackageManager;
-import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
-import android.util.Log;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -16,10 +14,8 @@ import android.webkit.WebViewClient;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.content.ContextCompat;
 
-import java.util.concurrent.Executors;
-import java.util.regex.Pattern;
+import com.example.smsreader.sync.SyncScheduler;
 
 /**
  * Full-screen WebView that loads the expense tracker web app.
@@ -31,13 +27,7 @@ public class WebViewActivity extends AppCompatActivity {
     private static final String TAG = "WebViewActivity";
     private static final String WEB_APP_URL = "https://exptrack-wine.vercel.app";
     private WebView webView;
-
-    private static final Pattern KNOWN_BANK_SENDER = Pattern.compile(
-        "^[A-Z]{2}-(ICICI[TB]?(-[ST])?|SBIUPI(-[ST])?|CBSSBI|SBIBNK|SBIINB|ATMSBI|SBIPSG|" +
-        "HDFCBK|AXISBK|KOTAKB|IDBIBK(-[ST])?|PNBSMS|BOBTXN|CANBNK|INDBNK|UNBINB|FEDBK|" +
-        "PAYTMB|YESBK|EPFOHO|ICICIB)",
-        Pattern.CASE_INSENSITIVE
-    );
+    private AlertDialog setupDialog;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -110,58 +100,10 @@ public class WebViewActivity extends AppCompatActivity {
         super.onResume();
         // Clear notification whenever app comes to foreground
         NotificationHelper.clearNotification(this);
-        // Catch-up sync: push any bank SMS from last 24h that the receiver might have missed
-        catchUpSync();
-    }
-
-    /**
-     * Background sync of recent bank SMS (last 24h).
-     * Catches any SMS the BroadcastReceiver missed (doze, app killed, etc.).
-     * Duplicates are ignored by Supabase (resolution=ignore-duplicates).
-     */
-    private void catchUpSync() {
-        if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.READ_SMS)
-                != PackageManager.PERMISSION_GRANTED) return;
-
-        String phoneNumber = getSharedPreferences("sms_reader", MODE_PRIVATE)
-            .getString("phone_number", null);
-
-        Executors.newSingleThreadExecutor().execute(() -> {
-            try {
-                long oneDayAgo = System.currentTimeMillis() - (24L * 60 * 60 * 1000);
-                int pushed = 0;
-
-                Cursor cursor = getContentResolver().query(
-                    Uri.parse("content://sms/inbox"),
-                    new String[]{"address", "body", "date"},
-                    "date > ?",
-                    new String[]{String.valueOf(oneDayAgo)},
-                    "date DESC"
-                );
-
-                if (cursor != null) {
-                    while (cursor.moveToNext()) {
-                        String address = cursor.getString(0);
-                        String body = cursor.getString(1);
-                        long date = cursor.getLong(2);
-
-                        if (address == null || body == null) continue;
-                        if (!KNOWN_BANK_SENDER.matcher(address).find()) continue;
-
-                        long roundedDate = (date / 1000) * 1000;
-                        SupabasePusher.pushRawSmsSync(address, body, roundedDate, phoneNumber);
-                        pushed++;
-                    }
-                    cursor.close();
-                }
-
-                if (pushed > 0) {
-                    Log.d(TAG, "Catch-up sync: pushed " + pushed + " bank SMS from last 24h");
-                }
-            } catch (Exception e) {
-                Log.e(TAG, "Catch-up sync failed", e);
-            }
-        });
+        // Check the inbox for anything missed since the last check, then upload
+        SyncScheduler.checkNow(this);
+        // Walk through any phone setting that would stop background syncing
+        setupDialog = SetupCheck.maybePrompt(this, setupDialog);
     }
 
     @Override

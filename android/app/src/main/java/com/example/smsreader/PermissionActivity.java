@@ -21,8 +21,9 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
+import com.example.smsreader.sync.SyncScheduler;
+
 import java.util.concurrent.Executors;
-import java.util.regex.Pattern;
 
 /**
  * Launcher activity. Handles permissions, phone number setup, then opens web app.
@@ -39,13 +40,6 @@ public class PermissionActivity extends AppCompatActivity {
 
     private TextView statusText;
     private boolean showTools = false;
-
-    private static final Pattern KNOWN_BANK_SENDER = Pattern.compile(
-        "^[A-Z]{2}-(ICICI[TB]?(-[ST])?|SBIUPI(-[ST])?|CBSSBI|SBIBNK|SBIINB|ATMSBI|SBIPSG|" +
-        "HDFCBK|AXISBK|KOTAKB|IDBIBK(-[ST])?|PNBSMS|BOBTXN|CANBNK|INDBNK|UNBINB|FEDBK|" +
-        "PAYTMB|YESBK|EPFOHO|ICICIB)",
-        Pattern.CASE_INSENSITIVE
-    );
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -97,7 +91,7 @@ public class PermissionActivity extends AppCompatActivity {
             btnParams.topMargin = 48;
 
             Button syncBtn = new Button(this);
-            syncBtn.setText("Sync Recent SMS (last 7 days)");
+            syncBtn.setText("Check inbox now");
             syncBtn.setOnClickListener(v -> syncRecentSms());
             syncBtn.setLayoutParams(btnParams);
             layout.addView(syncBtn);
@@ -250,61 +244,11 @@ public class PermissionActivity extends AppCompatActivity {
             return;
         }
 
-        String phoneNumber = getStoredPhoneNumber();
-        statusText.setText("Scanning inbox for recent bank SMS...");
-        Toast.makeText(this, "Syncing...", Toast.LENGTH_SHORT).show();
-
-        Executors.newSingleThreadExecutor().execute(() -> {
-            try {
-                long sevenDaysAgo = System.currentTimeMillis() - (7L * 24 * 60 * 60 * 1000);
-                int pushed = 0;
-                int skipped = 0;
-
-                Cursor cursor = getContentResolver().query(
-                    Uri.parse("content://sms/inbox"),
-                    new String[]{"address", "body", "date"},
-                    "date > ?",
-                    new String[]{String.valueOf(sevenDaysAgo)},
-                    "date DESC"
-                );
-
-                if (cursor != null) {
-                    while (cursor.moveToNext()) {
-                        String address = cursor.getString(0);
-                        String body = cursor.getString(1);
-                        long date = cursor.getLong(2);
-
-                        if (address == null || body == null) continue;
-
-                        if (!KNOWN_BANK_SENDER.matcher(address).find()) {
-                            skipped++;
-                            continue;
-                        }
-
-                        long roundedDate = (date / 1000) * 1000;
-                        String result = SupabasePusher.pushRawSmsSync(address, body, roundedDate, phoneNumber);
-                        if (result.startsWith("OK")) {
-                            pushed++;
-                        }
-                    }
-                    cursor.close();
-                }
-
-                final int finalPushed = pushed;
-                final int finalSkipped = skipped;
-                runOnUiThread(() -> {
-                    statusText.setText("Sync done!\n\n" + finalPushed + " bank SMS pushed\n" +
-                        finalSkipped + " non-bank skipped\n\n" +
-                        "Duplicates are automatically ignored by Supabase.");
-                });
-
-            } catch (Exception e) {
-                Log.e(TAG, "Sync failed", e);
-                runOnUiThread(() -> {
-                    statusText.setText("Sync failed: " + e.getMessage());
-                });
-            }
-        });
+        // Same duplicate-safe path as the background check (only messages since this
+        // version was installed; anything already on the server is skipped).
+        SyncScheduler.checkNow(this);
+        statusText.setText("Inbox check started.\n\nNew bank SMS will upload in a few seconds.");
+        Toast.makeText(this, "Checking inbox...", Toast.LENGTH_SHORT).show();
     }
 
     private void testPush() {

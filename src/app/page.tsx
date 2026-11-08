@@ -7,6 +7,11 @@ import { supabase, RawSms, Transaction, Category, User, Due, FeatureIdea, Monthl
 import { detectFields } from "@/lib/smsDetector";
 import { SettleDue, SettlementPlan, applyAdvance, round2 } from "@/lib/dues";
 import { computePositions, fetchLockedCategories, saveLockedCategories, saveSetting } from "@/lib/budget";
+import { SyncHealth, fetchSyncHealth, syncIssues, fmtAgo } from "@/lib/syncHealth";
+import {
+  ExpectedDebit, ExpectedDebits, MissingDebit, fetchExpectedDebits, saveExpectedDebits,
+  findMissingDebits, monthKey, ordinal,
+} from "@/lib/expectedDebits";
 
 const ADVANCE_KEY = "dues_advance";
 
@@ -139,13 +144,30 @@ function HomeInner() {
   const [duesAdvance, setDuesAdvance] = useState(0);
   // Categories locked by the primary user: no new expenses from the secondary user
   const [lockedCatIds, setLockedCatIds] = useState<Set<number>>(new Set());
-  // Pick up lock changes when the app comes back to the foreground
+  // What each phone's SMS reader last reported (for the "not syncing" warning)
+  const [syncHealth, setSyncHealth] = useState<Map<string, SyncHealth>>(new Map());
+  const [clockNow, setClockNow] = useState(() => Date.now());
+  const [dismissedIssues, setDismissedIssues] = useState<Set<string>>(new Set());
+  // Fixed monthly auto-debits (EMIs) to watch for
+  const [expectedDebits, setExpectedDebits] = useState<ExpectedDebits>({ items: {}, dismissed: {} });
+  // Pick up lock and sync changes when the app comes back to the foreground
   useEffect(() => {
+    const refresh = () => {
+      setClockNow(Date.now());
+      fetchSyncHealth().then(setSyncHealth);
+    };
     const onVisible = () => {
-      if (document.visibilityState === "visible") fetchLockedCategories().then(setLockedCatIds);
+      if (document.visibilityState === "visible") {
+        fetchLockedCategories().then(setLockedCatIds);
+        refresh();
+      }
     };
     document.addEventListener("visibilitychange", onVisible);
-    return () => document.removeEventListener("visibilitychange", onVisible);
+    const timer = setInterval(refresh, 5 * 60 * 1000);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      clearInterval(timer);
+    };
   }, []);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"review" | "budget" | "dues">("budget");
@@ -424,6 +446,8 @@ function HomeInner() {
       if (duesData) setDues(duesData);
       setDuesAdvance(await fetchAdvance());
       setLockedCatIds(await fetchLockedCategories());
+      setSyncHealth(await fetchSyncHealth());
+      setExpectedDebits(await fetchExpectedDebits());
 
       setLoading(false);
     }
@@ -790,6 +814,66 @@ function HomeInner() {
     setLockedCatIds(next);
     await saveLockedCategories(next);
   }
+
+  // ── Phone sync warnings ──
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("syncIssueDismissed") || "{}") as Record<string, number>;
+      const t = Date.now();
+      setDismissedIssues(new Set(Object.entries(saved).filter(([, until]) => until > t).map(([id]) => id)));
+    } catch { /* storage unavailable: show everything */ }
+  }, []);
+
+  const visibleSyncIssues = useMemo(
+    () => syncIssues(allUsers, currentUser, syncHealth, clockNow).filter((i) => !dismissedIssues.has(i.id)),
+    [allUsers, currentUser, syncHealth, clockNow, dismissedIssues]
+  );
+
+  /** Hide a warning for a day (errors stay until fixed). */
+  function dismissSyncIssue(id: string) {
+    setDismissedIssues((prev) => new Set(prev).add(id));
+    try {
+      const saved = JSON.parse(localStorage.getItem("syncIssueDismissed") || "{}") as Record<string, number>;
+      saved[id] = Date.now() + 24 * 60 * 60 * 1000;
+      localStorage.setItem("syncIssueDismissed", JSON.stringify(saved));
+    } catch { /* ignore */ }
+  }
+
+  const mySyncHealth = currentUser ? syncHealth.get(currentUser.phone_number) : undefined;
+
+  // ── Expected auto-debits (EMIs) that haven't shown up ──
+  const missingDebits = useMemo(
+    () => (currentUser?.is_primary
+      ? findMissingDebits(expectedDebits, categories, categorizedTxns, newTxns, new Date(clockNow))
+      : []),
+    [currentUser, expectedDebits, categories, categorizedTxns, newTxns, clockNow]
+  );
+
+  async function handleSaveExpectedDebit(categoryId: number, item: ExpectedDebit | null) {
+    const items = { ...expectedDebits.items };
+    if (item) items[String(categoryId)] = item;
+    else delete items[String(categoryId)];
+    const next = { ...expectedDebits, items };
+    setExpectedDebits(next);
+    await saveExpectedDebits(next);
+  }
+
+  async function skipMissingDebit(m: MissingDebit) {
+    const key = monthKey(new Date(clockNow));
+    // Only this month's skips are kept, so the list never grows
+    const next = { ...expectedDebits, dismissed: { [key]: [...(expectedDebits.dismissed[key] ?? []), m.category.id] } };
+    setExpectedDebits(next);
+    await saveExpectedDebits(next);
+  }
+
+  async function addMissingDebit(m: MissingDebit) {
+    await handleManualExpense({
+      amount: m.amount,
+      category: m.category.name,
+      note: "Auto-debit (no bank message)",
+      date: m.dueDate,
+    });
+  }
   const duesTotal = useMemo(() => unclearedDues.reduce((sum, d) => sum + Number(d.amount), 0), [unclearedDues]);
 
   // Build settlement hints from non-primary user's details
@@ -908,6 +992,25 @@ function HomeInner() {
         )}
       </div>
 
+      {/* Phone sync warnings: a phone that stopped sending bank messages */}
+      {visibleSyncIssues.length > 0 && (
+        <div className="space-y-2 mb-4">
+          {visibleSyncIssues.map((issue) => (
+            <div key={issue.id} className="card px-3 py-2.5 flex items-start gap-2"
+              style={{ borderLeft: `3px solid ${issue.level === "error" ? "var(--accent-red)" : "var(--accent-orange)"}` }}>
+              <span className="text-xs leading-5">{issue.level === "error" ? "⚠️" : "ℹ️"}</span>
+              <span className="flex-1 text-xs leading-5" style={{ color: "var(--text-secondary)" }}>{issue.text}</span>
+              {issue.level === "warn" && (
+                <button className="text-xs px-1 bg-transparent border-0 cursor-pointer" style={{ color: "var(--text-tertiary)" }}
+                  onClick={() => dismissSyncIssue(issue.id)} aria-label="Hide for a day">
+                  ✕
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Content */}
       <div className="animate-fade-in">
         {activeView === "dues" ? (
@@ -929,6 +1032,25 @@ function HomeInner() {
           />
         ) : (
           <>
+            {/* Expected auto-debits (EMIs) that haven't shown up this month */}
+            {isCurrentMonth && missingDebits.map((m) => (
+              <div key={m.category.id} className="card p-3.5 mb-3" style={{ borderLeft: "3px solid var(--accent-orange)" }}>
+                <div className="text-sm font-semibold mb-0.5" style={{ color: "var(--text-primary)" }}>
+                  {m.category.name}: not seen this month
+                </div>
+                <div className="text-xs mb-2.5" style={{ color: "var(--text-tertiary)" }}>
+                  ₹{m.amount.toLocaleString("en-IN")} is usually debited on the {ordinal(m.day)}, but no bank message for it has come in.
+                </div>
+                <div className="flex gap-2">
+                  <button className="flex-1 py-1.5 btn-primary text-xs rounded-lg" onClick={() => addMissingDebit(m)}>
+                    Add ₹{m.amount.toLocaleString("en-IN")}
+                  </button>
+                  <button className="px-3 py-1.5 btn-ghost text-xs rounded-lg" onClick={() => skipMissingDebit(m)}>
+                    Not this month
+                  </button>
+                </div>
+              </div>
+            ))}
             <CategoryBudget
               transactions={categorizedTxns}
               categories={categories}
@@ -949,6 +1071,8 @@ function HomeInner() {
               dues={dues}
               lockedNames={lockedCatNames}
               onToggleLock={isPrimary ? toggleCategoryLock : undefined}
+              expectedDebits={expectedDebits.items}
+              onSaveExpectedDebit={isPrimary ? handleSaveExpectedDebit : undefined}
             />
           </>
         )}
@@ -982,6 +1106,12 @@ function HomeInner() {
         >
           v{process.env.APP_VERSION} · {process.env.BUILD_SHA}
         </button>
+        {mySyncHealth && (
+          <span className="text-[10px]" style={{ color: "var(--text-tertiary)", opacity: 0.4 }}
+            title={`SMS reader ${mySyncHealth.app_version} on ${mySyncHealth.device ?? "phone"}`}>
+            phone synced {fmtAgo(mySyncHealth.last_sync, clockNow)}
+          </span>
+        )}
         <a href="/api/download-apk" download
           className="text-[10px] no-underline"
           style={{ color: "var(--text-tertiary)", opacity: 0.4 }}>
