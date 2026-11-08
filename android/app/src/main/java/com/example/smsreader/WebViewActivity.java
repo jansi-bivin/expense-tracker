@@ -64,6 +64,16 @@ public class WebViewActivity extends AppCompatActivity {
         });
         webView.setWebChromeClient(new WebChromeClient());
 
+        // WebView ignores downloads, so hand them (the APK update link) to the
+        // phone's browser, which downloads the file and offers to install it.
+        webView.setDownloadListener((downloadUrl, userAgent, contentDisposition, mimeType, contentLength) -> {
+            try {
+                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl)));
+            } catch (Exception e) {
+                Toast.makeText(this, "Open exptrack-wine.vercel.app in your browser to download", Toast.LENGTH_LONG).show();
+            }
+        });
+
         // Pass phone number to web app for user identification
         String phone = getSharedPreferences("sms_reader", MODE_PRIVATE).getString("phone_number", "");
         String url = WEB_APP_URL;
