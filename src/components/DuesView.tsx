@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import QRCode from "qrcode";
 import { supabase, Transaction, Category } from "@/lib/supabase";
 import { SettleDue, monthKey, monthLabel } from "@/lib/dues";
@@ -27,6 +27,8 @@ interface Props {
   onToggleLock?: (categoryName: string) => void;
   /** Primary only: a payment was started for these dues (Pay → UPI app or QR). */
   onPayStarted?: (p: { amount: number; dueIds: number[]; label: string }) => void;
+  /** True while a payment started from Pay is waiting for its bank SMS. */
+  paymentWaiting?: boolean;
 }
 
 const STATUS_COLOR: Record<CategoryPosition["status"], string> = {
@@ -36,7 +38,7 @@ const STATUS_COLOR: Record<CategoryPosition["status"], string> = {
   over: "var(--accent-red)",
 };
 
-function DuesView({ dues, advance, transactions, categories, onDuesChange, payeeUpi, payeeName, isPrimary, primaryName, positions, periodLabel, periodYear, lockedNames, onToggleLock, onPayStarted }: Props) {
+function DuesView({ dues, advance, transactions, categories, onDuesChange, payeeUpi, payeeName, isPrimary, primaryName, positions, periodLabel, periodYear, lockedNames, onToggleLock, onPayStarted, paymentWaiting }: Props) {
   const [expandedCat, setExpandedCat] = useState<string | null>(null);
   const [groupBy, setGroupBy] = useState<"category" | "month">(() => {
     try { return localStorage.getItem("duesGroupBy") === "month" ? "month" : "category"; } catch { return "category"; }
@@ -195,6 +197,13 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
     qrDataUrl(qrAmount, qrNote).then(setQrSrc).catch(() => setQrSrc(""));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [qrAmount, qrNote, payeeUpi, payeeName]);
+
+  // The payment this QR is for got settled (bank SMS) or answered: close the QR.
+  const wasWaiting = useRef(false);
+  useEffect(() => {
+    if (wasWaiting.current && !paymentWaiting) setQrAmount(null);
+    wasWaiting.current = !!paymentWaiting;
+  }, [paymentWaiting]);
 
   // UPI apps accept QRs picked from the gallery up to this amount.
   const GALLERY_QR_LIMIT = 2000;

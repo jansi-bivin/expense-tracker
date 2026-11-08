@@ -1194,6 +1194,7 @@ function HomeInner() {
             lockedNames={lockedCatNames}
             onToggleLock={isPrimary ? toggleCategoryLock : undefined}
             onPayStarted={isPrimary ? startPayment : undefined}
+            paymentWaiting={!!pendingPay && !pendingPay.confirmed}
           />
         ) : (
           <>
