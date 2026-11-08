@@ -22,9 +22,12 @@ interface Props {
   dues?: { id: number; transaction_id: number; cleared: boolean; settlement_transaction_id?: number | null }[];
   viewMonth: number; // 0-indexed JS month
   viewYear: number;
+  lockedNames?: Set<string>;
+  /** Primary only: lock/unlock a category for new expenses. */
+  onToggleLock?: (categoryName: string) => void;
 }
 
-function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, monthlyOverrides, excludedCategoryIds, onCategoriesChange, onShowAddCategory, onMonthlyOverride, activeDays, daysInMonth, onActiveDaysUpdate, onReclassify, onDeleteTxn, dues, viewMonth, viewYear }: Props) {
+function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, monthlyOverrides, excludedCategoryIds, onCategoriesChange, onShowAddCategory, onMonthlyOverride, activeDays, daysInMonth, onActiveDaysUpdate, onReclassify, onDeleteTxn, dues, viewMonth, viewYear, lockedNames, onToggleLock }: Props) {
   const currentMonth = viewMonth;
   const currentYear = viewYear;
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -739,6 +742,19 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
             ))}
           </div>
 
+          {isPrimary && onToggleLock && (
+            <>
+              <div className="section-label mb-1.5">New expenses</div>
+              <button
+                className="w-full py-1.5 mb-3 rounded-lg text-[11px] font-semibold btn-ghost"
+                style={lockedNames?.has(cat.name) ? { color: "var(--accent-orange)" } : undefined}
+                onClick={() => onToggleLock(cat.name)}
+              >
+                {lockedNames?.has(cat.name) ? "🔒 Locked · tap to unlock" : "🔓 Open · tap to lock"}
+              </button>
+            </>
+          )}
+
           <div className="flex gap-2">
             <button
               className="flex-1 py-2 btn-primary text-xs rounded-xl disabled:opacity-35"
@@ -766,6 +782,9 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
               <span className={`badge text-[9px] py-0 ${cat.visible_to === "primary" ? "badge-purple" : "badge-green"}`}>
                 {cat.visible_to === "primary" ? "Me" : "Wife"}
               </span>
+            )}
+            {lockedNames?.has(cat.name) && (
+              <span className="badge badge-orange text-[9px] py-0">🔒</span>
             )}
           </div>
           {hasMonthOverride && <span className="badge badge-orange text-[9px] py-0">This Mo</span>}

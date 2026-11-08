@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from "react";
 import { supabase, Transaction, Category } from "@/lib/supabase";
 import { SettleDue, monthKey, monthLabel } from "@/lib/dues";
+import { CategoryPosition } from "@/lib/budget";
 
 interface Props {
   dues: SettleDue[];
@@ -15,9 +16,23 @@ interface Props {
   payeeName: string;
   isPrimary: boolean;
   primaryName: string;
+  /** Spend vs limit per category for the month shown in the header. */
+  positions: Map<string, CategoryPosition>;
+  periodLabel: string; // e.g. "Nov"
+  periodYear: number;
+  lockedNames: Set<string>;
+  /** Primary only: lock/unlock a category for new expenses. */
+  onToggleLock?: (categoryName: string) => void;
 }
 
-function DuesView({ dues, advance, transactions, categories, onDuesChange, payeeUpi, payeeName, isPrimary, primaryName }: Props) {
+const STATUS_COLOR: Record<CategoryPosition["status"], string> = {
+  nocap: "var(--text-tertiary)",
+  within: "var(--accent-green)",
+  near: "var(--accent-orange)",
+  over: "var(--accent-red)",
+};
+
+function DuesView({ dues, advance, transactions, categories, onDuesChange, payeeUpi, payeeName, isPrimary, primaryName, positions, periodLabel, periodYear, lockedNames, onToggleLock }: Props) {
   const [expandedCat, setExpandedCat] = useState<string | null>(null);
   const [groupBy, setGroupBy] = useState<"category" | "month">(() => {
     try { return localStorage.getItem("duesGroupBy") === "month" ? "month" : "category"; } catch { return "category"; }
@@ -86,6 +101,39 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
     return Array.from(map.entries())
       .sort((a, b) => b[0].localeCompare(a[0]))
       .map(([k, arr]) => [monthLabel(k), [...arr].sort((a, b) => b.paid_on - a.paid_on)]);
+  }
+
+  /** "Nov: ₹3,200 of ₹4,000 · ₹800 left" (amounts for primary, % for secondary). */
+  function positionText(catName: string): { text: string; color: string; pct: number | null } | null {
+    const p = positions.get(catName);
+    if (!p) return null;
+    const when = p.period === "month" ? periodLabel : String(periodYear);
+    if (p.status === "nocap") {
+      return isPrimary
+        ? { text: `${when}: ${fmt(p.spent)} spent · no limit`, color: STATUS_COLOR.nocap, pct: null }
+        : null;
+    }
+    const pct = (p.spent / p.cap) * 100;
+    const tail = p.spent > p.cap ? `${fmt(p.spent - p.cap)} over` : `${fmt(p.cap - p.spent)} left`;
+    const text = isPrimary
+      ? `${when}: ${fmt(p.spent)} of ${fmt(p.cap)} · ${tail}`
+      : `${when}: ${Math.round(pct)}% used${p.spent > p.cap ? " · over limit" : ""}`;
+    return { text, color: STATUS_COLOR[p.status], pct };
+  }
+
+  function PositionBlock({ catName }: { catName: string }) {
+    const pos = positionText(catName);
+    if (!pos) return null;
+    return (
+      <div className="mt-1">
+        <div className="text-[11px] font-semibold" style={{ color: pos.color }}>{pos.text}</div>
+        {pos.pct != null && (
+          <div className="h-1 rounded-full mt-1 overflow-hidden" style={{ background: "rgba(255,255,255,0.08)", width: 140 }}>
+            <div className="h-full rounded-full" style={{ width: `${Math.min(pos.pct, 100)}%`, background: pos.color }} />
+          </div>
+        )}
+      </div>
+    );
   }
 
   const txnMap = useMemo(() => {
@@ -258,7 +306,12 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
                     {categoryDues.length}
                   </div>
                   <div>
-                    <div className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{groupBy === "month" ? monthLabel(category) : category}</div>
+                    <div className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                      {groupBy === "month" ? monthLabel(category) : category}
+                      {groupBy === "category" && lockedNames.has(category) && (
+                        <span className="badge badge-orange text-[9px] py-0 ml-1.5">🔒 Locked</span>
+                      )}
+                    </div>
                     <div className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
                       {categoryDues.length} item{categoryDues.length !== 1 ? "s" : ""}
                       {(() => {
@@ -270,6 +323,7 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
                         return ` · ${n} month${n !== 1 ? "s" : ""}`;
                       })()}
                     </div>
+                    {groupBy === "category" && <PositionBlock catName={category} />}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -303,6 +357,17 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
                       </button>
                     </div>
                   )}
+                  {groupBy === "category" && onToggleLock && (
+                    <button
+                      className="w-full py-2 mb-1 text-xs rounded-xl btn-ghost"
+                      style={lockedNames.has(category) ? { color: "var(--accent-orange)" } : undefined}
+                      onClick={(e) => { e.stopPropagation(); onToggleLock(category); }}
+                    >
+                      {lockedNames.has(category)
+                        ? `🔓 Unlock "${category}" for new expenses`
+                        : `🔒 Lock "${category}": no new expenses from ${payeeName || "others"}`}
+                    </button>
+                  )}
 
                   {/* Items — in month view, sub-grouped by category */}
                   {subGroups(categoryDues).map(([subCat, subDues]) => (
@@ -313,6 +378,13 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
                       <span className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>
                         {subCat}
                         <span className="ml-1 font-normal" style={{ color: "var(--text-tertiary)" }}>· {subDues.length}</span>
+                        {groupBy === "month" && lockedNames.has(subCat) && <span className="ml-1">🔒</span>}
+                        {groupBy === "month" && (() => {
+                          const pos = positionText(subCat);
+                          return pos ? (
+                            <span className="block text-[10px] font-semibold" style={{ color: pos.color }}>{pos.text}</span>
+                          ) : null;
+                        })()}
                       </span>
                       <span className="text-xs font-bold" style={{ color: "var(--accent-red)" }}>
                         {fmt(subDues.reduce((s, d) => s + Number(d.amount), 0))}

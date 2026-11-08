@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { supabase, RawSms, Transaction, Category, User, Due, FeatureIdea, MonthlyBudget } from "@/lib/supabase";
 import { detectFields } from "@/lib/smsDetector";
 import { SettleDue, SettlementPlan, applyAdvance, round2 } from "@/lib/dues";
+import { computePositions, fetchLockedCategories, saveLockedCategories, saveSetting } from "@/lib/budget";
 
 const ADVANCE_KEY = "dues_advance";
 
@@ -16,11 +17,7 @@ async function fetchAdvance(): Promise<number> {
 }
 
 async function saveAdvance(amount: number) {
-  await supabase.from("settings").upsert({
-    key: ADVANCE_KEY,
-    value: { amount: round2(Math.max(0, amount)) },
-    updated_at: new Date().toISOString(),
-  });
+  await saveSetting(ADVANCE_KEY, { amount: round2(Math.max(0, amount)) });
 }
 
 /** Create a due for a secondary-user expense, using up any advance first. */
@@ -140,6 +137,16 @@ function HomeInner() {
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [dues, setDues] = useState<Due[]>([]);
   const [duesAdvance, setDuesAdvance] = useState(0);
+  // Categories locked by the primary user: no new expenses from the secondary user
+  const [lockedCatIds, setLockedCatIds] = useState<Set<number>>(new Set());
+  // Pick up lock changes when the app comes back to the foreground
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") fetchLockedCategories().then(setLockedCatIds);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"review" | "budget" | "dues">("budget");
   const [resetting, setResetting] = useState(false);
@@ -416,6 +423,7 @@ function HomeInner() {
       const { data: duesData } = await supabase.from("dues").select("*").order("created_at", { ascending: false });
       if (duesData) setDues(duesData);
       setDuesAdvance(await fetchAdvance());
+      setLockedCatIds(await fetchLockedCategories());
 
       setLoading(false);
     }
@@ -753,6 +761,35 @@ function HomeInner() {
     });
   }, [dues, categorizedTxns]);
   const unclearedDues = useMemo(() => settleDues.filter((d) => !d.cleared), [settleDues]);
+
+  // Spend vs limit per category for the month shown in the header
+  const categoryPositions = useMemo(
+    () => computePositions(categories, categorizedTxns, {
+      month: viewMonth, year: viewYear, monthlyOverrides, scaleFactor, excludedCategoryIds,
+    }),
+    [categories, categorizedTxns, viewMonth, viewYear, monthlyOverrides, scaleFactor, excludedCategoryIds]
+  );
+
+  const lockedCatNames = useMemo(
+    () => new Set(categories.filter((c) => lockedCatIds.has(c.id)).map((c) => c.name)),
+    [categories, lockedCatIds]
+  );
+
+  // Categories offered when entering/categorizing an expense: locked ones are
+  // removed for the secondary user (the primary user can still use them).
+  const entryCategories = useMemo(
+    () => (currentUser?.is_primary ? categories : categories.filter((c) => !lockedCatIds.has(c.id))),
+    [categories, lockedCatIds, currentUser]
+  );
+
+  async function toggleCategoryLock(categoryName: string) {
+    const cat = categories.find((c) => c.name === categoryName);
+    if (!cat) return;
+    const next = new Set(lockedCatIds);
+    if (next.has(cat.id)) next.delete(cat.id); else next.add(cat.id);
+    setLockedCatIds(next);
+    await saveLockedCategories(next);
+  }
   const duesTotal = useMemo(() => unclearedDues.reduce((sum, d) => sum + Number(d.amount), 0), [unclearedDues]);
 
   // Build settlement hints from non-primary user's details
@@ -884,6 +921,11 @@ function HomeInner() {
             payeeName={allUsers.find((u) => !u.is_primary)?.name ?? ""}
             isPrimary={isPrimary}
             primaryName={allUsers.find((u) => u.is_primary)?.name ?? ""}
+            positions={categoryPositions}
+            periodLabel={new Date(viewYear, viewMonth, 1).toLocaleDateString("en-IN", { month: "short" })}
+            periodYear={viewYear}
+            lockedNames={lockedCatNames}
+            onToggleLock={isPrimary ? toggleCategoryLock : undefined}
           />
         ) : (
           <>
@@ -905,6 +947,8 @@ function HomeInner() {
               viewMonth={viewMonth}
               viewYear={viewYear}
               dues={dues}
+              lockedNames={lockedCatNames}
+              onToggleLock={isPrimary ? toggleCategoryLock : undefined}
             />
           </>
         )}
@@ -914,7 +958,7 @@ function HomeInner() {
       {hasOverlay && (
         <DebitOverlay
           txns={newTxns}
-          categories={categories}
+          categories={entryCategories}
           isPrimary={isPrimary}
           unclearedDues={unclearedDues}
           settlementHints={settlementHints}
@@ -1026,7 +1070,7 @@ function HomeInner() {
       {/* Manual Expense Form overlay */}
       {showManualExpense && (
         <ManualExpenseForm
-          categories={categories}
+          categories={entryCategories}
           isPrimary={isPrimary}
           transactions={categorizedTxns}
           onSave={handleManualExpense}

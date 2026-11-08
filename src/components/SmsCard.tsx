@@ -32,8 +32,11 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
   // Auto-detect category from merchant history
   const suggestedCategory = useMemo(() => {
     if (!merchantCategoryMap || !txn.merchant) return "";
-    return merchantCategoryMap.get(txn.merchant.toLowerCase().trim()) || "";
-  }, [merchantCategoryMap, txn.merchant]);
+    const s = merchantCategoryMap.get(txn.merchant.toLowerCase().trim()) || "";
+    // Only suggest a category this user can pick (not hidden or locked)
+    const usable = categories.some((c) => c.name === s && (isPrimary || c.visible_to !== "primary"));
+    return usable ? s : "";
+  }, [merchantCategoryMap, txn.merchant, categories, isPrimary]);
 
   const [category, setCategory] = useState(suggestedCategory);
   const [comment, setComment] = useState("");
@@ -150,6 +153,10 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
   async function handleSave() {
     if (!category) return;
     if (noteRequired && !comment.trim()) return;
+    if (!visibleCategories.some((c) => c.name === category)) {
+      alert(`"${category}" is locked. Pick another category.`);
+      return;
+    }
     setSaving(true);
     await supabase.from("transactions").update({ category, notes: comment || null, status: "categorized" }).eq("id", txn.id);
     onDone(txn.id, category, comment || undefined);
