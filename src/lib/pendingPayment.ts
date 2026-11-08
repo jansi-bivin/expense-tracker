@@ -89,6 +89,12 @@ export async function findPaymentSms(
   };
 }
 
+/** The 12-digit UPI reference ("UPI:667850326541"); the same in payer's and payee's SMS. */
+export function upiRef(body: string): string | null {
+  const m = body.match(/UPI\s*(?:Ref(?:\.|erence)?\s*(?:No\.?)?)?[:\s-]*(\d{12})/i);
+  return m ? m[1] : null;
+}
+
 /** Make a UPI note safe and short (apps cut notes around 50 characters). */
 export function upiNote(s: string): string {
   return s.replace(/[^A-Za-z0-9 .,\-/()]/g, "").replace(/\s+/g, " ").trim().slice(0, 50).trim() || "ExpTrack dues";

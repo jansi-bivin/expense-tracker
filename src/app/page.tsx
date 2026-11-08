@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { supabase, RawSms, Transaction, Category, User, Due, FeatureIdea, MonthlyBudget } from "@/lib/supabase";
 import { detectFields } from "@/lib/smsDetector";
 import { SettleDue, SettlementPlan, applyAdvance, round2, planSettlement } from "@/lib/dues";
-import { PendingPayment, fetchPendingPayment, savePendingPayment, findPaymentSms, MATCH_WINDOW_MS, ASK_AFTER_MS } from "@/lib/pendingPayment";
+import { PendingPayment, fetchPendingPayment, savePendingPayment, findPaymentSms, MATCH_WINDOW_MS, ASK_AFTER_MS, upiRef } from "@/lib/pendingPayment";
 import { computePositions, fetchLockedCategories, saveLockedCategories, saveSetting } from "@/lib/budget";
 import { SyncHealth, fetchSyncHealth, syncIssues, fmtAgo } from "@/lib/syncHealth";
 import {
@@ -972,6 +972,24 @@ function HomeInner() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingPay, txnTick, newTxns.length, clockNow, currentUser, secondaryUser?.id]);
+
+  // The other side of a settled payment (her credit, or a late debit) carries the
+  // same UPI reference: file it as Settlement too, whenever it arrives.
+  const filedRefTxns = useRef(new Set<number>());
+  useEffect(() => {
+    const settledRefs = new Set(
+      categorizedTxns.filter((t) => t.category === "Settlement").map((t) => upiRef(t.body)).filter(Boolean) as string[]
+    );
+    if (settledRefs.size === 0) return;
+    for (const t of newTxns) {
+      const ref = upiRef(t.body);
+      if (ref && settledRefs.has(ref) && !filedRefTxns.current.has(t.id)) {
+        filedRefTxns.current.add(t.id);
+        markSettlementTxn(t.id, t);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newTxns, categorizedTxns]);
 
   // Re-check (and show the "did you pay?" card) once the SMS had time to arrive
   useEffect(() => {
