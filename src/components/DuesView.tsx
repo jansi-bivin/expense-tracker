@@ -161,8 +161,17 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
 
   function openUpiPay(amount: number, dueIds: number[], label: string) {
     if (!payeeUpi) return;
+    const ctx = { dueIds, label: upiNote(label) };
+    setPayCtx(ctx);
+    // Not in the phone app (e.g. a PC browser): no UPI app here, so show the QR
+    // straight away to scan with the phone. The bank SMS then clears these dues.
+    if (!bridge?.openApp) {
+      if (isPrimary && dueIds.length > 0) onPayStarted?.({ amount, ...ctx });
+      setQrNote(ctx.label);
+      setQrAmount(amount);
+      return;
+    }
     navigator.clipboard.writeText(amount.toFixed(2)).catch(() => {});
-    setPayCtx({ dueIds, label: upiNote(label) });
     setShowPaySheet(amount);
   }
 
@@ -302,6 +311,7 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
             <div className="text-xs mb-1" style={{ color: "var(--text-secondary)" }}>UPI: {payeeUpi}</div>
             <div className="text-[11px] mb-5" style={{ color: "var(--text-tertiary)" }}>
               On the other phone: GPay / PhonePe / Paytm → Scan → point here. Amount is filled in.
+              {isPrimary && <><br />The dues clear by themselves when the bank SMS arrives.</>}
             </div>
             <button className="w-full py-2.5 text-sm font-medium rounded-xl" style={{ color: "var(--text-tertiary)" }} onClick={() => setQrAmount(null)}>
               Close
