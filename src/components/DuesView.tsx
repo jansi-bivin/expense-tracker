@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
+import QRCode from "qrcode";
 import { supabase, Transaction, Category } from "@/lib/supabase";
 import { SettleDue, monthKey, monthLabel } from "@/lib/dues";
 import { CategoryPosition } from "@/lib/budget";
@@ -157,6 +158,24 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
     setShowPaySheet(amount);
   }
 
+  // UPI QR with the amount built in. Shown on one phone and scanned with the UPI
+  // app's camera on the other — UPI allows that, unlike app-to-app prefilled links.
+  const [qrAmount, setQrAmount] = useState<number | null>(null);
+  const [qrSrc, setQrSrc] = useState("");
+  useEffect(() => {
+    if (qrAmount === null || !payeeUpi) { setQrSrc(""); return; }
+    const uri = `upi://pay?pa=${payeeUpi}&pn=${encodeURIComponent(payeeName || "Payee")}` +
+      `&am=${qrAmount.toFixed(2)}&cu=INR&tn=${encodeURIComponent("ExpTrack dues")}`;
+    QRCode.toDataURL(uri, { width: 360, margin: 2, errorCorrectionLevel: "M" })
+      .then(setQrSrc)
+      .catch(() => setQrSrc(""));
+  }, [qrAmount, payeeUpi, payeeName]);
+
+  function showQr(amount: number) {
+    setShowPaySheet(null);
+    setQrAmount(amount);
+  }
+
   function launchApp(pkg: string) {
     const bridge = (window as unknown as Record<string, unknown>).AndroidUpi as
       | { openApp: (pkg: string) => void }
@@ -223,6 +242,36 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
               Pay {fmt(totalOutstanding)} via UPI →
             </button>
           )}
+          {!isPrimary && payeeUpi && (
+            <button
+              className="w-full py-3 btn-green rounded-xl text-sm"
+              onClick={() => showQr(totalOutstanding)}
+            >
+              Show QR to get paid {fmt(totalOutstanding)}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ═══ QR with the amount built in ═══ */}
+      {qrAmount !== null && (
+        <div className="fixed inset-0 sheet-backdrop z-50 flex items-center justify-center p-4 animate-fade-in" onClick={() => setQrAmount(null)}>
+          <div className="sheet w-full max-w-sm p-6 rounded-3xl text-center animate-slide-up" onClick={(e) => e.stopPropagation()}>
+            <div className="text-xs font-medium mb-1" style={{ color: "var(--text-tertiary)" }}>Pay {payeeName}</div>
+            <div className="text-4xl font-extrabold tracking-tight mb-4" style={{ color: "var(--text-primary)" }}>₹{qrAmount.toFixed(2)}</div>
+            <div className="mx-auto mb-3 rounded-2xl p-2" style={{ background: "#fff", width: "fit-content" }}>
+              {qrSrc
+                ? <img src={qrSrc} alt={`UPI QR to pay ₹${qrAmount.toFixed(2)}`} width={260} height={260} />
+                : <div style={{ width: 260, height: 260 }} />}
+            </div>
+            <div className="text-xs mb-1" style={{ color: "var(--text-secondary)" }}>UPI: {payeeUpi}</div>
+            <div className="text-[11px] mb-5" style={{ color: "var(--text-tertiary)" }}>
+              On the other phone: GPay / PhonePe / Paytm → Scan → point here. Amount is filled in.
+            </div>
+            <button className="w-full py-2.5 text-sm font-medium rounded-xl" style={{ color: "var(--text-tertiary)" }} onClick={() => setQrAmount(null)}>
+              Close
+            </button>
+          </div>
         </div>
       )}
 
@@ -253,6 +302,14 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
                 </button>
               ))}
             </div>
+
+            <button
+              className="w-full py-3 mb-2 rounded-xl text-sm font-semibold"
+              style={{ border: "1px solid var(--border-light)", color: "var(--text-primary)" }}
+              onClick={() => showQr(showPaySheet)}
+            >
+              Show QR to scan from another phone
+            </button>
 
             <button className="w-full py-2.5 text-sm font-medium rounded-xl" style={{ color: "var(--text-tertiary)" }} onClick={() => setShowPaySheet(null)}>
               Cancel
