@@ -378,7 +378,6 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
                       <span className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>
                         {subCat}
                         <span className="ml-1 font-normal" style={{ color: "var(--text-tertiary)" }}>· {subDues.length}</span>
-                        {groupBy === "month" && lockedNames.has(subCat) && <span className="ml-1">🔒</span>}
                         {groupBy === "month" && (() => {
                           const pos = positionText(subCat);
                           return pos ? (
@@ -386,8 +385,19 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
                           ) : null;
                         })()}
                       </span>
-                      <span className="text-xs font-bold" style={{ color: "var(--accent-red)" }}>
-                        {fmt(subDues.reduce((s, d) => s + Number(d.amount), 0))}
+                      <span className="flex items-center gap-2">
+                        {groupBy === "month" && onToggleLock && (
+                          <button
+                            className={`badge text-[10px] cursor-pointer ${lockedNames.has(subCat) ? "badge-orange" : "badge-muted"}`}
+                            title={lockedNames.has(subCat) ? "Unlock for new expenses" : "Lock: no new expenses"}
+                            onClick={(e) => { e.stopPropagation(); onToggleLock(subCat); }}
+                          >
+                            {lockedNames.has(subCat) ? "🔒 Unlock" : "🔓 Lock"}
+                          </button>
+                        )}
+                        <span className="text-xs font-bold" style={{ color: "var(--accent-red)" }}>
+                          {fmt(subDues.reduce((s, d) => s + Number(d.amount), 0))}
+                        </span>
                       </span>
                     </div>
                   )}
