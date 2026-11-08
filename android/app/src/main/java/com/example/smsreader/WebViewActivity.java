@@ -2,9 +2,14 @@ package com.example.smsreader;
 
 import android.annotation.SuppressLint;
 import android.app.AlertDialog;
+import android.content.ContentResolver;
+import android.content.ContentValues;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.provider.MediaStore;
+import android.util.Base64;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -14,6 +19,8 @@ import android.webkit.WebViewClient;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
+
+import java.io.OutputStream;
 
 import com.example.smsreader.sync.SyncScheduler;
 
@@ -103,7 +110,61 @@ public class WebViewActivity extends AppCompatActivity {
                 }
             });
         }
+
+        /** True when saveQrAndOpen can save to the gallery (Android 10+, no permission needed). */
+        @JavascriptInterface
+        public boolean canSaveQr() {
+            return Build.VERSION.SDK_INT >= 29;
+        }
+
+        /**
+         * Saves a payment QR (base64 PNG) as the newest picture in the gallery, then opens
+         * the UPI app. The user scans it from the gallery inside the UPI app: UPI refuses
+         * payments to a person that another app starts, but allows ones the user starts.
+         * Earlier QRs saved by this app are removed so the newest is the only one.
+         */
+        @JavascriptInterface
+        public boolean saveQrAndOpen(String base64Png, String appPackage) {
+            boolean saved = false;
+            if (Build.VERSION.SDK_INT >= 29) {
+                try {
+                    byte[] png = Base64.decode(base64Png, Base64.DEFAULT);
+                    ContentResolver cr = getContentResolver();
+                    Uri images = MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
+                    cr.delete(images,
+                        MediaStore.Images.Media.RELATIVE_PATH + "=? AND " + MediaStore.Images.Media.DISPLAY_NAME + " LIKE ?",
+                        new String[]{QR_DIR, "exptrack-pay-%"});
+                    ContentValues v = new ContentValues();
+                    v.put(MediaStore.Images.Media.DISPLAY_NAME, "exptrack-pay-" + System.currentTimeMillis() + ".png");
+                    v.put(MediaStore.Images.Media.MIME_TYPE, "image/png");
+                    v.put(MediaStore.Images.Media.RELATIVE_PATH, QR_DIR);
+                    v.put(MediaStore.Images.Media.IS_PENDING, 1);
+                    Uri item = cr.insert(images, v);
+                    if (item != null) {
+                        try (OutputStream out = cr.openOutputStream(item)) {
+                            out.write(png);
+                        }
+                        v.clear();
+                        v.put(MediaStore.Images.Media.IS_PENDING, 0);
+                        cr.update(item, v, null, null);
+                        saved = true;
+                    }
+                } catch (Exception e) {
+                    android.util.Log.w(TAG, "Could not save QR", e);
+                }
+            }
+            final boolean ok = saved;
+            runOnUiThread(() -> {
+                Toast.makeText(WebViewActivity.this,
+                    ok ? "QR saved. Scan → gallery → pick the newest picture" : "Could not save QR",
+                    Toast.LENGTH_LONG).show();
+                openApp(appPackage);
+            });
+            return saved;
+        }
     }
+
+    private static final String QR_DIR = "Pictures/ExpTrack/";
 
     @Override
     protected void onResume() {

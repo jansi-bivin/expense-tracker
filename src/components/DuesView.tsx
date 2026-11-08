@@ -162,28 +162,46 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
   // app's camera on the other — UPI allows that, unlike app-to-app prefilled links.
   const [qrAmount, setQrAmount] = useState<number | null>(null);
   const [qrSrc, setQrSrc] = useState("");
+  const qrDataUrl = (amount: number) =>
+    QRCode.toDataURL(
+      `upi://pay?pa=${payeeUpi}&pn=${encodeURIComponent(payeeName || "Payee")}` +
+        `&am=${amount.toFixed(2)}&cu=INR&tn=${encodeURIComponent("ExpTrack dues")}`,
+      { width: 360, margin: 2, errorCorrectionLevel: "M" },
+    );
   useEffect(() => {
     if (qrAmount === null || !payeeUpi) { setQrSrc(""); return; }
-    const uri = `upi://pay?pa=${payeeUpi}&pn=${encodeURIComponent(payeeName || "Payee")}` +
-      `&am=${qrAmount.toFixed(2)}&cu=INR&tn=${encodeURIComponent("ExpTrack dues")}`;
-    QRCode.toDataURL(uri, { width: 360, margin: 2, errorCorrectionLevel: "M" })
-      .then(setQrSrc)
-      .catch(() => setQrSrc(""));
+    qrDataUrl(qrAmount).then(setQrSrc).catch(() => setQrSrc(""));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [qrAmount, payeeUpi, payeeName]);
+
+  // UPI apps accept QRs picked from the gallery up to this amount.
+  const GALLERY_QR_LIMIT = 2000;
+  const bridge = typeof window !== "undefined"
+    ? (window as unknown as Record<string, unknown>).AndroidUpi as
+        | { openApp: (pkg: string) => void; canSaveQr?: () => boolean; saveQrAndOpen?: (png: string, pkg: string) => boolean }
+        | undefined
+    : undefined;
+  const canGalleryQr = (amount: number) =>
+    amount <= GALLERY_QR_LIMIT && !!bridge?.saveQrAndOpen && !!bridge.canSaveQr?.();
 
   function showQr(amount: number) {
     setShowPaySheet(null);
     setQrAmount(amount);
   }
 
-  function launchApp(pkg: string) {
-    const bridge = (window as unknown as Record<string, unknown>).AndroidUpi as
-      | { openApp: (pkg: string) => void }
-      | undefined;
-    if (bridge?.openApp) {
-      bridge.openApp(pkg);
-    }
+  async function launchApp(pkg: string) {
+    const amount = showPaySheet;
     setShowPaySheet(null);
+    if (amount !== null && canGalleryQr(amount)) {
+      // Save this due's QR as the newest gallery picture, then open the app:
+      // Scan → gallery → pick it → amount and payee are filled in.
+      try {
+        const dataUrl = await qrDataUrl(amount);
+        bridge!.saveQrAndOpen!(dataUrl.split(",")[1], pkg);
+        return;
+      } catch { /* fall through to a plain open */ }
+    }
+    bridge?.openApp?.(pkg);
   }
 
   async function clearDue(dueId: number) {
@@ -284,11 +302,19 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
             <div className="text-center mb-5">
               <div className="text-xs font-medium mb-1" style={{ color: "var(--text-tertiary)" }}>Pay {payeeName}</div>
               <div className="text-4xl font-extrabold tracking-tight" style={{ color: "var(--text-primary)" }}>₹{showPaySheet.toFixed(2)}</div>
-              <div className="badge badge-green mt-2 text-[10px]">✓ Amount copied</div>
+              <div className="badge badge-green mt-2 text-[10px]">
+                {canGalleryQr(showPaySheet) ? "✓ QR goes to your gallery" : "✓ Amount copied"}
+              </div>
             </div>
 
             <div className="text-xs text-center mb-1" style={{ color: "var(--text-secondary)" }}>UPI: {payeeUpi}</div>
-            <div className="text-[11px] text-center mb-5" style={{ color: "var(--text-tertiary)" }}>Open app → search &quot;{payeeName}&quot; → paste amount</div>
+            <div className="text-[11px] text-center mb-5" style={{ color: "var(--text-tertiary)" }}>
+              {canGalleryQr(showPaySheet)
+                ? "Open app → Scan → gallery → pick the newest picture"
+                : showPaySheet > GALLERY_QR_LIMIT
+                  ? `Over ₹${GALLERY_QR_LIMIT.toLocaleString("en-IN")}: scan the QR from another phone, or search "${payeeName}" and paste the amount`
+                  : `Open app → search "${payeeName}" → paste amount`}
+            </div>
 
             <div className="flex gap-3 mb-4">
               {upiApps.map((app) => (
