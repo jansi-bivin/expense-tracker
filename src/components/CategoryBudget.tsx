@@ -547,6 +547,17 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
                     {hasMonthOverride && !isYearlyView && (
                       <span className="badge badge-orange text-[9px] py-0">This Mo</span>
                     )}
+                    {isPrimary && onToggleLock ? (
+                      <button
+                        className={`badge text-[10px] py-0 cursor-pointer ${lockedNames?.has(cat.name) ? "badge-orange" : "badge-muted"}`}
+                        title={lockedNames?.has(cat.name) ? "Locked: tap to allow new expenses" : "Lock: no new expenses"}
+                        onClick={(e) => { e.stopPropagation(); onToggleLock(cat.name); }}
+                      >
+                        {lockedNames?.has(cat.name) ? "🔒 Unlock" : "🔓 Lock"}
+                      </button>
+                    ) : lockedNames?.has(cat.name) ? (
+                      <span className="badge badge-orange text-[9px] py-0">🔒</span>
+                    ) : null}
                   </div>
                   {noCap ? (
                     <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>no cap</span>
