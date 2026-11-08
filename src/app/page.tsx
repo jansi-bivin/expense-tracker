@@ -980,7 +980,7 @@ function HomeInner() {
           style={{ color: "var(--text-tertiary)", opacity: 0.4 }}
           onClick={() => setShowFeatureIdeas(true)}
         >
-          v{process.env.APP_VERSION}
+          v{process.env.APP_VERSION} · {process.env.BUILD_SHA}
         </button>
         <a href="/api/download-apk" download
           className="text-[10px] no-underline"
