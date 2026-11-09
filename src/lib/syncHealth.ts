@@ -21,8 +21,14 @@ const PREFIX = "sync_health:";
 /** A phone that hasn't checked in for this long is treated as not syncing. */
 export const STALE_AFTER_MS = 12 * 60 * 60 * 1000;
 
+/**
+ * Every phone's last check-in. Throws when the read fails, so a network blip
+ * (e.g. coming back to the app from a call) keeps the last known status instead
+ * of looking like no phone ever checked in ("Update your SMS reader").
+ */
 export async function fetchSyncHealth(): Promise<Map<string, SyncHealth>> {
-  const { data } = await supabase.from("settings").select("key,value").like("key", `${PREFIX}%`);
+  const { data, error } = await supabase.from("settings").select("key,value").like("key", `${PREFIX}%`);
+  if (error || !data) throw new Error(error?.message ?? "sync health unavailable");
   const out = new Map<string, SyncHealth>();
   for (const row of data ?? []) {
     out.set(String(row.key).slice(PREFIX.length), row.value as SyncHealth);
@@ -46,7 +52,8 @@ export function syncIssues(
   health: Map<string, SyncHealth>,
   now: number
 ): SyncIssue[] {
-  if (!current) return [];
+  // Nothing read yet (or the read failed): don't claim any phone needs the app
+  if (!current || health.size === 0) return [];
   const phones = current.is_primary ? users : users.filter((u) => u.phone_number === current.phone_number);
   const issues: SyncIssue[] = [];
   for (const u of phones) {

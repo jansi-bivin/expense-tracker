@@ -163,7 +163,7 @@ function HomeInner() {
   useEffect(() => {
     const refresh = () => {
       setClockNow(Date.now());
-      fetchSyncHealth().then(setSyncHealth);
+      fetchSyncHealth().then(setSyncHealth).catch(() => {});
     };
     const onVisible = () => {
       if (document.visibilityState === "visible") {
@@ -455,7 +455,7 @@ function HomeInner() {
       if (duesData) setDues(duesData);
       setDuesAdvance(await fetchAdvance());
       setLockedCatIds(await fetchLockedCategories());
-      setSyncHealth(await fetchSyncHealth());
+      fetchSyncHealth().then(setSyncHealth).catch(() => {});
       setExpectedDebits(await fetchExpectedDebits());
       setPendingPay(await fetchPendingPayment());
 
