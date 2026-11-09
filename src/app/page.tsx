@@ -9,7 +9,7 @@ import { SettleDue, SettlementPlan, applyAdvance, round2, planSettlement } from 
 import { PendingPayment, fetchPendingPayment, savePendingPayment, findPaymentSms, MATCH_WINDOW_MS, ASK_AFTER_MS, upiRef } from "@/lib/pendingPayment";
 import { computePositions, fetchLockedCategories, saveLockedCategories, saveSetting } from "@/lib/budget";
 import { SyncHealth, fetchSyncHealth, syncIssues, fmtAgo } from "@/lib/syncHealth";
-import { AccountBalance, fetchBalances } from "@/lib/balances";
+import { AccountBalance, fetchBalances, saveManualBalance } from "@/lib/balances";
 import {
   ExpectedDebit, ExpectedDebits, MissingDebit, fetchExpectedDebits, saveExpectedDebits,
   findMissingDebits, monthKey, ordinal,
@@ -876,6 +876,17 @@ function HomeInner() {
     const mine = (b: AccountBalance) => (b.phone === currentUser?.phone_number ? 0 : 1);
     return [...balances].sort((a, b) => mine(a) - mine(b) || b.at - a.at);
   }, [balances, currentUser?.phone_number]);
+  // Manual update: tap a balance, type what the bank app shows
+  const [editBal, setEditBal] = useState<{ key: string; value: string } | null>(null);
+  async function saveEditedBalance() {
+    if (!editBal) return;
+    const value = parseFloat(editBal.value.replace(/[,₹\s]/g, ""));
+    if (!isFinite(value)) return;
+    const key = editBal.key;
+    setEditBal(null);
+    setBalances((prev) => prev.map((b) => b.key === key ? { ...b, balance: value, at: Date.now(), source: "manual" } : b));
+    await saveManualBalance(key, value);
+  }
 
   // ── Expected auto-debits (EMIs) that haven't shown up ──
   const missingDebits = useMemo(
@@ -1216,27 +1227,51 @@ function HomeInner() {
             {isPrimary && shownBalances.length > 0 && (
               <div className="card px-3.5 py-3 mb-3">
                 <div className="text-[10px] font-bold tracking-wide mb-2" style={{ color: "var(--text-tertiary)" }}>
-                  BANK BALANCES · LAST STATED IN SMS
+                  BANK BALANCES · FROM SMS · TAP TO UPDATE
                 </div>
                 <div className="space-y-1.5">
                   {shownBalances.map((b) => {
                     const owner = allUsers.find((u) => u.phone_number === b.phone);
                     const stale = clockNow - b.at > 30 * 24 * 60 * 60 * 1000;
+                    const label = (
+                      <span className="flex-1 truncate" style={{ color: "var(--text-secondary)" }}>
+                        {owner && owner.phone_number !== currentUser?.phone_number && (
+                          <span style={{ color: "var(--text-tertiary)" }}>{owner.name} · </span>
+                        )}
+                        {b.bank} ··{b.last}
+                      </span>
+                    );
+                    if (editBal?.key === b.key) {
+                      return (
+                        <div key={b.key} className="flex items-center gap-2 text-sm">
+                          {label}
+                          <input
+                            autoFocus inputMode="decimal" value={editBal.value}
+                            onChange={(e) => setEditBal({ key: b.key, value: e.target.value })}
+                            onKeyDown={(e) => { if (e.key === "Enter") saveEditedBalance(); if (e.key === "Escape") setEditBal(null); }}
+                            className="w-28 px-2 py-1 rounded-lg text-right tabular-nums text-sm"
+                            style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }}
+                            aria-label={`Current balance of ${b.bank} ${b.last}`}
+                          />
+                          <button className="px-2 py-1 btn-primary text-xs rounded-lg" onClick={saveEditedBalance}>Save</button>
+                          <button className="px-1 text-xs bg-transparent border-0 cursor-pointer" style={{ color: "var(--text-tertiary)" }}
+                            onClick={() => setEditBal(null)} aria-label="Cancel">✕</button>
+                        </div>
+                      );
+                    }
                     return (
-                      <div key={b.key} className="flex items-baseline gap-2 text-sm">
-                        <span className="flex-1 truncate" style={{ color: "var(--text-secondary)" }}>
-                          {owner && owner.phone_number !== currentUser?.phone_number && (
-                            <span style={{ color: "var(--text-tertiary)" }}>{owner.name} · </span>
-                          )}
-                          {b.bank} ··{b.last}
-                        </span>
+                      <button key={b.key} type="button"
+                        className="w-full flex items-baseline gap-2 text-sm text-left bg-transparent border-0 p-0 cursor-pointer"
+                        title="Tap to update from your bank app"
+                        onClick={() => setEditBal({ key: b.key, value: String(Math.round(b.balance * 100) / 100) })}>
+                        {label}
                         <span className="font-semibold tabular-nums" style={{ color: stale ? "var(--text-tertiary)" : "var(--text-primary)" }}>
                           ₹{b.balance.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
                         </span>
-                        <span className="text-[11px] w-14 text-right" style={{ color: stale ? "var(--accent-orange)" : "var(--text-tertiary)" }}>
-                          {new Date(b.at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+                        <span className="text-[11px] w-16 text-right" style={{ color: stale ? "var(--accent-orange)" : "var(--text-tertiary)" }}>
+                          {b.source === "manual" ? "✎ " : ""}{new Date(b.at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
                         </span>
-                      </div>
+                      </button>
                     );
                   })}
                 </div>

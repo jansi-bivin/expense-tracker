@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { saveSetting } from "./budget";
 
 /**
  * Last known balance per bank account, read from the bank SMS that state one
@@ -13,6 +14,23 @@ export interface AccountBalance {
   last: string;
   balance: number;
   at: number;
+  /** "manual" when typed in by the user after the last SMS that stated a balance. */
+  source: "sms" | "manual";
+}
+
+/** Balances typed in by hand, by account key; newer than the SMS one wins. */
+const MANUAL_KEY = "manual_balances";
+type ManualBalances = Record<string, { balance: number; at: number }>;
+
+async function fetchManualBalances(): Promise<ManualBalances> {
+  const { data } = await supabase.from("settings").select("value").eq("key", MANUAL_KEY).limit(1).maybeSingle();
+  return (data?.value as ManualBalances | undefined) ?? {};
+}
+
+export async function saveManualBalance(key: string, balance: number) {
+  const all = await fetchManualBalances();
+  all[key] = { balance, at: Date.now() };
+  await saveSetting(MANUAL_KEY, all);
 }
 
 const LOOKBACK_MS = 180 * 24 * 60 * 60 * 1000;
@@ -47,12 +65,17 @@ export async function fetchBalances(phones: string[]): Promise<AccountBalance[]>
     .order("sms_date", { ascending: false })
     .order("id", { ascending: false })
     .limit(1000);
+  const manual = await fetchManualBalances();
   const latest = new Map<string, AccountBalance>();
   for (const t of data ?? []) {
     const p = parseBalance(t.body ?? "");
     if (!p) continue;
     const key = `${t.phone_number}|${p.bank}|${p.last}`;
-    if (!latest.has(key)) latest.set(key, { key, phone: t.phone_number, ...p, at: Number(t.sms_date) });
+    if (!latest.has(key)) latest.set(key, { key, phone: t.phone_number, ...p, at: Number(t.sms_date), source: "sms" });
+  }
+  for (const b of latest.values()) {
+    const m = manual[b.key];
+    if (m && m.at > b.at) Object.assign(b, { balance: m.balance, at: m.at, source: "manual" });
   }
   return Array.from(latest.values());
 }
