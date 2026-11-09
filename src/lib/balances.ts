@@ -18,19 +18,28 @@ export interface AccountBalance {
   source: "sms" | "manual";
 }
 
-/** Balances typed in by hand, by account key; newer than the SMS one wins. */
-const MANUAL_KEY = "manual_balances";
+/**
+ * Balances typed in by hand, by account key; newer than the SMS one wins.
+ * One settings row per phone ("manual_balances:<phone>"), so a phone only ever
+ * reads its own owner's numbers.
+ */
+const MANUAL_PREFIX = "manual_balances:";
 type ManualBalances = Record<string, { balance: number; at: number }>;
 
-async function fetchManualBalances(): Promise<ManualBalances> {
-  const { data } = await supabase.from("settings").select("value").eq("key", MANUAL_KEY).limit(1).maybeSingle();
-  return (data?.value as ManualBalances | undefined) ?? {};
+async function fetchManualBalances(phones: string[]): Promise<ManualBalances> {
+  const { data } = await supabase.from("settings").select("value").in("key", phones.map((p) => MANUAL_PREFIX + p));
+  const all: ManualBalances = {};
+  for (const row of data ?? []) Object.assign(all, row.value as ManualBalances);
+  return all;
 }
 
+/** Account keys start with the owner's phone ("+91…|ICICI|773"). */
 export async function saveManualBalance(key: string, balance: number) {
-  const all = await fetchManualBalances();
-  all[key] = { balance, at: Date.now() };
-  await saveSetting(MANUAL_KEY, all);
+  const rowKey = MANUAL_PREFIX + key.split("|")[0];
+  const { data } = await supabase.from("settings").select("value").eq("key", rowKey).limit(1).maybeSingle();
+  const own = (data?.value as ManualBalances | undefined) ?? {};
+  own[key] = { balance, at: Date.now() };
+  await saveSetting(rowKey, own);
 }
 
 const LOOKBACK_MS = 180 * 24 * 60 * 60 * 1000;
@@ -65,7 +74,7 @@ export async function fetchBalances(phones: string[]): Promise<AccountBalance[]>
     .order("sms_date", { ascending: false })
     .order("id", { ascending: false })
     .limit(1000);
-  const manual = await fetchManualBalances();
+  const manual = await fetchManualBalances(phones);
   const latest = new Map<string, AccountBalance>();
   for (const t of data ?? []) {
     const p = parseBalance(t.body ?? "");

@@ -866,8 +866,10 @@ function HomeInner() {
 
   const mySyncHealth = currentUser ? syncHealth.get(currentUser.phone_number) : undefined;
 
-  // ── Bank balances: only the primary user sees them ──
-  const balancePhones = currentUser?.is_primary ? allUsers.map((u) => u.phone_number).join(",") : "";
+  // ── Bank balances: everyone sees their own accounts; the primary user also sees the others' ──
+  const balancePhones = !currentUser ? ""
+    : currentUser.is_primary ? allUsers.map((u) => u.phone_number).join(",")
+    : currentUser.phone_number;
   useEffect(() => {
     if (!balancePhones) { setBalances([]); return; }
     fetchBalances(balancePhones.split(",")).then(setBalances).catch(() => {});
@@ -1223,8 +1225,8 @@ function HomeInner() {
           />
         ) : (
           <>
-            {/* Last balance each bank stated in an SMS (primary only) */}
-            {isPrimary && shownBalances.length > 0 && (
+            {/* Last balance each bank stated in an SMS (own accounts; primary sees all) */}
+            {shownBalances.length > 0 && (
               <div className="card px-3.5 py-3 mb-3">
                 <div className="text-[10px] font-bold tracking-wide mb-2" style={{ color: "var(--text-tertiary)" }}>
                   BANK BALANCES · FROM SMS · TAP TO UPDATE
