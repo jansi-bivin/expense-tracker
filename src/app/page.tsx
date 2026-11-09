@@ -9,6 +9,7 @@ import { SettleDue, SettlementPlan, applyAdvance, round2, planSettlement } from 
 import { PendingPayment, fetchPendingPayment, savePendingPayment, findPaymentSms, MATCH_WINDOW_MS, ASK_AFTER_MS, upiRef } from "@/lib/pendingPayment";
 import { computePositions, fetchLockedCategories, saveLockedCategories, saveSetting } from "@/lib/budget";
 import { SyncHealth, fetchSyncHealth, syncIssues, fmtAgo } from "@/lib/syncHealth";
+import { AccountBalance, fetchBalances } from "@/lib/balances";
 import {
   ExpectedDebit, ExpectedDebits, MissingDebit, fetchExpectedDebits, saveExpectedDebits,
   findMissingDebits, monthKey, ordinal,
@@ -156,6 +157,8 @@ function HomeInner() {
   const [payNotice, setPayNotice] = useState<string | null>(null);
   // Bumped on every new SMS so the pending payment is checked again
   const [txnTick, setTxnTick] = useState(0);
+  // Last balance the bank stated per account (primary only)
+  const [balances, setBalances] = useState<AccountBalance[]>([]);
   // Pick up lock and sync changes when the app comes back to the foreground
   useEffect(() => {
     const refresh = () => {
@@ -863,6 +866,17 @@ function HomeInner() {
 
   const mySyncHealth = currentUser ? syncHealth.get(currentUser.phone_number) : undefined;
 
+  // ── Bank balances: only the primary user sees them ──
+  const balancePhones = currentUser?.is_primary ? allUsers.map((u) => u.phone_number).join(",") : "";
+  useEffect(() => {
+    if (!balancePhones) { setBalances([]); return; }
+    fetchBalances(balancePhones.split(",")).then(setBalances).catch(() => {});
+  }, [balancePhones, txnTick]);
+  const shownBalances = useMemo(() => {
+    const mine = (b: AccountBalance) => (b.phone === currentUser?.phone_number ? 0 : 1);
+    return [...balances].sort((a, b) => mine(a) - mine(b) || b.at - a.at);
+  }, [balances, currentUser?.phone_number]);
+
   // ── Expected auto-debits (EMIs) that haven't shown up ──
   const missingDebits = useMemo(
     () => (currentUser?.is_primary
@@ -1198,6 +1212,36 @@ function HomeInner() {
           />
         ) : (
           <>
+            {/* Last balance each bank stated in an SMS (primary only) */}
+            {isPrimary && shownBalances.length > 0 && (
+              <div className="card px-3.5 py-3 mb-3">
+                <div className="text-[10px] font-bold tracking-wide mb-2" style={{ color: "var(--text-tertiary)" }}>
+                  BANK BALANCES · LAST STATED IN SMS
+                </div>
+                <div className="space-y-1.5">
+                  {shownBalances.map((b) => {
+                    const owner = allUsers.find((u) => u.phone_number === b.phone);
+                    const stale = clockNow - b.at > 30 * 24 * 60 * 60 * 1000;
+                    return (
+                      <div key={b.key} className="flex items-baseline gap-2 text-sm">
+                        <span className="flex-1 truncate" style={{ color: "var(--text-secondary)" }}>
+                          {owner && owner.phone_number !== currentUser?.phone_number && (
+                            <span style={{ color: "var(--text-tertiary)" }}>{owner.name} · </span>
+                          )}
+                          {b.bank} ··{b.last}
+                        </span>
+                        <span className="font-semibold tabular-nums" style={{ color: stale ? "var(--text-tertiary)" : "var(--text-primary)" }}>
+                          ₹{b.balance.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+                        </span>
+                        <span className="text-[11px] w-14 text-right" style={{ color: stale ? "var(--accent-orange)" : "var(--text-tertiary)" }}>
+                          {new Date(b.at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             {/* Expected auto-debits (EMIs) that haven't shown up this month */}
             {isCurrentMonth && missingDebits.map((m) => (
               <div key={m.category.id} className="card p-3.5 mb-3" style={{ borderLeft: "3px solid var(--accent-orange)" }}>
