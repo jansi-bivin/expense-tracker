@@ -777,7 +777,7 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
           {isPrimary && onSaveExpectedDebit && (
             <>
               <div className="section-label mb-1.5">
-                Auto-debit <span className="text-[10px] font-normal" style={{ color: "var(--text-tertiary)" }}>(warns if it doesn&apos;t show up · blank = off)</span>
+                Auto-debit <span className="text-[10px] font-normal" style={{ color: "var(--text-tertiary)" }}>(its SMS is filed here by itself · warns if it doesn&apos;t show up · blank = off)</span>
               </div>
               <div className="flex gap-2 mb-3">
                 <input

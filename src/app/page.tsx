@@ -13,7 +13,7 @@ import { SyncHealth, fetchSyncHealth, syncIssues, fmtAgo } from "@/lib/syncHealt
 import { AccountBalance, fetchBalances, saveManualBalance } from "@/lib/balances";
 import {
   ExpectedDebit, ExpectedDebits, MissingDebit, fetchExpectedDebits, saveExpectedDebits,
-  findMissingDebits, monthKey, ordinal,
+  findMissingDebits, matchExpectedDebit, monthKey, ordinal,
 } from "@/lib/expectedDebits";
 
 const ADVANCE_KEY = "dues_advance";
@@ -1067,41 +1067,54 @@ function HomeInner() {
     return Array.from(m.values()).sort((a, b) => b.count - a.count).slice(0, 100);
   }, [categorizedTxns, rulesPhone]);
 
-  // A new debit SMS from a paired vendor is filed straight into its category
+  // A new debit SMS is filed straight into its category when it's from a paired vendor,
+  // or when it's a monthly EMI set up as an auto-debit (same amount, around its usual day)
   const autoFiledIds = useRef(new Set<number>());
+  const emiMonthsFiled = useRef(new Set<string>());
   const settleHintKey = settlementHints.join("\n").toLowerCase();
   useEffect(() => {
     const user = currentUser;
-    if (!user || loading || vendorRules.length === 0) return;
+    if (!user || loading) return;
+    if (vendorRules.length === 0 && Object.keys(expectedDebits.items).length === 0) return;
     const hints = settleHintKey.split("\n").filter(Boolean);
     for (const t of newTxns) {
       if (autoFiledIds.current.has(t.id)) continue;
-      if (t.phone_number !== user.phone_number || t.transaction_type !== "DEBIT" || !t.merchant) continue;
-      // A payment to the other person is a dues settlement, never a vendor expense
+      if (t.phone_number !== user.phone_number || t.transaction_type !== "DEBIT") continue;
+      // A payment to the other person is a dues settlement, never an expense
       if (user.is_primary && hints.some((h) => t.body.toLowerCase().includes(h))) continue;
       const rule = matchVendorRule(vendorRules, t.merchant);
-      const cat = rule ? entryCategories.find((c) => c.id === rule.categoryId) : undefined;
+      let cat = rule ? entryCategories.find((c) => c.id === rule.categoryId) : undefined;
+      let emiKey = "";
+      if (!cat) {
+        const emi = matchExpectedDebit(expectedDebits, entryCategories, categorizedTxns, t);
+        emiKey = emi ? `${emi.category.id}:${emi.month}` : "";
+        // Two copies of one EMI's message (SMS + notification) must not both be filed
+        if (emi && !emiMonthsFiled.current.has(emiKey)) cat = emi.category;
+      }
       // Category gone, locked, hidden from this person, or needs a note: leave it for review
       if (!cat || categoryNeedsNote(cat.name) || (!user.is_primary && cat.visible_to === "primary")) continue;
+      const target = cat.name;
       autoFiledIds.current.add(t.id);
+      if (emiKey) emiMonthsFiled.current.add(emiKey);
       (async () => {
         // File it only if it's still new: another device, or a hand, may have filed it already
         const { data } = await supabase.from("transactions")
-          .update({ category: cat.name, status: "categorized" })
+          .update({ category: target, status: "categorized" })
           .eq("id", t.id).eq("status", "new").select("id");
         if (!data || data.length === 0) return;
         // Same as filing it by hand, without depending on it still being in the review list
-        const filed = { ...t, category: cat.name, notes: null, status: "categorized" as const };
+        const filed = { ...t, category: target, notes: null, status: "categorized" as const };
         setNewTxns((prev) => prev.filter((x) => x.id !== t.id));
         setCategorizedTxns((prev) => prev.some((x) => x.id === t.id)
           ? prev.map((x) => (x.id === t.id ? filed : x))
           : [filed, ...prev]);
-        if (!user.is_primary && t.amount) setDuesAdvance(await createDue(t.id, cat.name, Number(t.amount)));
+        if (!user.is_primary && t.amount) setDuesAdvance(await createDue(t.id, target, Number(t.amount)));
         const amt = t.amount ? `₹${Number(t.amount).toLocaleString("en-IN")} ` : "";
-        setAutoFiledNotes((prev) => [...prev, `${amt}${t.merchant} → ${cat.name}`].slice(-5));
+        const from = t.merchant ?? (emiKey ? "monthly auto-debit" : "payment");
+        setAutoFiledNotes((prev) => [...prev, `${amt}${from} → ${target}`].slice(-5));
       })();
     }
-  }, [newTxns, vendorRules, entryCategories, currentUser, loading, settleHintKey]);
+  }, [newTxns, vendorRules, expectedDebits, categorizedTxns, entryCategories, currentUser, loading, settleHintKey]);
 
   // Re-check (and show the "did you pay?" card) once the SMS had time to arrive
   useEffect(() => {
