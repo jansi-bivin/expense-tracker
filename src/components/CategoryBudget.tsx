@@ -47,6 +47,8 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
   const [showActiveDays, setShowActiveDays] = useState(false);
   const [showMonthlyList, setShowMonthlyList] = useState(false);
   const [showYearlyList, setShowYearlyList] = useState(false);
+  // Yearly expenses list: whole year, or only the month being viewed
+  const [yearlyListMonthOnly, setYearlyListMonthOnly] = useState(false);
   // Inline per-row month-cap editor inside ComparisonOverlay (double-click the cap)
   const [editingRowCatId, setEditingRowCatId] = useState<number | null>(null);
   const [rowCapInput, setRowCapInput] = useState("");
@@ -647,12 +649,11 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
   // ═══════════════════════════════════
   function AllExpensesOverlay({ title, txns, yearlyTxns = [], thisMonth, onClose }: {
     title: string; txns: Transaction[]; yearlyTxns?: Transaction[];
-    /** Yearly list: mark the payments made in the month being viewed. */
-    thisMonth?: { label: string; txns: Transaction[] };
+    /** Yearly list: a "This month" option that lists only the month being viewed. */
+    thisMonth?: { label: string; txns: Transaction[]; on: boolean; onChange: (on: boolean) => void };
     onClose: () => void;
   }) {
-    const thisMonthIds = new Set((thisMonth?.txns ?? []).map((t) => t.id));
-    const thisMonthTotal = (thisMonth?.txns ?? []).reduce((s, t) => s + Number(t.amount), 0);
+    if (thisMonth?.on) txns = thisMonth.txns;
     // Yearly payments made this month are listed too, but kept out of the month's total
     const yearlyIds = new Set(yearlyTxns.map((t) => t.id));
     const sorted = [...txns, ...yearlyTxns].sort((a, b) => b.sms_date - a.sms_date);
@@ -679,18 +680,26 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
             </div>
           )}
           {thisMonth && (
-            <div className="text-[11px] mt-1" style={{ color: "var(--text-tertiary)" }}>
-              {thisMonth.label}:{" "}
-              {thisMonth.txns.length > 0
-                ? <><span className="font-semibold" style={{ color: "var(--accent)" }}>{fmt(thisMonthTotal)}</span> ({thisMonth.txns.length} · marked below)</>
-                : "nothing yet"}
+            <div className="flex gap-1.5 mt-3" role="radiogroup" aria-label="Period">
+              {([false, true] as const).map((on) => (
+                <button key={String(on)} type="button" role="radio" aria-checked={thisMonth.on === on}
+                  className="px-3 py-1 rounded-full text-[11px] font-semibold cursor-pointer"
+                  style={{
+                    background: thisMonth.on === on ? "rgba(123,108,246,0.18)" : "transparent",
+                    color: thisMonth.on === on ? "var(--accent)" : "var(--text-tertiary)",
+                    border: `1px solid ${thisMonth.on === on ? "rgba(123,108,246,0.35)" : "var(--border-light)"}`,
+                  }}
+                  onClick={() => thisMonth.onChange(on)}>
+                  {on ? thisMonth.label : "Whole year"}
+                </button>
+              ))}
             </div>
           )}
         </div>
         {/* Scrollable list */}
         <div className="flex-1 overflow-y-auto">
           {sorted.length === 0 ? (
-            <div className="p-8 text-center text-sm" style={{ color: "var(--text-tertiary)" }}>No expenses yet</div>
+            <div className="p-8 text-center text-sm" style={{ color: "var(--text-tertiary)" }}>{thisMonth?.on ? "No yearly expenses this month" : "No expenses yet"}</div>
           ) : (
             sorted.map((txn) => {
               const catName = txn.category || "";
@@ -702,10 +711,6 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
                       {yearlyIds.has(txn.id) && (
                         <span className="ml-1.5 px-1.5 py-px rounded-full text-[9px]"
                           style={{ background: "rgba(123,108,246,0.15)", color: "var(--accent)" }}>YEARLY</span>
-                      )}
-                      {thisMonthIds.has(txn.id) && (
-                        <span className="ml-1.5 px-1.5 py-px rounded-full text-[9px]"
-                          style={{ background: "rgba(123,108,246,0.15)", color: "var(--accent)" }}>{thisMonth!.label.toUpperCase()}</span>
                       )}
                     </div>
                   )}
@@ -950,10 +955,15 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
       {/* Yearly flat list overlay */}
       {showYearlyList && (
         <AllExpensesOverlay
-          title={String(currentYear) + " Yearly Expenses"}
+          title={yearlyListMonthOnly
+            ? new Date(viewYear, viewMonth, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" }) + " · Yearly Expenses"
+            : String(currentYear) + " Yearly Expenses"}
           txns={allYearlyTxns}
-          thisMonth={{ label: "This month (" + new Date(viewYear, viewMonth, 1).toLocaleDateString("en-IN", { month: "short" }) + ")", txns: yearlyThisMonth }}
-          onClose={() => setShowYearlyList(false)}
+          thisMonth={{
+            label: "This month (" + new Date(viewYear, viewMonth, 1).toLocaleDateString("en-IN", { month: "short" }) + ")",
+            txns: yearlyThisMonth, on: yearlyListMonthOnly, onChange: setYearlyListMonthOnly,
+          }}
+          onClose={() => { setShowYearlyList(false); setYearlyListMonthOnly(false); }}
         />
       )}
 
@@ -1140,16 +1150,6 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
                   </>
                 )}
               </div>
-              <button type="button" className="w-full text-left text-[11px] mb-3 px-1 bg-transparent border-0 cursor-pointer"
-                style={{ color: "var(--text-tertiary)" }} onClick={() => setShowYearlyList(true)}>
-                This month ({new Date(viewYear, viewMonth, 1).toLocaleDateString("en-IN", { month: "short" })}):{" "}
-                {yearlyThisMonth.length > 0 ? (
-                  <>
-                    <span className="font-semibold" style={{ color: "var(--text-secondary)" }}>{fmt(yearlyThisMonthTotal)}</span>
-                    {" "}({[...new Set(yearlyThisMonth.map((t) => t.category))].join(", ")}) ›
-                  </>
-                ) : "nothing yet"}
-              </button>
               <BubbleBasket bubbles={yearlyBubbles} onBasketClick={() => setShowComparison("yearly")} />
             </div>
           )}
