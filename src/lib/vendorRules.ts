@@ -4,7 +4,9 @@ import { saveSetting } from "./budget";
 /**
  * Vendor → category rules: a new debit SMS from a paired vendor is filed into
  * that category without review. Each person has their own rules (settings key
- * "vendor_rules:<phone>") and they only apply to that person's own SMS.
+ * "vendor_rules:<phone>", seen and applied only on their profile) plus the shared
+ * ones both people chose ("vendor_rules:shared", applied to each person's SMS).
+ * A person's own rule wins over a shared one for the same vendor.
  */
 export interface VendorRule {
   /** Normalized vendor ("robinshyperma"), used for matching. */
@@ -44,14 +46,25 @@ export function matchVendorRule(rules: VendorRule[], vendor: string | null | und
   );
 }
 
-export async function fetchVendorRules(phone: string): Promise<VendorRule[]> {
-  const { data } = await supabase.from("settings").select("value").eq("key", PREFIX + phone).limit(1).maybeSingle();
+const SHARED = "shared";
+
+async function fetchRules(owner: string): Promise<VendorRule[]> {
+  const { data, error } = await supabase.from("settings").select("value").eq("key", PREFIX + owner).limit(1).maybeSingle();
+  if (error) throw new Error(error.message);
   const rules = (data?.value as { rules?: VendorRule[] } | undefined)?.rules;
   return Array.isArray(rules) ? rules : [];
 }
 
+/** One person's own rules. */
+export const fetchVendorRules = (phone: string) => fetchRules(phone);
 export async function saveVendorRules(phone: string, rules: VendorRule[]) {
   await saveSetting(PREFIX + phone, { rules });
+}
+
+/** Rules that apply to both people. */
+export const fetchSharedVendorRules = () => fetchRules(SHARED);
+export async function saveSharedVendorRules(rules: VendorRule[]) {
+  await saveSetting(PREFIX + SHARED, { rules });
 }
 
 /** Add or replace the rule for a vendor. */

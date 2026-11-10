@@ -6,7 +6,10 @@ import { useSearchParams } from "next/navigation";
 import { supabase, RawSms, Transaction, Category, User, Due, FeatureIdea, MonthlyBudget } from "@/lib/supabase";
 import { detectFields } from "@/lib/smsDetector";
 import { SettleDue, SettlementPlan, applyAdvance, round2, planSettlement, categoryNeedsNote } from "@/lib/dues";
-import { VendorRule, fetchVendorRules, saveVendorRules, matchVendorRule, vendorKey, withRule } from "@/lib/vendorRules";
+import {
+  VendorRule, fetchVendorRules, saveVendorRules, fetchSharedVendorRules, saveSharedVendorRules,
+  matchVendorRule, vendorKey, withRule,
+} from "@/lib/vendorRules";
 import { PendingPayment, fetchPendingPayment, savePendingPayment, findPaymentSms, MATCH_WINDOW_MS, ASK_AFTER_MS, upiRef } from "@/lib/pendingPayment";
 import { computePositions, fetchLockedCategories, saveLockedCategories, saveSetting } from "@/lib/budget";
 import { SyncHealth, fetchSyncHealth, syncIssues, fmtAgo } from "@/lib/syncHealth";
@@ -66,7 +69,7 @@ function DebitOverlay({ txns, categories, isPrimary, unclearedDues, settlementHi
   onDismissAll: () => void;
   onSaveMapping: (merchant: string, category: string) => void;
   onCategoryCreated: (cat: Category) => void;
-  onAutoFile: (vendor: string, category: string) => void;
+  onAutoFile: (vendor: string, category: string, shared: boolean) => void;
 }) {
   const [idx, setIdx] = useState(0);
   const safeIdx = Math.min(idx, txns.length - 1);
@@ -1024,48 +1027,76 @@ function HomeInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newTxns, categorizedTxns]);
 
-  // ── Vendor rules: each person's own vendor → category pairs ──
+  // ── Vendor rules: each person's own vendor → category pairs, plus the shared ones ──
   const [vendorRules, setVendorRules] = useState<VendorRule[]>([]);
   const vendorRulesRef = useRef<VendorRule[]>([]);
+  const [sharedRules, setSharedRules] = useState<VendorRule[]>([]);
+  const sharedRulesRef = useRef<VendorRule[]>([]);
   const [autoFiledNotes, setAutoFiledNotes] = useState<string[]>([]);
   const rulesPhone = currentUser?.phone_number ?? "";
   useEffect(() => {
     if (!rulesPhone) return;
     // Re-read on foreground / every few minutes, so rules made on another device apply here too
     fetchVendorRules(rulesPhone).then((r) => { vendorRulesRef.current = r; setVendorRules(r); }).catch(() => {});
+    fetchSharedVendorRules().then((r) => { sharedRulesRef.current = r; setSharedRules(r); }).catch(() => {});
   }, [rulesPhone, clockNow]);
 
-  async function saveRules(next: VendorRule[]) {
+  async function updateMyRules(change: (rules: VendorRule[]) => VendorRule[]) {
     if (!rulesPhone) return;
+    const next = change(vendorRulesRef.current);
     vendorRulesRef.current = next;
     setVendorRules(next);
     await saveVendorRules(rulesPhone, next);
   }
-  function addVendorRule(vendor: string, categoryId: number) {
-    saveRules(withRule(vendorRulesRef.current, vendor, categoryId));
+  /** Shared rules can be changed from either profile: start from the latest saved list. */
+  async function updateSharedRules(change: (rules: VendorRule[]) => VendorRule[]) {
+    const latest = await fetchSharedVendorRules().catch(() => sharedRulesRef.current);
+    const next = change(latest);
+    sharedRulesRef.current = next;
+    setSharedRules(next);
+    await saveSharedVendorRules(next);
   }
-  function removeVendorRule(key: string) {
-    saveRules(vendorRulesRef.current.filter((r) => r.key !== key));
+  function addVendorRule(vendor: string, categoryId: number, shared: boolean) {
+    (shared ? updateSharedRules : updateMyRules)((rules) => withRule(rules, vendor, categoryId));
+  }
+  function removeVendorRule(key: string, shared: boolean) {
+    (shared ? updateSharedRules : updateMyRules)((rules) => rules.filter((r) => r.key !== key));
+  }
+  /** Move a pairing between "only me" and "both of us". */
+  function setVendorRuleShared(key: string, toShared: boolean) {
+    const rule = (toShared ? vendorRulesRef.current : sharedRulesRef.current).find((r) => r.key === key);
+    if (!rule) return;
+    (toShared ? updateMyRules : updateSharedRules)((rules) => rules.filter((r) => r.key !== key));
+    (toShared ? updateSharedRules : updateMyRules)((rules) => withRule(rules, rule.vendor, rule.categoryId));
   }
   /** From the review card's "Auto-file future … payments" tick. */
-  function autoFileFromReview(vendor: string, categoryName: string) {
+  function autoFileFromReview(vendor: string, categoryName: string, shared: boolean) {
     const cat = categories.find((c) => c.name === categoryName);
-    if (cat) addVendorRule(vendor, cat.id);
+    if (cat) addVendorRule(vendor, cat.id, shared && cat.visible_to === "all");
   }
 
-  // Vendors this person has paid before, most frequent first (to pick from when pairing)
-  const vendorsSeen = useMemo(() => {
-    const m = new Map<string, { vendor: string; count: number }>();
-    for (const t of categorizedTxns) {
-      if (t.phone_number !== rulesPhone || !t.merchant || t.category === "Settlement" || t.transaction_type !== "DEBIT") continue;
-      const k = vendorKey(t.merchant);
-      if (k.length < 3) continue;
-      const e = m.get(k) ?? { vendor: t.merchant.trim(), count: 0 };
-      e.count++;
-      m.set(k, e);
-    }
-    return Array.from(m.values()).sort((a, b) => b.count - a.count).slice(0, 100);
-  }, [categorizedTxns, rulesPhone]);
+  // Vendors paid before, most frequent first (to pick from when pairing): this
+  // person's own, and both people's (for a pairing that applies to both)
+  const [vendorsMine, vendorsBoth] = useMemo(() => {
+    // Never list vendors from categories hidden from this person (e.g. the other one's private ones)
+    const isPrimaryUser = !!currentUser?.is_primary;
+    const hidden = new Set(isPrimaryUser ? [] : categories.filter((c) => c.visible_to === "primary").map((c) => c.name));
+    const count = (mineOnly: boolean) => {
+      const m = new Map<string, { vendor: string; count: number }>();
+      for (const t of categorizedTxns) {
+        if (mineOnly && t.phone_number !== rulesPhone) continue;
+        if (t.category && hidden.has(t.category)) continue;
+        if (!t.merchant || t.category === "Settlement" || t.transaction_type !== "DEBIT") continue;
+        const k = vendorKey(t.merchant);
+        if (k.length < 3) continue;
+        const e = m.get(k) ?? { vendor: t.merchant.trim(), count: 0 };
+        e.count++;
+        m.set(k, e);
+      }
+      return Array.from(m.values()).sort((a, b) => b.count - a.count).slice(0, 150);
+    };
+    return [count(true), count(false)];
+  }, [categorizedTxns, rulesPhone, categories, currentUser?.is_primary]);
 
   // A new debit SMS is filed straight into its category when it's from a paired vendor,
   // or when it's a monthly EMI set up as an auto-debit (same amount, around its usual day)
@@ -1075,14 +1106,15 @@ function HomeInner() {
   useEffect(() => {
     const user = currentUser;
     if (!user || loading) return;
-    if (vendorRules.length === 0 && Object.keys(expectedDebits.items).length === 0) return;
+    if (vendorRules.length === 0 && sharedRules.length === 0 && Object.keys(expectedDebits.items).length === 0) return;
     const hints = settleHintKey.split("\n").filter(Boolean);
     for (const t of newTxns) {
       if (autoFiledIds.current.has(t.id)) continue;
       if (t.phone_number !== user.phone_number || t.transaction_type !== "DEBIT") continue;
       // A payment to the other person is a dues settlement, never an expense
       if (user.is_primary && hints.some((h) => t.body.toLowerCase().includes(h))) continue;
-      const rule = matchVendorRule(vendorRules, t.merchant);
+      // This person's own pairing first, then a shared one
+      const rule = matchVendorRule(vendorRules, t.merchant) ?? matchVendorRule(sharedRules, t.merchant);
       let cat = rule ? entryCategories.find((c) => c.id === rule.categoryId) : undefined;
       let emiKey = "";
       if (!cat) {
@@ -1114,7 +1146,7 @@ function HomeInner() {
         setAutoFiledNotes((prev) => [...prev, `${amt}${from} → ${target}`].slice(-5));
       })();
     }
-  }, [newTxns, vendorRules, expectedDebits, categorizedTxns, entryCategories, currentUser, loading, settleHintKey]);
+  }, [newTxns, vendorRules, sharedRules, expectedDebits, categorizedTxns, entryCategories, currentUser, loading, settleHintKey]);
 
   // Re-check (and show the "did you pay?" card) once the SMS had time to arrive
   useEffect(() => {
@@ -1429,12 +1461,15 @@ function HomeInner() {
               onSaveExpectedDebit={isPrimary ? handleSaveExpectedDebit : undefined}
             />
             <VendorRules
-              rules={vendorRules}
+              myRules={vendorRules}
+              sharedRules={sharedRules}
               categories={entryCategories.filter((c) => isPrimary || c.visible_to !== "primary")}
               allCategories={categories}
-              vendors={vendorsSeen}
+              vendorsMine={vendorsMine}
+              vendorsBoth={vendorsBoth}
               onAdd={addVendorRule}
               onRemove={removeVendorRule}
+              onSetShared={setVendorRuleShared}
             />
           </>
         )}

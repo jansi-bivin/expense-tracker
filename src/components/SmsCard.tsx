@@ -26,8 +26,8 @@ interface Props {
   categoryFrequencyMap?: Map<string, number>;
   onSaveMapping?: (merchant: string, category: string) => void;
   onCategoryCreated?: (cat: Category) => void;
-  /** Save a rule: future debits from this vendor are filed into this category without review. */
-  onAutoFile?: (vendor: string, category: string) => void;
+  /** Save a rule: future debits from this vendor are filed into this category without review (shared = for both people). */
+  onAutoFile?: (vendor: string, category: string, shared: boolean) => void;
 }
 
 export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedDues, onSettle, settlementHints, onSnooze, merchantCategoryMap, categoryFrequencyMap, onCategoryCreated, onAutoFile }: Props) {
@@ -50,6 +50,7 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
   const [settleMonth, setSettleMonth] = useState<string | null>(null);
   const [roundOff, setRoundOff] = useState(true);
   const [autoFile, setAutoFile] = useState(false);
+  const [autoFileShared, setAutoFileShared] = useState(false);
   const [showAddCategory, setShowAddCategory] = useState(false);
 
   const fmtShort = (n: number) => "\u20B9" + n.toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -153,6 +154,8 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
   const noteRequired = categoryNeedsNote(category);
   // Debits from a named vendor can be auto-filed from now on (not into a category that needs a note)
   const canAutoFile = !!(onAutoFile && txn.merchant && category && isDebit && !noteRequired);
+  // A pairing for both people needs a category both of them have
+  const canShare = categories.some((c) => c.name === category && c.visible_to === "all");
 
   async function handleSave() {
     if (!category) return;
@@ -163,7 +166,7 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
     }
     setSaving(true);
     await supabase.from("transactions").update({ category, notes: comment || null, status: "categorized" }).eq("id", txn.id);
-    if (canAutoFile && autoFile) onAutoFile!(txn.merchant!, category);
+    if (canAutoFile && autoFile) onAutoFile!(txn.merchant!, category, canShare && autoFileShared);
     onDone(txn.id, category, comment || undefined);
   }
 
@@ -417,11 +420,20 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
 
             {/* Pair this vendor with the category: its future debits are filed without review */}
             {canAutoFile && (
-              <label className="flex items-start gap-2 mb-2 text-[11px] leading-4 cursor-pointer select-none"
-                style={{ color: autoFile ? "var(--accent)" : "var(--text-tertiary)" }}>
-                <input type="checkbox" className="mt-0.5" checked={autoFile} onChange={(e) => setAutoFile(e.target.checked)} />
-                <span>⚡ Auto-file future <b>{txn.merchant}</b> payments to &ldquo;{category}&rdquo;</span>
-              </label>
+              <div className="mb-2">
+                <label className="flex items-start gap-2 text-[11px] leading-4 cursor-pointer select-none"
+                  style={{ color: autoFile ? "var(--accent)" : "var(--text-tertiary)" }}>
+                  <input type="checkbox" className="mt-0.5" checked={autoFile} onChange={(e) => setAutoFile(e.target.checked)} />
+                  <span>⚡ Auto-file future <b>{txn.merchant}</b> payments to &ldquo;{category}&rdquo;</span>
+                </label>
+                {autoFile && canShare && (
+                  <label className="flex items-center gap-2 mt-1 ml-5 text-[11px] cursor-pointer select-none"
+                    style={{ color: autoFileShared ? "var(--accent)" : "var(--text-tertiary)" }}>
+                    <input type="checkbox" checked={autoFileShared} onChange={(e) => setAutoFileShared(e.target.checked)} />
+                    <span>For both of us (not just me)</span>
+                  </label>
+                )}
+              </div>
             )}
 
             <input
