@@ -471,12 +471,35 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
     );
   }
 
+  const monthShort = new Date(viewYear, viewMonth, 1).toLocaleDateString("en-IN", { month: "short" });
+  /** "Whole year | This month (Nov)" switch used in the yearly detail views. */
+  function PeriodChips({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
+    return (
+      <div className="flex gap-1.5 mt-3" role="radiogroup" aria-label="Period">
+        {([false, true] as const).map((v) => (
+          <button key={String(v)} type="button" role="radio" aria-checked={on === v}
+            className="px-3 py-1 rounded-full text-[11px] font-semibold cursor-pointer"
+            style={{
+              background: on === v ? "rgba(123,108,246,0.18)" : "transparent",
+              color: on === v ? "var(--accent)" : "var(--text-tertiary)",
+              border: `1px solid ${on === v ? "rgba(123,108,246,0.35)" : "var(--border-light)"}`,
+            }}
+            onClick={() => onChange(v)}>
+            {v ? `This month (${monthShort})` : "Whole year"}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
   // ═══════════════════════════════════
   // Planned vs Spent comparison overlay
   // ═══════════════════════════════════
   function ComparisonOverlay() {
     if (!showComparison) return null;
     const isYearlyView = showComparison === "yearly";
+    const monthOnly = isYearlyView && yearlyListMonthOnly;
+    const closeComparison = () => { setShowComparison(false); setYearlyListMonthOnly(false); };
     const sourceCats = isYearlyView ? yearlyCategories : monthlyCategories;
     const totalSpentForView = isYearlyView ? yearlyTotalSpent : totalSpent;
     const totalCapForView = isYearlyView ? yearlyTotalCap : totalCap;
@@ -509,16 +532,24 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
         <div className="shrink-0 px-5 pt-5 pb-4" style={{ background: "var(--bg-elevated)", borderBottom: "1px solid var(--border)" }}>
           <div className="flex justify-between items-center mb-4">
             <button className="flex items-center gap-1.5 text-sm font-medium" style={{ color: "var(--accent)" }}
-              onClick={() => setShowComparison(false)}>
+              onClick={closeComparison}>
               <span>←</span> Back
             </button>
           </div>
-          <div className="text-lg font-bold mb-1" style={{ color: "var(--text-primary)" }}>Planned vs Spent</div>
+          <div className="text-lg font-bold mb-1" style={{ color: "var(--text-primary)" }}>{monthOnly ? "Yearly expenses this month" : "Planned vs Spent"}</div>
           <div className="text-xs mb-3" style={{ color: "var(--text-tertiary)" }}>
-            {isYearlyView
+            {monthOnly
+              ? new Date(viewYear, viewMonth, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" }) + " — Yearly"
+              : isYearlyView
               ? String(currentYear) + " — Yearly"
               : new Date(viewYear, viewMonth, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" })}
           </div>
+          {monthOnly ? (
+            <div className="flex justify-between items-baseline">
+              <span className="text-2xl font-bold amount-debit">{fmt(yearlyThisMonthTotal)}</span>
+              <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>{yearlyThisMonth.length} transaction{yearlyThisMonth.length !== 1 ? "s" : ""}</span>
+            </div>
+          ) : (<>
           {/* Total row */}
           <div className="flex justify-between items-baseline mb-2">
             <span className="text-2xl font-bold amount-debit">{fmt(totalSpentForView)}</span>
@@ -531,10 +562,26 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
             <div className={`progress-fill ${totalPctForView >= 90 ? "progress-fill-red" : totalPctForView >= 75 ? "progress-fill-yellow" : "progress-fill-green"}`}
               style={{ width: `${Math.min(totalPctForView, 100)}%`, height: "6px" }} />
           </div>
+          </>)}
+          {isYearlyView && <PeriodChips on={yearlyListMonthOnly} onChange={setYearlyListMonthOnly} />}
         </div>
 
+        {/* This month: the yearly payments made in the month being viewed */}
+        {monthOnly && (
+          <div className="flex-1 overflow-y-auto">
+            {yearlyThisMonth.length === 0 ? (
+              <div className="p-8 text-center text-sm" style={{ color: "var(--text-tertiary)" }}>No yearly expenses this month</div>
+            ) : [...yearlyThisMonth].sort((a, b) => b.sms_date - a.sms_date).map((txn) => (
+              <div key={txn.id} style={{ borderBottom: "1px solid var(--border)" }}>
+                <div className="px-5 pt-2 text-[10px] font-semibold tracking-wider" style={{ color: "var(--text-tertiary)" }}>{txn.category}</div>
+                <ExpenseRow txn={txn} currentCatName={txn.category || ""} />
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Per-category list */}
-        <div className="flex-1 overflow-y-auto">
+        {!monthOnly && <div className="flex-1 overflow-y-auto">
           {sortedCats.map((cat) => {
             const eCap = getEffectiveCap(cat);
             const spent = categorySpend.get(cat.name) || 0;
@@ -563,7 +610,7 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
 
             return (
               <div key={cat.id} className="px-5 py-3" style={{ borderBottom: "1px solid var(--border)", cursor: isEditingRow ? "default" : "pointer" }}
-                onClick={() => { if (!isEditingRow) { setShowComparison(false); setDrillDownId(cat.id); } }}>
+                onClick={() => { if (!isEditingRow) { closeComparison(); setDrillDownId(cat.id); } }}>
                 <div className="flex justify-between items-baseline mb-1.5">
                   <div className="flex items-center gap-1.5">
                     <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{cat.name}</span>
@@ -639,7 +686,7 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
               </div>
             );
           })}
-        </div>
+        </div>}
       </div>
     );
   }
@@ -679,22 +726,7 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
               + {fmt(yearlyTotal)} of yearly expenses paid this month (counted in the yearly budget)
             </div>
           )}
-          {thisMonth && (
-            <div className="flex gap-1.5 mt-3" role="radiogroup" aria-label="Period">
-              {([false, true] as const).map((on) => (
-                <button key={String(on)} type="button" role="radio" aria-checked={thisMonth.on === on}
-                  className="px-3 py-1 rounded-full text-[11px] font-semibold cursor-pointer"
-                  style={{
-                    background: thisMonth.on === on ? "rgba(123,108,246,0.18)" : "transparent",
-                    color: thisMonth.on === on ? "var(--accent)" : "var(--text-tertiary)",
-                    border: `1px solid ${thisMonth.on === on ? "rgba(123,108,246,0.35)" : "var(--border-light)"}`,
-                  }}
-                  onClick={() => thisMonth.onChange(on)}>
-                  {on ? thisMonth.label : "Whole year"}
-                </button>
-              ))}
-            </div>
-          )}
+          {thisMonth && <PeriodChips on={thisMonth.on} onChange={thisMonth.onChange} />}
         </div>
         {/* Scrollable list */}
         <div className="flex-1 overflow-y-auto">
