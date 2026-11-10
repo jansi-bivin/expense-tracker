@@ -58,6 +58,7 @@ import ManualExpenseForm from "@/components/ManualExpenseForm";
 import FeatureIdeas from "@/components/FeatureIdeas";
 import BudgetGrid from "@/components/BudgetGrid";
 import VendorRules from "@/components/VendorRules";
+import { SplitPart } from "@/components/SplitSheet";
 
 /* ── DebitOverlay: self-contained so overlayIdx doesn't re-render parent ── */
 function DebitOverlay({ txns, categories, isPrimary, unclearedDues, settlementHints, merchantCategoryMap, categoryFrequencyMap, onDone, onSnooze, onSettle, onDismissAll, onSaveMapping, onCategoryCreated, onAutoFile }: {
@@ -134,10 +135,11 @@ function enrichSms(raw: RawSms): Transaction {
   const fields = detectFields(raw.body);
   return {
     ...raw,
-    amount: fields.amount ?? null,
+    // A split payment keeps its part's amount (and the vendor) on the row itself
+    amount: raw.amount ?? fields.amount ?? null,
     transaction_type: fields.transactionType ?? null,
     account_number: fields.accountNumber ?? null,
-    merchant: fields.merchant ?? null,
+    merchant: raw.merchant ?? fields.merchant ?? null,
     transaction_date: fields.transactionDate ?? null,
     balance: fields.balance ?? null,
     reference_id: fields.referenceId ?? null,
@@ -493,8 +495,10 @@ function HomeInner() {
           setNewTxns((prev) => prev.filter((t) => t.id !== updated.id));
           if (updated.status === "categorized") {
             const enriched = enrichSms(updated);
-            // Deduplicate: skip if already added by handleReviewDone or handleManualExpense
-            setCategorizedTxns((prev) => prev.some((t) => t.id === enriched.id) ? prev : [enriched, ...prev]);
+            // Already listed (filed here, or an edit such as a split): take the saved version
+            setCategorizedTxns((prev) => prev.some((t) => t.id === enriched.id)
+              ? prev.map((t) => (t.id === enriched.id ? enriched : t))
+              : [enriched, ...prev]);
           }
         }
       })
@@ -658,10 +662,89 @@ function HomeInner() {
 
   // B2: Delete a manual transaction
   async function handleDeleteTxn(txnId: number) {
+    const txn = categorizedTxns.find((t) => t.id === txnId);
+    const partDue = dues.find((d) => d.transaction_id === txnId);
     await supabase.from("dues").delete().eq("transaction_id", txnId);
     await supabase.from("transactions").delete().eq("id", txnId);
     setCategorizedTxns((prev) => prev.filter((t) => t.id !== txnId));
     setDues((prev) => prev.filter((d) => d.transaction_id !== txnId));
+    // A split part goes back into the payment it was split from
+    const parentId = txn?.device_id?.startsWith("split:") ? Number(txn.device_id.slice(6)) : null;
+    const parent = parentId ? categorizedTxns.find((t) => t.id === parentId) : undefined;
+    if (txn && parent && txn.amount != null && parent.amount != null) {
+      const back = round2(Number(parent.amount) + Number(txn.amount));
+      const whole = detectFields(parent.body).amount;
+      const amount = whole != null && Math.abs(whole - back) < 0.01 ? null : back;
+      await supabase.from("transactions").update({ amount }).eq("id", parent.id);
+      setCategorizedTxns((prev) => prev.map((t) => (t.id === parent.id ? { ...t, amount: back } : t)));
+      const parentDue = dues.find((d) => d.transaction_id === parent.id);
+      if (parentDue && !parentDue.cleared && partDue && !partDue.cleared) {
+        const dueAmount = round2(Number(parentDue.amount) + Number(partDue.amount));
+        await supabase.from("dues").update({ amount: dueAmount }).eq("id", parentDue.id);
+        setDues((prev) => prev.map((d) => (d.id === parentDue.id ? { ...d, amount: dueAmount } : d)));
+      }
+    }
+  }
+
+  /**
+   * Split a filed payment into parts, each in its own category. The payment keeps the
+   * first part; every other part becomes its own row ("split:<id>"). Dues follow the parts.
+   * Returns an error to show, or null.
+   */
+  async function handleSplit(txnId: number, parts: SplitPart[]): Promise<string | null> {
+    const txn = categorizedTxns.find((t) => t.id === txnId);
+    if (!txn || txn.amount == null || parts.length < 2) return "This payment can't be split";
+    const total = Number(txn.amount);
+    if (Math.abs(parts.reduce((s, p) => s + p.amount, 0) - total) > 0.01) return "The parts don't add up to the payment";
+    const { data: dueRows, error: dueErr } = await supabase.from("dues").select("*").eq("transaction_id", txnId);
+    if (dueErr) return "Couldn't check its due, try again";
+    const due = (dueRows ?? [])[0] as Due | undefined;
+    if (due?.cleared) return "Its due is already cleared, so it can't be split now";
+
+    const [first, ...rest] = parts;
+    const firstUpdate = { category: first.category, notes: first.note || null, amount: first.amount };
+    const { error } = await supabase.from("transactions").update(firstUpdate).eq("id", txnId);
+    if (error) return "Couldn't save, try again";
+    const { data: inserted, error: insErr } = await supabase.from("transactions").insert(rest.map((p) => ({
+      address: "SPLIT",
+      body: `Rs.${p.amount.toFixed(2)} debited. Split part`,
+      sms_date: txn.sms_date,
+      phone_number: txn.phone_number,
+      category: p.category,
+      notes: p.note || null,
+      status: "categorized",
+      amount: p.amount,
+      merchant: txn.merchant,
+      device_id: `split:${txnId}`,
+    }))).select();
+    if (insErr || !inserted) {
+      // Put the payment back as it was
+      const whole = detectFields(txn.body).amount;
+      await supabase.from("transactions").update({
+        category: txn.category, notes: txn.notes, amount: whole != null && Math.abs(whole - total) < 0.01 ? null : total,
+      }).eq("id", txnId);
+      return "Couldn't save, try again";
+    }
+
+    // Dues: the same total as before, shared out over the parts
+    if (due) {
+      const share = Number(due.amount) / total;
+      const restDues = rest.map((p) => round2(p.amount * share));
+      const firstDue = round2(Number(due.amount) - restDues.reduce((s, a) => s + a, 0));
+      await supabase.from("dues").update({ amount: firstDue, category: first.category }).eq("id", due.id);
+      await supabase.from("dues").insert(inserted.map((row, i) => ({
+        transaction_id: row.id, category: rest[i].category, amount: restDues[i],
+      })));
+      const { data: duesData } = await supabase.from("dues").select("*").order("created_at", { ascending: false });
+      if (duesData) setDues(duesData);
+    }
+
+    const added = (inserted as RawSms[]).map(enrichSms);
+    setCategorizedTxns((prev) => [
+      ...added.filter((a) => !prev.some((t) => t.id === a.id)),
+      ...prev.map((t) => (t.id === txnId ? { ...t, ...firstUpdate } : t)),
+    ]);
+    return null;
   }
 
   // Reclassify: change category of an already-categorized transaction
@@ -1525,6 +1608,8 @@ function HomeInner() {
               onActiveDaysUpdate={handleActiveDaysUpdate}
               onReclassify={handleReclassify}
               onDeleteTxn={handleDeleteTxn}
+              onSplit={handleSplit}
+              myPhone={currentUser?.phone_number ?? null}
               viewMonth={viewMonth}
               viewYear={viewYear}
               dues={dues}

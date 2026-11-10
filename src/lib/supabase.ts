@@ -16,6 +16,11 @@ export interface RawSms {
   notes: string | null;
   status: 'new' | 'categorized' | 'ignored';
   phone_number: string | null;
+  /** Set only on split payments: the part's own amount (otherwise read from the SMS). */
+  amount?: number | null;
+  merchant?: string | null;
+  /** "sms" / "notif" from the reader; "split:<id>" for a part split off payment <id>. */
+  device_id?: string | null;
 }
 
 // Enriched transaction after client-side field detection

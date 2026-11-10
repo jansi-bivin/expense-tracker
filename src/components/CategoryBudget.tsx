@@ -5,6 +5,7 @@ import { supabase, Transaction, Category } from "@/lib/supabase";
 import { categoryNeedsNote } from "@/lib/dues";
 import { ExpectedDebit } from "@/lib/expectedDebits";
 import BubbleBasket from "./BubbleBasket";
+import SplitSheet, { SplitPart } from "./SplitSheet";
 interface Props {
   transactions: Transaction[];
   categories: Category[];
@@ -20,6 +21,10 @@ interface Props {
   onActiveDaysUpdate: (days: number) => void;
   onReclassify?: (txnId: number, newCategory: string, note?: string) => void;
   onDeleteTxn?: (txnId: number) => void;
+  /** Split a payment into parts in different categories; returns an error or null. */
+  onSplit?: (txnId: number, parts: SplitPart[]) => Promise<string | null>;
+  /** This person's phone: they can split their own payments (the primary can split any). */
+  myPhone?: string | null;
   dues?: { id: number; transaction_id: number; cleared: boolean; settlement_transaction_id?: number | null }[];
   viewMonth: number; // 0-indexed JS month
   viewYear: number;
@@ -32,7 +37,7 @@ interface Props {
   onSaveExpectedDebit?: (categoryId: number, item: ExpectedDebit | null) => void;
 }
 
-function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, monthlyOverrides, excludedCategoryIds, onCategoriesChange, onShowAddCategory, onMonthlyOverride, activeDays, daysInMonth, onActiveDaysUpdate, onReclassify, onDeleteTxn, dues, viewMonth, viewYear, lockedNames, onToggleLock, expectedDebits, onSaveExpectedDebit }: Props) {
+function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, monthlyOverrides, excludedCategoryIds, onCategoriesChange, onShowAddCategory, onMonthlyOverride, activeDays, daysInMonth, onActiveDaysUpdate, onReclassify, onDeleteTxn, onSplit, myPhone, dues, viewMonth, viewYear, lockedNames, onToggleLock, expectedDebits, onSaveExpectedDebit }: Props) {
   const currentMonth = viewMonth;
   const currentYear = viewYear;
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -47,6 +52,11 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
   const [showActiveDays, setShowActiveDays] = useState(false);
   const [showMonthlyList, setShowMonthlyList] = useState(false);
   const [showYearlyList, setShowYearlyList] = useState(false);
+  const [splitTxnId, setSplitTxnId] = useState<number | null>(null);
+  // Payments that have parts split off them
+  const splitParents = useMemo(() => new Set(
+    transactions.filter((t) => t.device_id?.startsWith("split:")).map((t) => Number(t.device_id!.slice(6)))
+  ), [transactions]);
   // Yearly expenses list: whole year, or only the month being viewed
   const [yearlyListMonthOnly, setYearlyListMonthOnly] = useState(false);
   // Inline per-row month-cap editor inside ComparisonOverlay (double-click the cap)
@@ -254,9 +264,11 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
     const [showReclassify, setShowReclassify] = useState(false);
     const [confirmDelete, setConfirmDelete] = useState(false);
     const isManual = txn.address === "MANUAL";
+    const isSplitPart = txn.address === "SPLIT";
+    const canSplit = !!onSplit && txn.amount != null && Number(txn.amount) > 0 && (isPrimary || txn.phone_number === myPhone);
     const merchant = txn.merchant || (isManual ? "Manual Entry" : "Unknown");
     const hasNotes = txn.notes && txn.notes.trim().length > 0;
-    const hasRawSms = !isManual && txn.body && txn.body.length > 0;
+    const hasRawSms = !isManual && !isSplitPart && txn.body && txn.body.length > 0;
 
     // F2: Check if this txn has an associated due and its settlement status
     const associatedDue = dues?.find((d) => d.transaction_id === txn.id);
@@ -274,6 +286,7 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
           <span className="flex-1 min-w-0 text-sm truncate" style={{ color: "var(--text-primary)" }}>
             {merchant}
             {isManual && <span className="text-[9px] ml-1.5 opacity-50">manual</span>}
+            {(isSplitPart || splitParents.has(txn.id)) && <span className="text-[9px] ml-1.5 opacity-60">✂ split</span>}
             {associatedDue && (
               <span className={`text-[9px] ml-1.5 font-semibold ${isSettled ? "" : ""}`}
                 style={{ color: isSettled ? "var(--accent-green)" : "var(--accent-orange)" }}>
@@ -287,6 +300,17 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
           <span className="text-sm font-semibold shrink-0 min-w-[70px] text-right" style={{ color: "var(--text-primary)" }}>
             {fmtDec(Number(txn.amount))}
           </span>
+          {canSplit && (
+            <button
+              className="text-[10px] shrink-0 px-1.5 py-0.5 rounded-md"
+              style={{ color: "var(--accent)", background: "rgba(123,108,246,0.08)" }}
+              title="Split into parts in different categories"
+              aria-label="Split"
+              onClick={(e) => { e.stopPropagation(); setSplitTxnId(txn.id); }}
+            >
+              ✂
+            </button>
+          )}
           {isPrimary && onReclassify && (
             <button
               className="text-[10px] shrink-0 px-1.5 py-0.5 rounded-md"
@@ -1037,6 +1061,14 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
 
   return (
     <div className="animate-fade-in">
+      {/* Split a payment into parts (own component, so typing survives re-renders) */}
+      {splitTxnId != null && onSplit && (() => {
+        const t = transactions.find((x) => x.id === splitTxnId);
+        return t ? (
+          <SplitSheet txn={t} categories={visibleCategories.filter((c) => isPrimary || !lockedNames?.has(c.name) || c.name === t.category)}
+            onSave={(parts) => onSplit(t.id, parts)} onClose={() => setSplitTxnId(null)} />
+        ) : null;
+      })()}
       {/* Full-screen drill-down overlay */}
       <DrillDownOverlay />
       {/* Planned vs Spent comparison overlay */}
