@@ -1,4 +1,7 @@
-const CACHE_VERSION = 'v1';
+// v2: pages are network-first. v1 served a saved page first, which after a deploy could
+// ask for app files of the previous version that no longer exist ("Application error").
+// Bumping the version also clears v1's saved pages on activate.
+const CACHE_VERSION = 'v2';
 const CACHE_NAME = `exptrack-${CACHE_VERSION}`;
 
 self.addEventListener('message', (event) => {
@@ -34,55 +37,49 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
+/** Keep a copy of a good response (never an error page). */
+function remember(request, response) {
+  if (response && response.ok) {
+    const copy = response.clone();
+    caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+  }
+  return response;
+}
+
 self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
+  const req = event.request;
+  const url = new URL(req.url);
 
-  // Skip non-GET and cross-origin requests
-  if (event.request.method !== 'GET' || url.origin !== self.location.origin) {
+  // Skip non-GET and cross-origin requests (Supabase included): always network
+  if (req.method !== 'GET' || url.origin !== self.location.origin) {
     return;
   }
 
-  // Skip Supabase API calls — always go to network
-  if (url.hostname.includes('supabase.co')) {
-    return;
-  }
-
-  // Network-first for Next.js API routes and _next/data
-  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/_next/data/')) {
+  // Page loads: network-first, so the page always matches the deployed app files.
+  // The saved copy is used only when offline.
+  if (req.mode === 'navigate') {
     event.respondWith(
-      fetch(event.request).catch(() => caches.match(event.request))
+      fetch(req)
+        .then((response) => remember(req, response))
+        .catch(() => caches.match(req).then((cached) => cached || caches.match('/')))
     );
     return;
   }
 
-  // Cache-first for static assets (_next/static, icons, fonts)
+  // App files are content-hashed (a new deploy gets new names): cache-first is safe
   if (
     url.pathname.startsWith('/_next/static/') ||
     url.pathname.startsWith('/icons/') ||
     url.pathname.match(/\.(svg|png|jpg|jpeg|webp|woff2?|ico)$/)
   ) {
     event.respondWith(
-      caches.match(event.request).then(
-        (cached) =>
-          cached ||
-          fetch(event.request).then((response) => {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-            return response;
-          })
-      )
+      caches.match(req).then((cached) => cached || fetch(req).then((response) => remember(req, response)))
     );
     return;
   }
 
-  // Stale-while-revalidate for HTML pages
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      const network = fetch(event.request).then((response) => {
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, response.clone()));
-        return response;
-      });
-      return cached || network;
-    })
-  );
+  // Everything else (API routes, app data requests): network, saved copy only when offline
+  if (url.pathname.startsWith('/api/')) {
+    event.respondWith(fetch(req).catch(() => caches.match(req)));
+  }
 });
