@@ -395,7 +395,18 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
     const pct = effectiveCap > 0 ? Math.min((spent / effectiveCap) * 100, 100) : 0;
     const fillClass = pct >= 90 ? "progress-fill-red" : pct >= 75 ? "progress-fill-yellow" : "progress-fill-green";
     const accentColor = isNoCap ? "var(--text-secondary)" : pct >= 90 ? "var(--accent-red)" : pct >= 75 ? "var(--accent-orange)" : "var(--accent-green)";
-    const txnsForCat = (categoryTxns.get(cat.name) || []).sort((a, b) => b.sms_date - a.sms_date);
+    // Yearly categories: "This month" lists only the month being viewed
+    const isYearlyCat = yearlyCategories.some((c) => c.id === cat.id);
+    const monthOnly = isYearlyCat && yearlyListMonthOnly;
+    const txnsForCat = (categoryTxns.get(cat.name) || [])
+      .filter((t) => {
+        if (!monthOnly) return true;
+        const d = new Date(t.sms_date);
+        return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+      })
+      .sort((a, b) => b.sms_date - a.sms_date);
+    const monthSpent = txnsForCat.reduce((s, t) => s + Number(t.amount), 0);
+    const closeDrill = () => { setDrillDownId(null); setYearlyListMonthOnly(false); };
 
     return (
       <div className="fixed inset-0 z-50 flex flex-col animate-fade-in" style={{ background: "var(--bg-base)" }}>
@@ -406,14 +417,14 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
             <button
               className="flex items-center gap-1.5 text-sm font-medium"
               style={{ color: "var(--accent)" }}
-              onClick={() => setDrillDownId(null)}
+              onClick={closeDrill}
             >
               <span>←</span> Back
             </button>
             {isPrimary && (
               <button
                 className="text-xs font-semibold px-3 py-1.5 rounded-lg btn-ghost"
-                onClick={() => { startEdit(cat); setDrillDownId(null); }}
+                onClick={() => { startEdit(cat); closeDrill(); }}
               >
                 ✎ Edit
               </button>
@@ -423,7 +434,14 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
           {/* Category name */}
           <div className="text-lg font-bold mb-3" style={{ color: "var(--text-primary)" }}>{cat.name}</div>
 
-          {isNoCap ? (
+          {monthOnly ? (
+            <div className="flex justify-between items-baseline mb-1">
+              <span className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>{fmt(monthSpent)}</span>
+              <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>
+                in {new Date(viewYear, viewMonth, 1).toLocaleDateString("en-IN", { month: "long" })} · {fmt(spent)} this year
+              </span>
+            </div>
+          ) : isNoCap ? (
             <div className="flex justify-between items-baseline mb-1">
               <span className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>{fmt(spent)}</span>
               <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>
@@ -453,13 +471,14 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
           <div className="text-xs mt-3 font-medium" style={{ color: "var(--text-tertiary)" }}>
             {txnsForCat.length} transaction{txnsForCat.length !== 1 ? "s" : ""}
           </div>
+          {isYearlyCat && <PeriodChips on={yearlyListMonthOnly} onChange={setYearlyListMonthOnly} />}
         </div>
 
         {/* ── Scrollable expense list ── */}
         <div className="flex-1 overflow-y-auto">
           {txnsForCat.length === 0 ? (
             <div className="p-8 text-center text-sm" style={{ color: "var(--text-tertiary)" }}>
-              No expenses yet
+              {monthOnly ? "Nothing in this category this month" : "No expenses yet"}
             </div>
           ) : (
             txnsForCat.map((txn) => (
