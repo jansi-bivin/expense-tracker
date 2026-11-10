@@ -55,7 +55,7 @@ export default function SplitSheet({ txn, categories, onSave, onClose }: Props) 
   const field = { background: "rgba(255,255,255,0.06)", border: "1px solid var(--border-light)", color: "var(--text-primary)" };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-3 animate-fade-in"
+    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-3 animate-fade-in"
       style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(2px)" }} onClick={onClose}>
       <div className="w-full max-w-md rounded-2xl flex flex-col animate-slide-up"
         style={{ background: "var(--bg-elevated)", border: "1px solid rgba(255,255,255,0.1)", maxHeight: "85vh" }}

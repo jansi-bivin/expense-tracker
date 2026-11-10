@@ -58,7 +58,7 @@ import ManualExpenseForm from "@/components/ManualExpenseForm";
 import FeatureIdeas from "@/components/FeatureIdeas";
 import BudgetGrid from "@/components/BudgetGrid";
 import VendorRules from "@/components/VendorRules";
-import { SplitPart } from "@/components/SplitSheet";
+import SplitSheet, { SplitPart } from "@/components/SplitSheet";
 
 /* ── DebitOverlay: self-contained so overlayIdx doesn't re-render parent ── */
 function DebitOverlay({ txns, categories, isPrimary, unclearedDues, settlementHints, merchantCategoryMap, categoryFrequencyMap, onDone, onSnooze, onSettle, onDismissAll, onSaveMapping, onCategoryCreated, onAutoFile }: {
@@ -691,6 +691,7 @@ function HomeInner() {
    * first part; every other part becomes its own row ("split:<id>"). Dues follow the parts.
    * Returns an error to show, or null.
    */
+  const [splitTxnId, setSplitTxnId] = useState<number | null>(null);
   async function handleSplit(txnId: number, parts: SplitPart[]): Promise<string | null> {
     const txn = categorizedTxns.find((t) => t.id === txnId);
     if (!txn || txn.amount == null || parts.length < 2) return "This payment can't be split";
@@ -1608,7 +1609,7 @@ function HomeInner() {
               onActiveDaysUpdate={handleActiveDaysUpdate}
               onReclassify={handleReclassify}
               onDeleteTxn={handleDeleteTxn}
-              onSplit={handleSplit}
+              onSplit={setSplitTxnId}
               myPhone={currentUser?.phone_number ?? null}
               viewMonth={viewMonth}
               viewYear={viewYear}
@@ -1632,6 +1633,16 @@ function HomeInner() {
           </>
         )}
       </div>
+
+      {/* ═══ Split a payment into parts (above the bottom bar and any open list) ═══ */}
+      {splitTxnId != null && (() => {
+        const t = categorizedTxns.find((x) => x.id === splitTxnId);
+        return t ? (
+          <SplitSheet txn={t}
+            categories={entryCategories.filter((c) => isPrimary || (c.visible_to !== "primary" && (!lockedCatNames.has(c.name) || c.name === t.category)))}
+            onSave={(parts) => handleSplit(t.id, parts)} onClose={() => setSplitTxnId(null)} />
+        ) : null;
+      })()}
 
       {/* ═══ New updates panel (above the review overlay) ═══ */}
       {activityOpen && (

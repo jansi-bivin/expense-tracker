@@ -5,7 +5,6 @@ import { supabase, Transaction, Category } from "@/lib/supabase";
 import { categoryNeedsNote } from "@/lib/dues";
 import { ExpectedDebit } from "@/lib/expectedDebits";
 import BubbleBasket from "./BubbleBasket";
-import SplitSheet, { SplitPart } from "./SplitSheet";
 interface Props {
   transactions: Transaction[];
   categories: Category[];
@@ -21,8 +20,8 @@ interface Props {
   onActiveDaysUpdate: (days: number) => void;
   onReclassify?: (txnId: number, newCategory: string, note?: string) => void;
   onDeleteTxn?: (txnId: number) => void;
-  /** Split a payment into parts in different categories; returns an error or null. */
-  onSplit?: (txnId: number, parts: SplitPart[]) => Promise<string | null>;
+  /** Open the split window for a payment (parts in different categories). */
+  onSplit?: (txnId: number) => void;
   /** This person's phone: they can split their own payments (the primary can split any). */
   myPhone?: string | null;
   dues?: { id: number; transaction_id: number; cleared: boolean; settlement_transaction_id?: number | null }[];
@@ -52,7 +51,6 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
   const [showActiveDays, setShowActiveDays] = useState(false);
   const [showMonthlyList, setShowMonthlyList] = useState(false);
   const [showYearlyList, setShowYearlyList] = useState(false);
-  const [splitTxnId, setSplitTxnId] = useState<number | null>(null);
   // Payments that have parts split off them
   const splitParents = useMemo(() => new Set(
     transactions.filter((t) => t.device_id?.startsWith("split:")).map((t) => Number(t.device_id!.slice(6)))
@@ -306,7 +304,7 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
               style={{ color: "var(--accent)", background: "rgba(123,108,246,0.08)" }}
               title="Split into parts in different categories"
               aria-label="Split"
-              onClick={(e) => { e.stopPropagation(); setSplitTxnId(txn.id); }}
+              onClick={(e) => { e.stopPropagation(); onSplit!(txn.id); }}
             >
               ✂
             </button>
@@ -1061,14 +1059,6 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
 
   return (
     <div className="animate-fade-in">
-      {/* Split a payment into parts (own component, so typing survives re-renders) */}
-      {splitTxnId != null && onSplit && (() => {
-        const t = transactions.find((x) => x.id === splitTxnId);
-        return t ? (
-          <SplitSheet txn={t} categories={visibleCategories.filter((c) => isPrimary || !lockedNames?.has(c.name) || c.name === t.category)}
-            onSave={(parts) => onSplit(t.id, parts)} onClose={() => setSplitTxnId(null)} />
-        ) : null;
-      })()}
       {/* Full-screen drill-down overlay */}
       <DrillDownOverlay />
       {/* Planned vs Spent comparison overlay */}
