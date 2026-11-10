@@ -26,9 +26,11 @@ interface Props {
   categoryFrequencyMap?: Map<string, number>;
   onSaveMapping?: (merchant: string, category: string) => void;
   onCategoryCreated?: (cat: Category) => void;
+  /** Save a rule: future debits from this vendor are filed into this category without review. */
+  onAutoFile?: (vendor: string, category: string) => void;
 }
 
-export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedDues, onSettle, settlementHints, onSnooze, merchantCategoryMap, categoryFrequencyMap, onSaveMapping, onCategoryCreated }: Props) {
+export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedDues, onSettle, settlementHints, onSnooze, merchantCategoryMap, categoryFrequencyMap, onCategoryCreated, onAutoFile }: Props) {
   // Auto-detect category from merchant history
   const suggestedCategory = useMemo(() => {
     if (!merchantCategoryMap || !txn.merchant) return "";
@@ -47,7 +49,7 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
   const [manualPick, setManualPick] = useState(false);
   const [settleMonth, setSettleMonth] = useState<string | null>(null);
   const [roundOff, setRoundOff] = useState(true);
-  const [mappingSaved, setMappingSaved] = useState(false);
+  const [autoFile, setAutoFile] = useState(false);
   const [showAddCategory, setShowAddCategory] = useState(false);
 
   const fmtShort = (n: number) => "\u20B9" + n.toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -149,6 +151,8 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
   }, [unclearedDues, selectedDues]);
 
   const noteRequired = categoryNeedsNote(category);
+  // Debits from a named vendor can be auto-filed from now on (not into a category that needs a note)
+  const canAutoFile = !!(onAutoFile && txn.merchant && category && isDebit && !noteRequired);
 
   async function handleSave() {
     if (!category) return;
@@ -159,6 +163,7 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
     }
     setSaving(true);
     await supabase.from("transactions").update({ category, notes: comment || null, status: "categorized" }).eq("id", txn.id);
+    if (canAutoFile && autoFile) onAutoFile!(txn.merchant!, category);
     onDone(txn.id, category, comment || undefined);
   }
 
@@ -380,7 +385,7 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
               <select
                 className="flex-1 px-3 py-2.5 text-sm rounded-xl"
                 value={category}
-                onChange={(e) => { setCategory(e.target.value); setMappingSaved(false); }}
+                onChange={(e) => setCategory(e.target.value)}
                 style={suggestedCategory && category === suggestedCategory ? { borderColor: "rgba(0,212,161,0.3)" } : undefined}
               >
                 <option value="">Select category...</option>
@@ -410,25 +415,13 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
               )}
             </div>
 
-            {/* Fix mapping: show when merchant is known and user wants to pin category */}
-            {txn.merchant && category && onSaveMapping && (!suggestedCategory || category !== suggestedCategory) && (
-              <div className="mb-2">
-                {mappingSaved ? (
-                  <span className="inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-full font-medium"
-                    style={{ background: "rgba(0,212,161,0.1)", color: "var(--accent-green)" }}>
-                    ✓ Mapping saved for {txn.merchant}
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-full transition-all"
-                    style={{ background: "rgba(123,108,246,0.1)", color: "var(--accent)", border: "1px solid rgba(123,108,246,0.2)" }}
-                    onClick={() => { onSaveMapping(txn.merchant!, category); setMappingSaved(true); }}
-                  >
-                    📌 Always use &ldquo;{category}&rdquo; for {txn.merchant}
-                  </button>
-                )}
-              </div>
+            {/* Pair this vendor with the category: its future debits are filed without review */}
+            {canAutoFile && (
+              <label className="flex items-start gap-2 mb-2 text-[11px] leading-4 cursor-pointer select-none"
+                style={{ color: autoFile ? "var(--accent)" : "var(--text-tertiary)" }}>
+                <input type="checkbox" className="mt-0.5" checked={autoFile} onChange={(e) => setAutoFile(e.target.checked)} />
+                <span>⚡ Auto-file future <b>{txn.merchant}</b> payments to &ldquo;{category}&rdquo;</span>
+              </label>
             )}
 
             <input
@@ -484,7 +477,6 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
           onSave={(cat) => {
             onCategoryCreated(cat);
             setCategory(cat.name);
-            setMappingSaved(false);
             setShowAddCategory(false);
           }}
           onClose={() => setShowAddCategory(false)}

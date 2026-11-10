@@ -5,7 +5,8 @@ import { useState, useEffect, useCallback, useRef, useMemo, Suspense } from "rea
 import { useSearchParams } from "next/navigation";
 import { supabase, RawSms, Transaction, Category, User, Due, FeatureIdea, MonthlyBudget } from "@/lib/supabase";
 import { detectFields } from "@/lib/smsDetector";
-import { SettleDue, SettlementPlan, applyAdvance, round2, planSettlement } from "@/lib/dues";
+import { SettleDue, SettlementPlan, applyAdvance, round2, planSettlement, categoryNeedsNote } from "@/lib/dues";
+import { VendorRule, fetchVendorRules, saveVendorRules, matchVendorRule, vendorKey, withRule } from "@/lib/vendorRules";
 import { PendingPayment, fetchPendingPayment, savePendingPayment, findPaymentSms, MATCH_WINDOW_MS, ASK_AFTER_MS, upiRef } from "@/lib/pendingPayment";
 import { computePositions, fetchLockedCategories, saveLockedCategories, saveSetting } from "@/lib/budget";
 import { SyncHealth, fetchSyncHealth, syncIssues, fmtAgo } from "@/lib/syncHealth";
@@ -51,9 +52,10 @@ import AddCategoryForm from "@/components/AddCategoryForm";
 import ManualExpenseForm from "@/components/ManualExpenseForm";
 import FeatureIdeas from "@/components/FeatureIdeas";
 import BudgetGrid from "@/components/BudgetGrid";
+import VendorRules from "@/components/VendorRules";
 
 /* ── DebitOverlay: self-contained so overlayIdx doesn't re-render parent ── */
-function DebitOverlay({ txns, categories, isPrimary, unclearedDues, settlementHints, merchantCategoryMap, categoryFrequencyMap, onDone, onSnooze, onSettle, onDismissAll, onSaveMapping, onCategoryCreated }: {
+function DebitOverlay({ txns, categories, isPrimary, unclearedDues, settlementHints, merchantCategoryMap, categoryFrequencyMap, onDone, onSnooze, onSettle, onDismissAll, onSaveMapping, onCategoryCreated, onAutoFile }: {
   txns: Transaction[]; categories: Category[]; isPrimary: boolean;
   unclearedDues: SettleDue[]; settlementHints: string[];
   merchantCategoryMap: Map<string, string>;
@@ -64,6 +66,7 @@ function DebitOverlay({ txns, categories, isPrimary, unclearedDues, settlementHi
   onDismissAll: () => void;
   onSaveMapping: (merchant: string, category: string) => void;
   onCategoryCreated: (cat: Category) => void;
+  onAutoFile: (vendor: string, category: string) => void;
 }) {
   const [idx, setIdx] = useState(0);
   const safeIdx = Math.min(idx, txns.length - 1);
@@ -113,6 +116,7 @@ function DebitOverlay({ txns, categories, isPrimary, unclearedDues, settlementHi
               categoryFrequencyMap={categoryFrequencyMap}
               onSaveMapping={onSaveMapping}
               onCategoryCreated={onCategoryCreated}
+              onAutoFile={onAutoFile}
             />
           </div>
         </div>
@@ -692,7 +696,11 @@ function HomeInner() {
     // Wait a tick so foundTxn is set from the updater
     await new Promise((r) => setTimeout(r, 0));
     if (foundTxn && category) {
-      setCategorizedTxns((prev) => [{ ...foundTxn!, category, notes: notes || null, status: "categorized" as const }, ...prev]);
+      const filed = { ...foundTxn, category, notes: notes || null, status: "categorized" as const };
+      // The realtime UPDATE may have added it already: replace rather than add twice
+      setCategorizedTxns((prev) => prev.some((t) => t.id === id)
+        ? prev.map((t) => (t.id === id ? filed : t))
+        : [filed, ...prev]);
       // If secondary user categorized, create a due
       const user = currentUser;
       if (user && !user.is_primary && foundTxn.amount) {
@@ -866,18 +874,16 @@ function HomeInner() {
 
   const mySyncHealth = currentUser ? syncHealth.get(currentUser.phone_number) : undefined;
 
-  // ── Bank balances: everyone sees their own accounts; the primary user also sees the others' ──
-  const balancePhones = !currentUser ? ""
-    : currentUser.is_primary ? allUsers.map((u) => u.phone_number).join(",")
-    : currentUser.phone_number;
+  // ── Bank balances: each person sees only their own accounts ──
+  const balancePhone = currentUser?.phone_number ?? "";
   useEffect(() => {
-    if (!balancePhones) { setBalances([]); return; }
-    fetchBalances(balancePhones.split(",")).then(setBalances).catch(() => {});
-  }, [balancePhones, txnTick]);
-  const shownBalances = useMemo(() => {
-    const mine = (b: AccountBalance) => (b.phone === currentUser?.phone_number ? 0 : 1);
-    return [...balances].sort((a, b) => mine(a) - mine(b) || b.at - a.at);
-  }, [balances, currentUser?.phone_number]);
+    if (!balancePhone) { setBalances([]); return; }
+    fetchBalances([balancePhone]).then(setBalances).catch(() => {});
+  }, [balancePhone, txnTick]);
+  const shownBalances = useMemo(
+    () => balances.filter((b) => b.phone === balancePhone).sort((a, b) => b.at - a.at),
+    [balances, balancePhone],
+  );
   // Manual update: tap a balance, type what the bank app shows
   const [editBal, setEditBal] = useState<{ key: string; value: string } | null>(null);
   async function saveEditedBalance() {
@@ -1017,6 +1023,85 @@ function HomeInner() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newTxns, categorizedTxns]);
+
+  // ── Vendor rules: each person's own vendor → category pairs ──
+  const [vendorRules, setVendorRules] = useState<VendorRule[]>([]);
+  const vendorRulesRef = useRef<VendorRule[]>([]);
+  const [autoFiledNotes, setAutoFiledNotes] = useState<string[]>([]);
+  const rulesPhone = currentUser?.phone_number ?? "";
+  useEffect(() => {
+    if (!rulesPhone) return;
+    // Re-read on foreground / every few minutes, so rules made on another device apply here too
+    fetchVendorRules(rulesPhone).then((r) => { vendorRulesRef.current = r; setVendorRules(r); }).catch(() => {});
+  }, [rulesPhone, clockNow]);
+
+  async function saveRules(next: VendorRule[]) {
+    if (!rulesPhone) return;
+    vendorRulesRef.current = next;
+    setVendorRules(next);
+    await saveVendorRules(rulesPhone, next);
+  }
+  function addVendorRule(vendor: string, categoryId: number) {
+    saveRules(withRule(vendorRulesRef.current, vendor, categoryId));
+  }
+  function removeVendorRule(key: string) {
+    saveRules(vendorRulesRef.current.filter((r) => r.key !== key));
+  }
+  /** From the review card's "Auto-file future … payments" tick. */
+  function autoFileFromReview(vendor: string, categoryName: string) {
+    const cat = categories.find((c) => c.name === categoryName);
+    if (cat) addVendorRule(vendor, cat.id);
+  }
+
+  // Vendors this person has paid before, most frequent first (to pick from when pairing)
+  const vendorsSeen = useMemo(() => {
+    const m = new Map<string, { vendor: string; count: number }>();
+    for (const t of categorizedTxns) {
+      if (t.phone_number !== rulesPhone || !t.merchant || t.category === "Settlement" || t.transaction_type !== "DEBIT") continue;
+      const k = vendorKey(t.merchant);
+      if (k.length < 3) continue;
+      const e = m.get(k) ?? { vendor: t.merchant.trim(), count: 0 };
+      e.count++;
+      m.set(k, e);
+    }
+    return Array.from(m.values()).sort((a, b) => b.count - a.count).slice(0, 100);
+  }, [categorizedTxns, rulesPhone]);
+
+  // A new debit SMS from a paired vendor is filed straight into its category
+  const autoFiledIds = useRef(new Set<number>());
+  const settleHintKey = settlementHints.join("\n").toLowerCase();
+  useEffect(() => {
+    const user = currentUser;
+    if (!user || loading || vendorRules.length === 0) return;
+    const hints = settleHintKey.split("\n").filter(Boolean);
+    for (const t of newTxns) {
+      if (autoFiledIds.current.has(t.id)) continue;
+      if (t.phone_number !== user.phone_number || t.transaction_type !== "DEBIT" || !t.merchant) continue;
+      // A payment to the other person is a dues settlement, never a vendor expense
+      if (user.is_primary && hints.some((h) => t.body.toLowerCase().includes(h))) continue;
+      const rule = matchVendorRule(vendorRules, t.merchant);
+      const cat = rule ? entryCategories.find((c) => c.id === rule.categoryId) : undefined;
+      // Category gone, locked, hidden from this person, or needs a note: leave it for review
+      if (!cat || categoryNeedsNote(cat.name) || (!user.is_primary && cat.visible_to === "primary")) continue;
+      autoFiledIds.current.add(t.id);
+      (async () => {
+        // File it only if it's still new: another device, or a hand, may have filed it already
+        const { data } = await supabase.from("transactions")
+          .update({ category: cat.name, status: "categorized" })
+          .eq("id", t.id).eq("status", "new").select("id");
+        if (!data || data.length === 0) return;
+        // Same as filing it by hand, without depending on it still being in the review list
+        const filed = { ...t, category: cat.name, notes: null, status: "categorized" as const };
+        setNewTxns((prev) => prev.filter((x) => x.id !== t.id));
+        setCategorizedTxns((prev) => prev.some((x) => x.id === t.id)
+          ? prev.map((x) => (x.id === t.id ? filed : x))
+          : [filed, ...prev]);
+        if (!user.is_primary && t.amount) setDuesAdvance(await createDue(t.id, cat.name, Number(t.amount)));
+        const amt = t.amount ? `₹${Number(t.amount).toLocaleString("en-IN")} ` : "";
+        setAutoFiledNotes((prev) => [...prev, `${amt}${t.merchant} → ${cat.name}`].slice(-5));
+      })();
+    }
+  }, [newTxns, vendorRules, entryCategories, currentUser, loading, settleHintKey]);
 
   // Re-check (and show the "did you pay?" card) once the SMS had time to arrive
   useEffect(() => {
@@ -1201,6 +1286,15 @@ function HomeInner() {
             onClick={() => setPayNotice(null)} aria-label="Close">✕</button>
         </div>
       )}
+      {autoFiledNotes.length > 0 && (
+        <div className="card px-3 py-2.5 mb-4 flex items-start gap-2" style={{ borderLeft: "3px solid var(--accent)" }}>
+          <span className="flex-1 text-xs leading-5" style={{ color: "var(--text-secondary)" }}>
+            ⚡ Auto-filed: {autoFiledNotes.join(" · ")}
+          </span>
+          <button className="text-xs px-1 bg-transparent border-0 cursor-pointer" style={{ color: "var(--text-tertiary)" }}
+            onClick={() => setAutoFiledNotes([])} aria-label="Close">✕</button>
+        </div>
+      )}
 
       {/* Content */}
       <div className="animate-fade-in">
@@ -1225,7 +1319,7 @@ function HomeInner() {
           />
         ) : (
           <>
-            {/* Last balance each bank stated in an SMS (own accounts; primary sees all) */}
+            {/* Last balance each bank stated in an SMS (own accounts only) */}
             {shownBalances.length > 0 && (
               <div className="card px-3.5 py-3 mb-3">
                 <div className="text-[10px] font-bold tracking-wide mb-2" style={{ color: "var(--text-tertiary)" }}>
@@ -1321,6 +1415,14 @@ function HomeInner() {
               expectedDebits={expectedDebits.items}
               onSaveExpectedDebit={isPrimary ? handleSaveExpectedDebit : undefined}
             />
+            <VendorRules
+              rules={vendorRules}
+              categories={entryCategories.filter((c) => isPrimary || c.visible_to !== "primary")}
+              allCategories={categories}
+              vendors={vendorsSeen}
+              onAdd={addVendorRule}
+              onRemove={removeVendorRule}
+            />
           </>
         )}
       </div>
@@ -1341,6 +1443,7 @@ function HomeInner() {
           onDismissAll={handleDismissAll}
           onSaveMapping={handleSaveMapping}
           onCategoryCreated={handleAddCategory}
+          onAutoFile={autoFileFromReview}
         />
       )}
 
