@@ -24,11 +24,32 @@ function parseAmount(amountStr: string): number {
 
 function isMerchantFalsePositive(merchant: string): boolean {
   const lower = merchant.toLowerCase().trim();
+  if (lower.length < 3) return true;
   if (/^(your|the|a|an|this|that|bank|account|card|balance|amt|amount|date|ref|no|id|rs|inr|be|cancel|you|dispute)$/i.test(lower)) return true;
   if (/^(icici|sbi|hdfc|idbi|axis|kotak|pnb|bob|canara|union|federal|indusind|paytm|yes\s)/i.test(lower)) return true;
   if (/^(your |be )/i.test(lower)) return true;
-  if (/\bbank\b/i.test(lower)) return true;
+  // "ICICI Bank" is the sender, but "ACH*IDBI Bank" is a payee code (an auto-debit)
+  if (/\bbank\b/i.test(lower) && !lower.includes("*")) return true;
+  // An amount ("Rs 13426.00 on 01-Apr-26") or a phone / reference number is not a name
+  if (/^(?:rs\.?|inr|₹)\s*\d/i.test(lower)) return true;
+  if (/\d{6,}/.test(lower)) return true;
   return false;
+}
+
+/**
+ * Bank footer text a merchant pattern can run into: "…. Avl Bal Rs", "for dispute
+ * or SMS BLOCK 773 to", "call 18002662", "UPI:…".
+ */
+const BOILERPLATE =
+  /(?:^|[\s.])(?:avl\.?\s*bal|avail(?:able)?\s+bal|bal(?:ance)?\s*(?:is\s*)?(?:rs|inr|₹)|dispute|if\s+not\s+(?:you|done)|call\s+\d|sms\s+block|(?:upi|imps|neft)\s*:|ref\s*no)/i;
+
+/** Cut a merchant candidate at bank boilerplate and tidy it ("InfoACH*IDBI Bank" → "ACH*IDBI Bank"). */
+function cleanMerchant(raw: string): string {
+  let s = raw;
+  const m = s.match(BOILERPLATE);
+  if (m && m.index !== undefined) s = s.slice(0, m.index);
+  s = s.replace(/^info(?=[a-z]{2,}\*)/i, "");
+  return s.replace(/[\s.,;:'-]+$/, "").replace(/\s+(?:on|to|at|for|or)$/i, "").trim();
 }
 
 export function detectFields(body: string): Partial<DetectedTransaction> {
@@ -94,7 +115,7 @@ export function detectFields(body: string): Partial<DetectedTransaction> {
   const merchantPatterns: [RegExp, number][] = [
     [/;\s*([A-Z][A-Za-z0-9 &.''-]{2,30})\s+credited/i, 1],
     [/(?:trf|transfer)\s+to\s+([A-Z][A-Za-z0-9 &.''-]{2,30})(?=\s+Ref|\s*$|[.,;])/i, 1],
-    [/towards\s+(?:Merchant\s+)?([A-Z][A-Za-z0-9 &.''-]{2,30}?)(?=\s+to\s+be|\s+is\s+|[.,;]|$)/i, 1],
+    [/towards\s+(?:Merchant\s+)?([A-Z][A-Za-z0-9 &.''-]{2,30}?)(?=\s+to\s+be|\s+is\s+|\s+using\s|[.,;]|$)/i, 1],
     [/\b([A-Z]{2,}\*[A-Za-z0-9 ]+?)(?=\s{2,}|\s+C\.|\s+Avl|\s+Bal|[.,;]|$)/i, 1],
     [/(?:at|for)\s+([A-Z][A-Za-z0-9 &.''-]{2,30})(?=[.,;\s]|$)/i, 1],
     [/(?:to)\s+([A-Z][A-Za-z0-9 &.''-]{2,30})(?=[.,;\s]|$)/i, 1],
@@ -102,7 +123,7 @@ export function detectFields(body: string): Partial<DetectedTransaction> {
   for (const [pattern, group] of merchantPatterns) {
     const m = body.match(pattern);
     if (m && m[group]) {
-      const merchant = m[group].trim();
+      const merchant = cleanMerchant(m[group]);
       if (!isMerchantFalsePositive(merchant)) {
         result.merchant = merchant;
         break;
