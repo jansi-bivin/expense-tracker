@@ -39,6 +39,16 @@ export function logActivity(phone: string, event: AutoFiledEvent): Promise<unkno
   return queue;
 }
 
+/** Viewed: drop everything logged up to `upTo` (no history is kept). */
+export function clearActivity(phone: string, upTo: number): Promise<unknown> {
+  queue = queue.then(async () => {
+    const events = await fetchActivity(phone).catch(() => null);
+    if (!events) return;
+    await saveSetting(ACTIVITY + phone, { events: events.filter((e) => e.at > upTo) });
+  }).catch(() => {});
+  return queue;
+}
+
 export async function fetchLastSeen(phone: string): Promise<number | null> {
   const { data, error } = await supabase.from("settings").select("value").eq("key", LAST_SEEN + phone).limit(1).maybeSingle();
   if (error) throw new Error(error.message);

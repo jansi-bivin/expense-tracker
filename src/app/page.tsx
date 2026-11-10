@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { supabase, RawSms, Transaction, Category, User, Due, FeatureIdea, MonthlyBudget } from "@/lib/supabase";
 import { detectFields } from "@/lib/smsDetector";
 import { SettleDue, SettlementPlan, applyAdvance, round2, planSettlement, categoryNeedsNote } from "@/lib/dues";
-import { AutoFiledEvent, activityItems, fetchActivity, logActivity, fetchLastSeen, saveLastSeen } from "@/lib/activity";
+import { AutoFiledEvent, activityItems, fetchActivity, logActivity, clearActivity, fetchLastSeen, saveLastSeen } from "@/lib/activity";
 import ActivityPanel from "@/components/ActivityPanel";
 import {
   VendorRule, fetchVendorRules, saveVendorRules, fetchSharedVendorRules, saveSharedVendorRules,
@@ -1100,50 +1100,53 @@ function HomeInner() {
     return [count(true), count(false)];
   }, [categorizedTxns, rulesPhone, categories, currentUser?.is_primary]);
 
-  // ── "Since your last visit": what happened while this person was away ──
+  // ── New events since this person last looked (count on the bell; cleared once viewed) ──
   const otherName = allUsers.find((u) => u.phone_number !== rulesPhone)?.name ?? "";
-  const otherNameRef = useRef(otherName);
-  otherNameRef.current = otherName;
   const [activity, setActivity] = useState<AutoFiledEvent[]>([]);
-  /** When the previous visit ended (start of what the panel shows). */
+  /** When this person last viewed the updates: only later events count. */
   const [lastSeenAt, setLastSeenAt] = useState<number | null>(null);
-  const [activityOpen, setActivityOpen] = useState<"since" | "recent" | null>(null);
-  const [unseenCount, setUnseenCount] = useState(0);
-  const sessionStarted = useRef(false);
-  const duesRef = useRef(dues);
-  duesRef.current = dues;
+  const [activityOpen, setActivityOpen] = useState(false);
+  const activityStarted = useRef(false);
   useEffect(() => {
-    if (!rulesPhone || loading || !currentUser) return;
-    const user = currentUser;
-    // A visit starts when the app opens or comes back to the screen, and ends when it's hidden
-    const startVisit = async () => {
+    if (!rulesPhone || loading) return;
+    // Read on open and whenever the app comes back to the screen (it may have been viewed elsewhere)
+    const refresh = async () => {
       const [events, seen] = await Promise.all([
         fetchActivity(rulesPhone).catch(() => null),
         fetchLastSeen(rulesPhone).catch(() => undefined),
       ]);
       if (events) setActivity(events);
       if (seen === undefined) return; // couldn't read it: don't guess
-      const since = seen ?? Date.now(); // first visit ever: nothing to show yet
-      setLastSeenAt(since);
-      saveLastSeen(rulesPhone, Date.now()).catch(() => {});
-      const n = activityItems(events ?? [], duesRef.current, since, user, otherNameRef.current).length;
-      setUnseenCount(n);
-      if (n > 0) setActivityOpen("since");
+      if (seen === null) {
+        // First time: start counting from now
+        const now = Date.now();
+        setLastSeenAt(now);
+        saveLastSeen(rulesPhone, now).catch(() => {});
+      } else {
+        setLastSeenAt(seen);
+      }
     };
-    const onVisibility = () => {
-      if (document.visibilityState === "hidden") saveLastSeen(rulesPhone, Date.now()).catch(() => {});
-      else startVisit();
-    };
-    if (!sessionStarted.current) { sessionStarted.current = true; startVisit(); }
+    const onVisibility = () => { if (document.visibilityState === "visible") refresh(); };
+    if (!activityStarted.current) { activityStarted.current = true; refresh(); }
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [rulesPhone, loading, currentUser]);
+  }, [rulesPhone, loading]);
 
-  const shownActivity = useMemo(() => {
-    if (!activityOpen || !currentUser) return [];
-    const since = activityOpen === "since" ? (lastSeenAt ?? Date.now()) : Date.now() - 7 * 24 * 60 * 60 * 1000;
-    return activityItems(activity, dues, since, currentUser, otherName);
-  }, [activityOpen, activity, dues, lastSeenAt, currentUser]);
+  const newActivity = useMemo(
+    () => (currentUser && lastSeenAt != null ? activityItems(activity, dues, lastSeenAt, currentUser, otherName) : []),
+    [activity, dues, lastSeenAt, currentUser, otherName]
+  );
+
+  /** Closing the panel counts as viewed: clear these events (no history is kept). */
+  function closeActivity() {
+    setActivityOpen(false);
+    if (!rulesPhone || newActivity.length === 0) return;
+    const now = Date.now();
+    setLastSeenAt(now);
+    setActivity((prev) => prev.filter((e) => e.at > now));
+    saveLastSeen(rulesPhone, now).catch(() => {});
+    clearActivity(rulesPhone, now);
+  }
 
   // A new debit SMS is filed straight into its category when it's from a paired vendor,
   // or when it's a monthly EMI set up as an auto-debit (same amount, around its usual day)
@@ -1338,15 +1341,15 @@ function HomeInner() {
         </div>
         {currentUser && (
           <div className="flex items-center gap-2">
-            {/* Recent activity: what the app did on its own (opens the same panel as on return) */}
+            {/* New updates since you last checked: count on the bell, tap to view (viewing clears them) */}
             <button type="button" className="relative w-8 h-8 flex items-center justify-center rounded-full cursor-pointer"
               style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}
-              onClick={() => setActivityOpen(unseenCount > 0 ? "since" : "recent")}
-              aria-label={unseenCount > 0 ? `${unseenCount} updates since your last visit` : "Recent activity"}>
+              onClick={() => setActivityOpen(true)}
+              aria-label={newActivity.length > 0 ? `${newActivity.length} new updates` : "No new updates"}>
               <span className="text-sm leading-none">🔔</span>
-              {unseenCount > 0 && (
+              {newActivity.length > 0 && (
                 <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full text-[9px] font-bold flex items-center justify-center"
-                  style={{ background: "var(--accent-red)", color: "#fff" }}>{unseenCount}</span>
+                  style={{ background: "var(--accent-red)", color: "#fff" }}>{newActivity.length}</span>
               )}
             </button>
             <div className="flex items-center gap-2 px-2.5 py-1 rounded-full"
@@ -1544,16 +1547,16 @@ function HomeInner() {
         )}
       </div>
 
-      {/* ═══ Since your last visit / recent activity (above the review overlay) ═══ */}
+      {/* ═══ New updates panel (above the review overlay) ═══ */}
       {activityOpen && (
         <ActivityPanel
-          title={activityOpen === "since" ? "Since your last visit" : "Last 7 days"}
-          items={shownActivity}
+          title="New since you last checked"
+          items={newActivity}
           findTxn={(id) => categorizedTxns.find((t) => t.id === id)}
           categories={entryCategories.filter((c) => isPrimary || c.visible_to !== "primary")}
           onReclassify={handleReclassify}
-          onOpenDues={() => { setActivityOpen(null); setUnseenCount(0); setView("dues"); }}
-          onClose={() => { setActivityOpen(null); setUnseenCount(0); }}
+          onOpenDues={() => { closeActivity(); setView("dues"); }}
+          onClose={closeActivity}
         />
       )}
 
