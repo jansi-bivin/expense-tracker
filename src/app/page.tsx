@@ -6,6 +6,8 @@ import { useSearchParams } from "next/navigation";
 import { supabase, RawSms, Transaction, Category, User, Due, FeatureIdea, MonthlyBudget } from "@/lib/supabase";
 import { detectFields } from "@/lib/smsDetector";
 import { SettleDue, SettlementPlan, applyAdvance, round2, planSettlement, categoryNeedsNote } from "@/lib/dues";
+import { AutoFiledEvent, activityItems, fetchActivity, logActivity, fetchLastSeen, saveLastSeen } from "@/lib/activity";
+import ActivityPanel from "@/components/ActivityPanel";
 import {
   VendorRule, fetchVendorRules, saveVendorRules, fetchSharedVendorRules, saveSharedVendorRules,
   matchVendorRule, vendorKey, withRule,
@@ -1098,6 +1100,51 @@ function HomeInner() {
     return [count(true), count(false)];
   }, [categorizedTxns, rulesPhone, categories, currentUser?.is_primary]);
 
+  // ── "Since your last visit": what happened while this person was away ──
+  const otherName = allUsers.find((u) => u.phone_number !== rulesPhone)?.name ?? "";
+  const otherNameRef = useRef(otherName);
+  otherNameRef.current = otherName;
+  const [activity, setActivity] = useState<AutoFiledEvent[]>([]);
+  /** When the previous visit ended (start of what the panel shows). */
+  const [lastSeenAt, setLastSeenAt] = useState<number | null>(null);
+  const [activityOpen, setActivityOpen] = useState<"since" | "recent" | null>(null);
+  const [unseenCount, setUnseenCount] = useState(0);
+  const sessionStarted = useRef(false);
+  const duesRef = useRef(dues);
+  duesRef.current = dues;
+  useEffect(() => {
+    if (!rulesPhone || loading || !currentUser) return;
+    const user = currentUser;
+    // A visit starts when the app opens or comes back to the screen, and ends when it's hidden
+    const startVisit = async () => {
+      const [events, seen] = await Promise.all([
+        fetchActivity(rulesPhone).catch(() => null),
+        fetchLastSeen(rulesPhone).catch(() => undefined),
+      ]);
+      if (events) setActivity(events);
+      if (seen === undefined) return; // couldn't read it: don't guess
+      const since = seen ?? Date.now(); // first visit ever: nothing to show yet
+      setLastSeenAt(since);
+      saveLastSeen(rulesPhone, Date.now()).catch(() => {});
+      const n = activityItems(events ?? [], duesRef.current, since, user, otherNameRef.current).length;
+      setUnseenCount(n);
+      if (n > 0) setActivityOpen("since");
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") saveLastSeen(rulesPhone, Date.now()).catch(() => {});
+      else startVisit();
+    };
+    if (!sessionStarted.current) { sessionStarted.current = true; startVisit(); }
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [rulesPhone, loading, currentUser]);
+
+  const shownActivity = useMemo(() => {
+    if (!activityOpen || !currentUser) return [];
+    const since = activityOpen === "since" ? (lastSeenAt ?? Date.now()) : Date.now() - 7 * 24 * 60 * 60 * 1000;
+    return activityItems(activity, dues, since, currentUser, otherName);
+  }, [activityOpen, activity, dues, lastSeenAt, currentUser]);
+
   // A new debit SMS is filed straight into its category when it's from a paired vendor,
   // or when it's a monthly EMI set up as an auto-debit (same amount, around its usual day)
   const autoFiledIds = useRef(new Set<number>());
@@ -1114,14 +1161,16 @@ function HomeInner() {
       // A payment to the other person is a dues settlement, never an expense
       if (user.is_primary && hints.some((h) => t.body.toLowerCase().includes(h))) continue;
       // This person's own pairing first, then a shared one
-      const rule = matchVendorRule(vendorRules, t.merchant) ?? matchVendorRule(sharedRules, t.merchant);
+      const myRule = matchVendorRule(vendorRules, t.merchant);
+      const rule = myRule ?? matchVendorRule(sharedRules, t.merchant);
       let cat = rule ? entryCategories.find((c) => c.id === rule.categoryId) : undefined;
+      let why: AutoFiledEvent["why"] = myRule ? "vendor" : "shared";
       let emiKey = "";
       if (!cat) {
         const emi = matchExpectedDebit(expectedDebits, entryCategories, categorizedTxns, t);
         emiKey = emi ? `${emi.category.id}:${emi.month}` : "";
         // Two copies of one EMI's message (SMS + notification) must not both be filed
-        if (emi && !emiMonthsFiled.current.has(emiKey)) cat = emi.category;
+        if (emi && !emiMonthsFiled.current.has(emiKey)) { cat = emi.category; why = "emi"; }
       }
       // Category gone, locked, hidden from this person, or needs a note: leave it for review
       if (!cat || categoryNeedsNote(cat.name) || (!user.is_primary && cat.visible_to === "primary")) continue;
@@ -1144,6 +1193,13 @@ function HomeInner() {
         const amt = t.amount ? `₹${Number(t.amount).toLocaleString("en-IN")} ` : "";
         const from = t.merchant ?? (emiKey ? "monthly auto-debit" : "payment");
         setAutoFiledNotes((prev) => [...prev, `${amt}${from} → ${target}`].slice(-5));
+        // For the "since your last visit" panel (on whichever device is opened next)
+        const event: AutoFiledEvent = {
+          kind: "autofile", at: Date.now(), txnId: t.id,
+          amount: t.amount != null ? Number(t.amount) : null, vendor: t.merchant ?? null, category: target, why,
+        };
+        setActivity((prev) => [...prev, event]);
+        logActivity(user.phone_number, event);
       })();
     }
   }, [newTxns, vendorRules, sharedRules, expectedDebits, categorizedTxns, entryCategories, currentUser, loading, settleHintKey]);
@@ -1281,10 +1337,23 @@ function HomeInner() {
           </div>
         </div>
         {currentUser && (
-          <div className="flex items-center gap-2 px-2.5 py-1 rounded-full"
-            style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}>
-            <div className="pulse-dot" />
-            <span className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>{currentUser.name}</span>
+          <div className="flex items-center gap-2">
+            {/* Recent activity: what the app did on its own (opens the same panel as on return) */}
+            <button type="button" className="relative w-8 h-8 flex items-center justify-center rounded-full cursor-pointer"
+              style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}
+              onClick={() => setActivityOpen(unseenCount > 0 ? "since" : "recent")}
+              aria-label={unseenCount > 0 ? `${unseenCount} updates since your last visit` : "Recent activity"}>
+              <span className="text-sm leading-none">🔔</span>
+              {unseenCount > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full text-[9px] font-bold flex items-center justify-center"
+                  style={{ background: "var(--accent-red)", color: "#fff" }}>{unseenCount}</span>
+              )}
+            </button>
+            <div className="flex items-center gap-2 px-2.5 py-1 rounded-full"
+              style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}>
+              <div className="pulse-dot" />
+              <span className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>{currentUser.name}</span>
+            </div>
           </div>
         )}
       </div>
@@ -1474,6 +1543,19 @@ function HomeInner() {
           </>
         )}
       </div>
+
+      {/* ═══ Since your last visit / recent activity (above the review overlay) ═══ */}
+      {activityOpen && (
+        <ActivityPanel
+          title={activityOpen === "since" ? "Since your last visit" : "Last 7 days"}
+          items={shownActivity}
+          findTxn={(id) => categorizedTxns.find((t) => t.id === id)}
+          categories={entryCategories.filter((c) => isPrimary || c.visible_to !== "primary")}
+          onReclassify={handleReclassify}
+          onOpenDues={() => { setActivityOpen(null); setUnseenCount(0); setView("dues"); }}
+          onClose={() => { setActivityOpen(null); setUnseenCount(0); }}
+        />
+      )}
 
       {/* ═══ Debit Overlay — own component so overlayIdx doesn't re-render parent ═══ */}
       {hasOverlay && (
