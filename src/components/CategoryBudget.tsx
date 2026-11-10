@@ -555,7 +555,7 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
               <span>←</span> Back
             </button>
           </div>
-          <div className="text-lg font-bold mb-1" style={{ color: "var(--text-primary)" }}>{monthOnly ? "Yearly expenses this month" : "Planned vs Spent"}</div>
+          <div className="text-lg font-bold mb-1" style={{ color: "var(--text-primary)" }}>Planned vs Spent</div>
           <div className="text-xs mb-3" style={{ color: "var(--text-tertiary)" }}>
             {monthOnly
               ? new Date(viewYear, viewMonth, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" }) + " — Yearly"
@@ -585,19 +585,66 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
           {isYearlyView && <PeriodChips on={yearlyListMonthOnly} onChange={setYearlyListMonthOnly} />}
         </div>
 
-        {/* This month: the yearly payments made in the month being viewed */}
-        {monthOnly && (
-          <div className="flex-1 overflow-y-auto">
-            {yearlyThisMonth.length === 0 ? (
-              <div className="p-8 text-center text-sm" style={{ color: "var(--text-tertiary)" }}>No yearly expenses this month</div>
-            ) : [...yearlyThisMonth].sort((a, b) => b.sms_date - a.sms_date).map((txn) => (
-              <div key={txn.id} style={{ borderBottom: "1px solid var(--border)" }}>
-                <div className="px-5 pt-2 text-[10px] font-semibold tracking-wider" style={{ color: "var(--text-tertiary)" }}>{txn.category}</div>
-                <ExpenseRow txn={txn} currentCatName={txn.category || ""} />
-              </div>
-            ))}
-          </div>
-        )}
+        {/* This month: one row per yearly category paid in the month being viewed.
+            Same rows as Planned vs Spent; the bar is the category's share of the month
+            (yearly categories have no monthly cap). */}
+        {monthOnly && (() => {
+          const byCat = new Map<string, { spent: number; count: number }>();
+          for (const t of yearlyThisMonth) {
+            const k = t.category || "";
+            const e = byCat.get(k) ?? { spent: 0, count: 0 };
+            e.spent += Number(t.amount); e.count += 1;
+            byCat.set(k, e);
+          }
+          const rows = yearlyCategories
+            .filter((c) => byCat.has(c.name))
+            .sort((a, b) => byCat.get(b.name)!.spent - byCat.get(a.name)!.spent);
+          return (
+            <div className="flex-1 overflow-y-auto">
+              {rows.length === 0 && (
+                <div className="p-8 text-center text-sm" style={{ color: "var(--text-tertiary)" }}>No yearly expenses this month</div>
+              )}
+              {rows.map((cat) => {
+                const { spent, count } = byCat.get(cat.name)!;
+                const share = yearlyThisMonthTotal > 0 ? (spent / yearlyThisMonthTotal) * 100 : 0;
+                return (
+                  <div key={cat.id} className="px-5 py-3" style={{ borderBottom: "1px solid var(--border)", cursor: "pointer" }}
+                    onClick={() => { setShowComparison(false); setDrillDownId(cat.id); }}>
+                    <div className="flex justify-between items-baseline mb-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{cat.name}</span>
+                        {isPrimary && onToggleLock ? (
+                          <button
+                            className={`badge text-[10px] py-0 cursor-pointer ${lockedNames?.has(cat.name) ? "badge-orange" : "badge-muted"}`}
+                            title={lockedNames?.has(cat.name) ? "Locked: tap to allow new expenses" : "Lock: no new expenses"}
+                            onClick={(e) => { e.stopPropagation(); onToggleLock(cat.name); }}
+                          >
+                            {lockedNames?.has(cat.name) ? "🔒 Unlock" : "🔓 Lock"}
+                          </button>
+                        ) : lockedNames?.has(cat.name) ? (
+                          <span className="badge badge-orange text-[9px] py-0">🔒</span>
+                        ) : null}
+                      </div>
+                      <span className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>
+                        {count} txn{count !== 1 ? "s" : ""}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1">
+                        <div className="progress-track" style={{ height: "5px" }}>
+                          <div className="progress-fill" style={{ width: `${share}%`, height: "5px", background: "var(--accent)" }} />
+                        </div>
+                      </div>
+                      <span className="text-xs shrink-0" style={{ color: "var(--text-tertiary)" }}>
+                        {fmt(spent)} · {Math.round(share)}% of month
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
 
         {/* Per-category list */}
         {!monthOnly && <div className="flex-1 overflow-y-auto">
