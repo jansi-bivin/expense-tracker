@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { supabase, RawSms, Transaction, Category, User, Due, FeatureIdea, MonthlyBudget } from "@/lib/supabase";
 import { detectFields } from "@/lib/smsDetector";
 import { SettleDue, SettlementPlan, applyAdvance, round2, planSettlement, categoryNeedsNote } from "@/lib/dues";
-import { AutoFiledEvent, activityItems, fetchActivity, logActivity, clearActivity, fetchLastSeen, saveLastSeen } from "@/lib/activity";
+import { AutoFiledEvent, activityItems, fetchActivity, logActivity, flushActivity, clearActivity, fetchLastSeen, saveLastSeen } from "@/lib/activity";
 import ActivityPanel from "@/components/ActivityPanel";
 import {
   VendorRule, fetchVendorRules, saveVendorRules, fetchSharedVendorRules, saveSharedVendorRules,
@@ -1111,6 +1111,7 @@ function HomeInner() {
     if (!rulesPhone || loading) return;
     // Read on open and whenever the app comes back to the screen (it may have been viewed elsewhere)
     const refresh = async () => {
+      await flushActivity(); // events this device filed but couldn't save yet
       const [events, seen] = await Promise.all([
         fetchActivity(rulesPhone).catch(() => null),
         fetchLastSeen(rulesPhone).catch(() => undefined),
@@ -1186,6 +1187,13 @@ function HomeInner() {
           .update({ category: target, status: "categorized" })
           .eq("id", t.id).eq("status", "new").select("id");
         if (!data || data.length === 0) return;
+        // Log it for the bell first (kept on the device until saved)
+        const event: AutoFiledEvent = {
+          kind: "autofile", at: Date.now(), txnId: t.id,
+          amount: t.amount != null ? Number(t.amount) : null, vendor: t.merchant ?? null, category: target, why,
+        };
+        logActivity(user.phone_number, event);
+        setActivity((prev) => [...prev, event]);
         // Same as filing it by hand, without depending on it still being in the review list
         const filed = { ...t, category: target, notes: null, status: "categorized" as const };
         setNewTxns((prev) => prev.filter((x) => x.id !== t.id));
@@ -1196,13 +1204,6 @@ function HomeInner() {
         const amt = t.amount ? `₹${Number(t.amount).toLocaleString("en-IN")} ` : "";
         const from = t.merchant ?? (emiKey ? "monthly auto-debit" : "payment");
         setAutoFiledNotes((prev) => [...prev, `${amt}${from} → ${target}`].slice(-5));
-        // For the "since your last visit" panel (on whichever device is opened next)
-        const event: AutoFiledEvent = {
-          kind: "autofile", at: Date.now(), txnId: t.id,
-          amount: t.amount != null ? Number(t.amount) : null, vendor: t.merchant ?? null, category: target, why,
-        };
-        setActivity((prev) => [...prev, event]);
-        logActivity(user.phone_number, event);
       })();
     }
   }, [newTxns, vendorRules, sharedRules, expectedDebits, categorizedTxns, entryCategories, currentUser, loading, settleHintKey]);

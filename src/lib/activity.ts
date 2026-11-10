@@ -28,15 +28,54 @@ export async function fetchActivity(phone: string): Promise<AutoFiledEvent[]> {
   return Array.isArray(events) ? events : [];
 }
 
+// Events are kept on the device until they're written, so a closed app, a reload or a
+// slow database never loses one: they're retried here and on the next open.
+const PENDING = "exptrack-activity-pending";
+type Pending = { phone: string; event: AutoFiledEvent };
+function readPending(): Pending[] {
+  try { const v = JSON.parse(localStorage.getItem(PENDING) || "[]"); return Array.isArray(v) ? v : []; } catch { return []; }
+}
+function writePending(list: Pending[]) {
+  try { localStorage.setItem(PENDING, JSON.stringify(list)); } catch { /* storage off: retries still run */ }
+}
+let memPending: Pending[] = [];
+
 // Appends from one device go one at a time, so quick auto-files don't overwrite each other
 let queue: Promise<unknown> = Promise.resolve();
-export function logActivity(phone: string, event: AutoFiledEvent): Promise<unknown> {
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+let attempts = 0;
+
+/** Write any events still waiting on this device. */
+export function flushActivity(): Promise<unknown> {
   queue = queue.then(async () => {
-    const events = await fetchActivity(phone).catch(() => null);
-    if (!events) return;
-    await saveSetting(ACTIVITY + phone, { events: [...events, event].slice(-KEEP) });
+    const pending = [...readPending(), ...memPending.filter((m) => !readPending().some((p) => p.event.txnId === m.event.txnId && p.phone === m.phone))];
+    if (pending.length === 0) return;
+    const phones = [...new Set(pending.map((p) => p.phone))];
+    let failed = false;
+    for (const phone of phones) {
+      try {
+        const events = await fetchActivity(phone);
+        const mine = pending.filter((p) => p.phone === phone).map((p) => p.event);
+        const add = mine.filter((e) => !events.some((x) => x.txnId === e.txnId));
+        if (add.length) await saveSetting(ACTIVITY + phone, { events: [...events, ...add].slice(-KEEP) });
+        const done = new Set(mine.map((e) => e.txnId));
+        memPending = memPending.filter((p) => p.phone !== phone || !done.has(p.event.txnId));
+        writePending(readPending().filter((p) => p.phone !== phone || !done.has(p.event.txnId)));
+      } catch { failed = true; }
+    }
+    if (failed && !retryTimer && attempts < 6) {
+      attempts++;
+      retryTimer = setTimeout(() => { retryTimer = null; flushActivity(); }, 5000 * attempts);
+    } else if (!failed) attempts = 0;
   }).catch(() => {});
   return queue;
+}
+
+export function logActivity(phone: string, event: AutoFiledEvent): Promise<unknown> {
+  const p = { phone, event };
+  memPending.push(p);
+  writePending([...readPending(), p]);
+  return flushActivity();
 }
 
 /** Viewed: drop everything logged up to `upTo` (no history is kept). */
