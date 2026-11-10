@@ -645,9 +645,12 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
   // ═══════════════════════════════════
   // All-expenses list overlay (monthly or yearly)
   // ═══════════════════════════════════
-  function AllExpensesOverlay({ title, txns, onClose }: { title: string; txns: Transaction[]; onClose: () => void }) {
-    const sorted = [...txns].sort((a, b) => b.sms_date - a.sms_date);
-    const total = sorted.reduce((s, t) => s + Number(t.amount), 0);
+  function AllExpensesOverlay({ title, txns, yearlyTxns = [], onClose }: { title: string; txns: Transaction[]; yearlyTxns?: Transaction[]; onClose: () => void }) {
+    // Yearly payments made this month are listed too, but kept out of the month's total
+    const yearlyIds = new Set(yearlyTxns.map((t) => t.id));
+    const sorted = [...txns, ...yearlyTxns].sort((a, b) => b.sms_date - a.sms_date);
+    const total = txns.reduce((s, t) => s + Number(t.amount), 0);
+    const yearlyTotal = yearlyTxns.reduce((s, t) => s + Number(t.amount), 0);
     return (
       <div className="fixed inset-0 z-50 flex flex-col animate-fade-in" style={{ background: "var(--bg-base)" }}>
         {/* Header */}
@@ -663,6 +666,11 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
             <span className="text-2xl font-bold amount-debit">{fmt(total)}</span>
             <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>{sorted.length} transaction{sorted.length !== 1 ? "s" : ""}</span>
           </div>
+          {yearlyTxns.length > 0 && (
+            <div className="text-[11px] mt-1" style={{ color: "var(--text-tertiary)" }}>
+              + {fmt(yearlyTotal)} of yearly expenses paid this month (counted in the yearly budget)
+            </div>
+          )}
         </div>
         {/* Scrollable list */}
         <div className="flex-1 overflow-y-auto">
@@ -676,6 +684,10 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
                   {catName && (
                     <div className="px-5 pt-2 text-[10px] font-semibold tracking-wider" style={{ color: "var(--text-tertiary)" }}>
                       {catName}
+                      {yearlyIds.has(txn.id) && (
+                        <span className="ml-1.5 px-1.5 py-px rounded-full text-[9px]"
+                          style={{ background: "rgba(123,108,246,0.15)", color: "var(--accent)" }}>YEARLY</span>
+                      )}
                     </div>
                   )}
                   <ExpenseRow txn={txn} currentCatName={catName} />
@@ -696,6 +708,15 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
     yearlyCategories.flatMap((c) => categoryTxns.get(c.name) || []),
     [yearlyCategories, categoryTxns]
   );
+  // Yearly payments made in the month being viewed (shown with the month, not in its budget)
+  const yearlyThisMonth = useMemo(() =>
+    allYearlyTxns.filter((t) => {
+      const d = new Date(t.sms_date);
+      return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+    }),
+    [allYearlyTxns, currentMonth, currentYear]
+  );
+  const yearlyThisMonthTotal = yearlyThisMonth.reduce((s, t) => s + Number(t.amount), 0);
 
   // ═══════════════════════════════════
   // Category card (normal + edit)
@@ -903,6 +924,7 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
         <AllExpensesOverlay
           title={new Date(viewYear, viewMonth, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" }) + " Expenses"}
           txns={allMonthlyTxns}
+          yearlyTxns={yearlyThisMonth}
           onClose={() => setShowMonthlyList(false)}
         />
       )}
@@ -1008,6 +1030,14 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
               </>
             )}
           </div>
+          {yearlyThisMonth.length > 0 && (
+            <button type="button" className="w-full text-left text-[11px] mb-3 px-1 bg-transparent border-0 cursor-pointer"
+              style={{ color: "var(--text-tertiary)" }} onClick={() => setShowMonthlyList(true)}>
+              + <span className="font-semibold" style={{ color: "var(--text-secondary)" }}>{fmt(yearlyThisMonthTotal)}</span> yearly
+              expense{yearlyThisMonth.length !== 1 ? "s" : ""} paid this month
+              ({[...new Set(yearlyThisMonth.map((t) => t.category))].join(", ")}) · not in this month&apos;s budget ›
+            </button>
+          )}
           {monthlyBubbles.length > 0 ? (
             <BubbleBasket bubbles={monthlyBubbles} onBasketClick={() => setShowComparison("monthly")} />
           ) : (
