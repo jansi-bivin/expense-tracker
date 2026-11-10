@@ -266,7 +266,7 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
     const isManual = txn.address === "MANUAL";
     const isSplitPart = txn.address === "SPLIT";
     const canSplit = !!onSplit && txn.amount != null && Number(txn.amount) > 0 && (isPrimary || txn.phone_number === myPhone);
-    const merchant = txn.merchant || (isManual ? "Manual Entry" : "Unknown");
+    const merchant = txn.merchant || (isManual ? "Manual Entry" : isSplitPart ? "Split part" : "Unknown");
     const hasNotes = txn.notes && txn.notes.trim().length > 0;
     const hasRawSms = !isManual && !isSplitPart && txn.body && txn.body.length > 0;
 
