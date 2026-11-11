@@ -34,7 +34,8 @@ const round10 = (n: number) => Math.round(n / 10) * 10;
 
 /**
  * Suggested expected amount per category id for a month:
- * a fixed monthly debit (EMI) uses its amount; otherwise the middle value of the
+ * a fixed monthly debit (EMI) uses its amount; a bill paid every 2 months uses its last
+ * bill in the month it falls due (₹0 in between); otherwise the middle value of the
  * last 3 months' spend (only months since the app has data); ₹0 if none of them had any.
  */
 export function suggestExpected(
@@ -49,14 +50,15 @@ export function suggestExpected(
   const firstD = Number.isFinite(first) ? new Date(first) : null;
   const firstIdx = firstD ? firstD.getFullYear() * 12 + firstD.getMonth() : Infinity;
 
+  const cur = year * 12 + month;
   const prev: number[] = []; // month indexes (year*12+month) of the last 3 months with data
   for (let i = 1; i <= 3; i++) {
-    const idx = year * 12 + month - i;
+    const idx = cur - i;
     if (idx >= firstIdx) prev.push(idx);
   }
 
   const spend = new Map<string, number>(); // `${name}|${idx}` → amount
-  const want = new Set(prev);
+  const want = new Set([1, 2, 3, 4].map((i) => cur - i));
   for (const t of txns) {
     if (!t.category || !t.amount) continue;
     const d = new Date(t.sms_date);
@@ -71,6 +73,11 @@ export function suggestExpected(
     const f = fixed?.[String(c.id)];
     if (f && f.amount > 0) { out[String(c.id)] = Math.round(f.amount); continue; }
     if (prev.length === 0) { out[String(c.id)] = 0; continue; }
+    // Billed every 2 months (e.g. electricity): paid 2 and 4 months back, not 1 or 3 → due this month, same as last bill
+    const m = (i: number) => spend.get(`${c.name}|${cur - i}`) || 0;
+    if (m(2) > 0 && m(4) > 0 && m(1) === 0 && m(3) === 0) { out[String(c.id)] = round10(m(2)); continue; }
+    // ...and its off month: paid 1 and 3 months back, not 2 or 4 → nothing due this month
+    if (m(1) > 0 && m(3) > 0 && m(2) === 0 && m(4) === 0 && cur - 4 >= firstIdx) { out[String(c.id)] = 0; continue; }
     const vals = prev.map((idx) => spend.get(`${c.name}|${idx}`) || 0).sort((a, b) => a - b);
     const mid = vals.length % 2 ? vals[(vals.length - 1) / 2] : (vals[vals.length / 2 - 1] + vals[vals.length / 2]) / 2;
     out[String(c.id)] = round10(mid);
