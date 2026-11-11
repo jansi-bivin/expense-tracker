@@ -973,7 +973,7 @@ function HomeInner() {
       const spent = spentThisMonth();
       const frozen: Record<string, number> = {};
       for (const c of categories) {
-        if (softLockable(c) && !excludedCategoryIds.has(c.id)) frozen[String(c.id)] = Math.round(spent.get(c.name) || 0);
+        if (softLockable(c) && !excludedCategoryIds.has(c.id)) frozen[String(c.id)] = Math.round((spent.get(c.name) || 0) * 100) / 100;
       }
       next[key] = { frozen };
       return next;
@@ -986,7 +986,7 @@ function HomeInner() {
       const lock = cur[key];
       if (!lock || !cat) return cur;
       const frozen = { ...lock.frozen };
-      if (locked) frozen[String(catId)] = Math.round(spentThisMonth().get(cat.name) || 0);
+      if (locked) frozen[String(catId)] = Math.round((spentThisMonth().get(cat.name) || 0) * 100) / 100;
       else delete frozen[String(catId)];
       return { ...cur, [key]: { frozen } };
     });
