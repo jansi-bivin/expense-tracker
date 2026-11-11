@@ -131,6 +131,8 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
   const [softOffArmed, setSoftOffArmed] = useState(false);
   // Planned vs Spent: show the paid once-a-month categories (tucked away by default)
   const [showPaidOnce, setShowPaidOnce] = useState(false);
+  // Category details opened from Planned vs Spent: Back returns to that list
+  const [drillFromList, setDrillFromList] = useState<false | "monthly" | "yearly">(false);
 
   // Sort categories: most spend first, then alphabetical for zero-spend
   function sortByActivity(cats: Category[]): Category[] {
@@ -461,7 +463,11 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
       })
       .sort((a, b) => b.sms_date - a.sms_date);
     const monthSpent = txnsForCat.reduce((s, t) => s + Number(t.amount), 0);
-    const closeDrill = () => { setDrillDownId(null); setYearlyListMonthOnly(false); };
+    const closeDrill = () => {
+      setDrillDownId(null); setYearlyListMonthOnly(false);
+      // Opened from Planned vs Spent: go back to that list
+      if (drillFromList) { setShowComparison(drillFromList); setDrillFromList(false); }
+    };
 
     return (
       <div className="fixed inset-0 z-50 flex flex-col animate-fade-in" style={{ background: "var(--bg-base)" }}>
@@ -753,7 +759,7 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
 
             return (
               <div key={cat.id} className="px-5 py-3" style={{ borderBottom: "1px solid var(--border)", cursor: isEditingRow ? "default" : "pointer" }}
-                onClick={() => { if (!isEditingRow) { closeComparison(); setDrillDownId(cat.id); } }}>
+                onClick={() => { if (!isEditingRow) { const from = showComparison; closeComparison(); setDrillFromList(from); setDrillDownId(cat.id); } }}>
                 <div className="flex justify-between items-baseline mb-1.5">
                   <div className="flex items-center gap-1.5">
                     <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{cat.name}</span>
