@@ -644,9 +644,10 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
             <span className="text-2xl font-bold amount-debit">{fmt(totalSpentForView)}</span>
             <span className="text-sm" style={{ color: "var(--text-tertiary)" }}>/ {fmt(totalCapForView)}</span>
             {softActive && !isYearlyView ? (
-              <span className="text-sm font-semibold text-right" style={{ color: "var(--accent-green)" }}>
-                {fmt(toArrange)} to arrange
-                {alreadyOver > 0 && <span className="block text-[10px]" style={{ color: "var(--accent-red)" }}>already over {fmt(alreadyOver)}</span>}
+              <span className="text-sm font-semibold text-right" style={{ color: "var(--text-primary)" }}>
+                Forecast {fmt(totalSpent + toArrange)}
+                <span className="block text-[10px]" style={{ color: "var(--accent-green)" }}>+{fmt(toArrange)} to come</span>
+                {alreadyOver > 0 && <span className="block text-[10px]" style={{ color: "var(--accent-red)" }}>{fmt(alreadyOver)} over limits</span>}
               </span>
             ) : (
               <span className="text-sm font-semibold" style={{ color: totalRemForView >= 0 ? "var(--accent-green)" : "var(--accent-red)" }}>
@@ -1269,10 +1270,11 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
                 </div>
                 {softActive ? (
                   <div className="text-right">
-                    <div className="section-label mb-0.5">To arrange</div>
-                    <div className="text-lg font-extrabold" style={{ color: "var(--accent-green)" }}>{fmt(toArrange)}</div>
+                    <div className="section-label mb-0.5">Forecast</div>
+                    <div className="text-lg font-extrabold" style={{ color: "var(--text-primary)" }}>{fmt(totalSpent + toArrange)}</div>
+                    <div className="text-[10px] font-semibold" style={{ color: "var(--accent-green)" }}>+{fmt(toArrange)} to come</div>
                     {alreadyOver > 0 && (
-                      <div className="text-[10px] font-semibold" style={{ color: "var(--accent-red)" }}>already over {fmt(alreadyOver)}</div>
+                      <div className="text-[10px] font-semibold" style={{ color: "var(--accent-red)" }}>{fmt(alreadyOver)} over limits</div>
                     )}
                   </div>
                 ) : (
