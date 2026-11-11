@@ -60,7 +60,7 @@ import FeatureIdeas from "@/components/FeatureIdeas";
 import BudgetGrid from "@/components/BudgetGrid";
 import VendorRules from "@/components/VendorRules";
 import SplitSheet, { SplitPart } from "@/components/SplitSheet";
-import { SoftLocks, fetchSoftLocks, saveSoftLocks, softCap, softKey, softLockable } from "@/lib/softLock";
+import { SoftLocks, fetchSoftLocks, saveSoftLocks, softCap, softKey, softLockable, fetchOneTimeCategories, saveOneTimeCategories } from "@/lib/softLock";
 import { logDues, setDuesActor, flushDuesLog } from "@/lib/duesLog";
 
 /* ── DebitOverlay: self-contained so overlayIdx doesn't re-render parent ── */
@@ -212,6 +212,7 @@ function HomeInner() {
   const [monthlyOverrides, setMonthlyOverrides] = useState<Record<number, number>>({});
   // Soft lock per month (leftovers count as ₹0 until a category is opened)
   const [softLocks, setSoftLocks] = useState<SoftLocks>({});
+  const [oneTimeIds, setOneTimeIds] = useState<Set<number>>(new Set());
 
   // Merchant category overrides: manually pinned mappings
   const [merchantOverrides, setMerchantOverrides] = useState<Map<string, string>>(new Map());
@@ -475,6 +476,7 @@ function HomeInner() {
       fetchSyncHealth().then(setSyncHealth).catch(() => {});
       setExpectedDebits(await fetchExpectedDebits());
       fetchSoftLocks().then(setSoftLocks).catch(() => {});
+      fetchOneTimeCategories().then(setOneTimeIds).catch(() => {});
       setPendingPay(await fetchPendingPayment());
 
       setLoading(false);
@@ -978,6 +980,13 @@ function HomeInner() {
       next[key] = { frozen };
       return next;
     });
+  }
+  async function toggleOneTime(catId: number) {
+    const latest = await fetchOneTimeCategories().catch(() => oneTimeIds);
+    const next = new Set(latest);
+    if (oneTimeIds.has(catId)) next.delete(catId); else next.add(catId);
+    setOneTimeIds(next);
+    await saveOneTimeCategories(next);
   }
   function softLockCategory(catId: number, locked: boolean) {
     const key = softKey(viewYear, viewMonth);
@@ -1698,6 +1707,8 @@ function HomeInner() {
               softLock={isPrimary ? softLocks[softKey(viewYear, viewMonth)] ?? null : null}
               onSoftLockToggle={isPrimary ? toggleSoftLock : undefined}
               onSoftLockCat={isPrimary ? softLockCategory : undefined}
+              oneTimeIds={oneTimeIds}
+              onToggleOneTime={isPrimary ? toggleOneTime : undefined}
             />
             <VendorRules
               myRules={vendorRules}

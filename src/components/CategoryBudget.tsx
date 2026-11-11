@@ -41,9 +41,12 @@ interface Props {
   onSoftLockToggle?: (on: boolean) => void;
   /** Soft-lock one category again, or open it. */
   onSoftLockCat?: (catId: number, locked: boolean) => void;
+  /** Categories paid once a month (tucked away once paid). */
+  oneTimeIds?: Set<number>;
+  onToggleOneTime?: (catId: number) => void;
 }
 
-function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, monthlyOverrides, excludedCategoryIds, onCategoriesChange, onShowAddCategory, onMonthlyOverride, activeDays, daysInMonth, onActiveDaysUpdate, onReclassify, onDeleteTxn, onSplit, myPhone, dues, viewMonth, viewYear, lockedNames, onToggleLock, expectedDebits, onSaveExpectedDebit, softLock, onSoftLockToggle, onSoftLockCat }: Props) {
+function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, monthlyOverrides, excludedCategoryIds, onCategoriesChange, onShowAddCategory, onMonthlyOverride, activeDays, daysInMonth, onActiveDaysUpdate, onReclassify, onDeleteTxn, onSplit, myPhone, dues, viewMonth, viewYear, lockedNames, onToggleLock, expectedDebits, onSaveExpectedDebit, softLock, onSoftLockToggle, onSoftLockCat, oneTimeIds, onToggleOneTime }: Props) {
   const currentMonth = viewMonth;
   const currentYear = viewYear;
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -126,6 +129,8 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
   const canSoftLock = isPrimary && !!onSoftLockToggle &&
     currentYear * 12 + currentMonth >= nowD.getFullYear() * 12 + nowD.getMonth();
   const [softOffArmed, setSoftOffArmed] = useState(false);
+  // Planned vs Spent: show the paid once-a-month categories (tucked away by default)
+  const [showPaidOnce, setShowPaidOnce] = useState(false);
 
   // Sort categories: most spend first, then alphabetical for zero-spend
   function sortByActivity(cats: Category[]): Category[] {
@@ -483,6 +488,15 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
 
           {/* Category name */}
           <div className="text-lg font-bold mb-3" style={{ color: "var(--text-primary)" }}>{cat.name}</div>
+          {isPrimary && onToggleOneTime && !isYearlyCat && (
+            <button className="badge text-[10px] mb-3 cursor-pointer"
+              style={oneTimeIds?.has(cat.id)
+                ? { background: "rgba(124,140,255,0.15)", color: "var(--accent)", border: "1px solid rgba(124,140,255,0.35)" }
+                : { background: "rgba(255,255,255,0.05)", color: "var(--text-tertiary)", border: "1px solid var(--border-light)" }}
+              onClick={() => onToggleOneTime(cat.id)}>
+              {oneTimeIds?.has(cat.id) ? "✓ Paid once a month · hidden once paid" : "Paid once a month? Tap to hide it once paid"}
+            </button>
+          )}
 
           {monthOnly ? (
             <div className="flex justify-between items-baseline mb-1">
@@ -705,7 +719,12 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
 
         {/* Per-category list */}
         {!monthOnly && <div className="flex-1 overflow-y-auto">
-          {sortedCats.map((cat) => {
+          {(() => {
+          // Paid once a month and already paid: tucked into one line at the bottom
+          const paidOnce = isYearlyView ? [] : sortedCats.filter((c) => oneTimeIds?.has(c.id) && (categorySpend.get(c.name) || 0) > 0);
+          const paidOnceIds = new Set(paidOnce.map((c) => c.id));
+          const shown = sortedCats.filter((c) => !paidOnceIds.has(c.id));
+          const renderRow = (cat: Category) => {
             const eCap = getEffectiveCap(cat);
             const spent = categorySpend.get(cat.name) || 0;
             const noCap = eCap === 0 && cat.cap === 0 && monthlyOverrides[cat.id] == null;
@@ -818,7 +837,27 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
                 )}
               </div>
             );
-          })}
+          };
+          return (
+            <>
+              {shown.map(renderRow)}
+              {paidOnce.length > 0 && (
+                <button type="button" className="w-full flex justify-between items-center px-5 py-3 border-0 cursor-pointer"
+                  style={{ background: "rgba(255,255,255,0.02)", borderBottom: "1px solid var(--border)" }}
+                  onClick={() => setShowPaidOnce(!showPaidOnce)}>
+                  <span className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>
+                    ✓ Paid once a month, done · {paidOnce.length}
+                    <span className="font-normal" style={{ color: "var(--text-tertiary)" }}> ({paidOnce.map((c) => c.name).join(", ")})</span>
+                  </span>
+                  <span className="text-xs shrink-0 ml-2" style={{ color: "var(--text-tertiary)" }}>
+                    {fmt(paidOnce.reduce((s, c) => s + (categorySpend.get(c.name) || 0), 0))} {showPaidOnce ? "▴" : "▾"}
+                  </span>
+                </button>
+              )}
+              {showPaidOnce && paidOnce.map(renderRow)}
+            </>
+          );
+          })()}
         </div>}
       </div>
     );

@@ -40,3 +40,17 @@ export function softCap(normalCap: number, cat: Category, lock: SoftLock | null 
   const f = lock.frozen[String(cat.id)];
   return f == null ? normalCap : Math.min(normalCap, f);
 }
+
+// ── Categories paid once a month (rent, EMIs…): once paid they're tucked away
+//    in the Planned vs Spent list, so going through categories isn't noisy. ──
+const ONE_KEY = "one_time_categories";
+
+export async function fetchOneTimeCategories(): Promise<Set<number>> {
+  const { data } = await supabase.from("settings").select("value").eq("key", ONE_KEY).limit(1).maybeSingle();
+  const ids = (data?.value as { ids?: number[] } | undefined)?.ids;
+  return new Set(Array.isArray(ids) ? ids : []);
+}
+
+export async function saveOneTimeCategories(ids: Set<number>) {
+  await saveSetting(ONE_KEY, { ids: Array.from(ids) });
+}
