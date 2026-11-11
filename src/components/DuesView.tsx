@@ -538,12 +538,6 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
                       <span className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>
                         {subCat}
                         <span className="ml-1 font-normal" style={{ color: "var(--text-tertiary)" }}>· {subDues.length}</span>
-                        {groupBy === "month" && (() => {
-                          const pos = positionText(subCat);
-                          return pos ? (
-                            <span className="block text-[10px] font-semibold" style={{ color: pos.color }}>{pos.text}</span>
-                          ) : null;
-                        })()}
                       </span>
                       <span className="flex items-center gap-2">
                         {groupBy === "month" && onToggleLock && (
@@ -555,9 +549,23 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
                             {lockedNames.has(subCat) ? "🔒 Unlock" : "🔓 Lock"}
                           </button>
                         )}
-                        <span className="text-xs font-bold" style={{ color: "var(--accent-red)" }}>
-                          {fmt(subDues.reduce((s, d) => s + Number(d.amount), 0))}
-                        </span>
+                        {(() => {
+                          // Month view (primary): "₹spent/cap", spent green within the limit, red over it
+                          const p = groupBy === "month" && isPrimary ? positions.get(subCat) : undefined;
+                          if (p && p.status !== "nocap" && p.cap > 0) {
+                            return (
+                              <span className="text-xs font-bold">
+                                <span style={{ color: p.spent > p.cap ? "var(--accent-red)" : "var(--accent-green)" }}>{fmt(p.spent)}</span>
+                                <span style={{ color: "var(--text-tertiary)" }}>/{p.cap.toLocaleString("en-IN")}</span>
+                              </span>
+                            );
+                          }
+                          return (
+                            <span className="text-xs font-bold" style={{ color: "var(--accent-red)" }}>
+                              {fmt(subDues.reduce((s, d) => s + Number(d.amount), 0))}
+                            </span>
+                          );
+                        })()}
                       </span>
                     </div>
                   )}
