@@ -865,7 +865,28 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
                   )}
                 </div>
               )}
-              {shown.map(renderRow)}
+              {(() => {
+                // Monthly view: monthly categories, then yearly ones planned for this month
+                if (isYearlyView) return shown.map(renderRow);
+                const mon = shown.filter((c) => c.recurrence !== "Yearly");
+                const yr = shown.filter((c) => c.recurrence === "Yearly");
+                const head = (label: string, cats: Category[]) => (
+                  <div className="flex justify-between items-baseline px-5 pt-4 pb-1.5" style={{ borderBottom: "1px solid var(--border)" }}>
+                    <span className="section-label">{label} · {cats.length}</span>
+                    <span className="text-[11px] font-semibold" style={{ color: "var(--text-tertiary)" }}>
+                      {fmt(cats.reduce((s, c) => s + (categorySpend.get(c.name) || 0), 0))}
+                    </span>
+                  </div>
+                );
+                return (
+                  <>
+                    {yr.length > 0 && head("Monthly", mon)}
+                    {mon.map(renderRow)}
+                    {yr.length > 0 && head("Yearly · planned this month", yr)}
+                    {yr.map(renderRow)}
+                  </>
+                );
+              })()}
             </>
           );
           })()}
