@@ -588,7 +588,7 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
     if (!showComparison) return null;
     const isYearlyView = showComparison === "yearly";
     const monthOnly = isYearlyView && yearlyListMonthOnly;
-    const closeComparison = () => { setShowComparison(false); setYearlyListMonthOnly(false); };
+    const closeComparison = () => { setShowComparison(false); setYearlyListMonthOnly(false); setShowPaidOnce(false); };
     const sourceCats = isYearlyView ? yearlyCategories : monthlyCategories;
     const totalSpentForView = isYearlyView ? yearlyTotalSpent : totalSpent;
     const totalCapForView = isYearlyView ? yearlyTotalCap : totalCap;
@@ -760,7 +760,7 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
 
             return (
               <div key={cat.id} className="px-5 py-3" style={{ borderBottom: "1px solid var(--border)", cursor: isEditingRow ? "default" : "pointer" }}
-                onClick={() => { if (!isEditingRow) { const from = showComparison; closeComparison(); setDrillFromList(from); setDrillDownId(cat.id); } }}>
+                onClick={() => { if (!isEditingRow) { const from = showComparison; setShowComparison(false); setYearlyListMonthOnly(false); setDrillFromList(from); setDrillDownId(cat.id); } }}>
                 <div className="flex justify-between items-baseline mb-1.5">
                   <div className="flex items-center gap-1.5">
                     <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{cat.name}</span>
@@ -847,21 +847,25 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
           };
           return (
             <>
-              {shown.map(renderRow)}
+              {/* Paid once a month and already paid: a folded section (folded by default) */}
               {paidOnce.length > 0 && (
-                <button type="button" className="w-full flex justify-between items-center px-5 py-3 border-0 cursor-pointer"
-                  style={{ background: "rgba(255,255,255,0.02)", borderBottom: "1px solid var(--border)" }}
-                  onClick={() => setShowPaidOnce(!showPaidOnce)}>
-                  <span className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>
-                    ✓ Paid once a month, done · {paidOnce.length}
-                    <span className="font-normal" style={{ color: "var(--text-tertiary)" }}> ({paidOnce.map((c) => c.name).join(", ")})</span>
-                  </span>
-                  <span className="text-xs shrink-0 ml-2" style={{ color: "var(--text-tertiary)" }}>
-                    {fmt(paidOnce.reduce((s, c) => s + (categorySpend.get(c.name) || 0), 0))} {showPaidOnce ? "▴" : "▾"}
-                  </span>
-                </button>
+                <div style={{ borderBottom: "1px solid var(--border)", background: "rgba(255,255,255,0.02)" }}>
+                  <button type="button" className="w-full flex justify-between items-center px-5 py-3 border-0 bg-transparent cursor-pointer text-left"
+                    onClick={() => setShowPaidOnce(!showPaidOnce)} aria-expanded={showPaidOnce}>
+                    <span className="text-sm font-semibold" style={{ color: "var(--text-secondary)" }}>
+                      <span className="inline-block w-4" style={{ color: "var(--text-tertiary)" }}>{showPaidOnce ? "▾" : "▸"}</span>
+                      ✓ Paid this month · {paidOnce.length}
+                    </span>
+                    <span className="text-sm font-semibold shrink-0 ml-2" style={{ color: "var(--text-tertiary)" }}>
+                      {fmt(paidOnce.reduce((s, c) => s + (categorySpend.get(c.name) || 0), 0))}
+                    </span>
+                  </button>
+                  {showPaidOnce && (
+                    <div className="pl-3" style={{ borderTop: "1px solid var(--border)" }}>{paidOnce.map(renderRow)}</div>
+                  )}
+                </div>
               )}
-              {showPaidOnce && paidOnce.map(renderRow)}
+              {shown.map(renderRow)}
             </>
           );
           })()}
