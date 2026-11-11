@@ -131,6 +131,8 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
   const [softOffArmed, setSoftOffArmed] = useState(false);
   // Planned vs Spent: show the paid once-a-month categories (tucked away by default)
   const [showPaidOnce, setShowPaidOnce] = useState(false);
+  // Planned vs Spent (month): Monthly / Yearly tab
+  const [listTab, setListTab] = useState<"monthly" | "yearly">("monthly");
   // Category details opened from Planned vs Spent: Back returns to that list
   const [drillFromList, setDrillFromList] = useState<false | "monthly" | "yearly">(false);
 
@@ -588,7 +590,7 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
     if (!showComparison) return null;
     const isYearlyView = showComparison === "yearly";
     const monthOnly = isYearlyView && yearlyListMonthOnly;
-    const closeComparison = () => { setShowComparison(false); setYearlyListMonthOnly(false); setShowPaidOnce(false); };
+    const closeComparison = () => { setShowComparison(false); setYearlyListMonthOnly(false); setShowPaidOnce(false); setListTab("monthly"); };
     const sourceCats = isYearlyView ? yearlyCategories : monthlyCategories;
     const totalSpentForView = isYearlyView ? yearlyTotalSpent : totalSpent;
     const totalCapForView = isYearlyView ? yearlyTotalCap : totalCap;
@@ -845,10 +847,7 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
               </div>
             );
           };
-          return (
-            <>
-              {/* Paid once a month and already paid: a folded section (folded by default) */}
-              {paidOnce.length > 0 && (
+          const fold = paidOnce.length > 0 && (
                 <div style={{ borderBottom: "1px solid var(--border)", background: "rgba(255,255,255,0.02)" }}>
                   <button type="button" className="w-full flex justify-between items-center px-5 py-3 border-0 bg-transparent cursor-pointer text-left"
                     onClick={() => setShowPaidOnce(!showPaidOnce)} aria-expanded={showPaidOnce}>
@@ -864,26 +863,32 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
                     <div className="pl-3" style={{ borderTop: "1px solid var(--border)" }}>{paidOnce.map(renderRow)}</div>
                   )}
                 </div>
-              )}
+          );
+          return (
+            <>
               {(() => {
-                // Monthly view: monthly categories, then yearly ones planned for this month
-                if (isYearlyView) return shown.map(renderRow);
+                // Monthly view: tabs for monthly categories and yearly ones planned for this month
+                if (isYearlyView) return <>{fold}{shown.map(renderRow)}</>;
                 const mon = shown.filter((c) => c.recurrence !== "Yearly");
                 const yr = shown.filter((c) => c.recurrence === "Yearly");
-                const head = (label: string, cats: Category[]) => (
-                  <div className="flex justify-between items-baseline px-5 pt-4 pb-1.5" style={{ borderBottom: "1px solid var(--border)" }}>
-                    <span className="section-label">{label} · {cats.length}</span>
-                    <span className="text-[11px] font-semibold" style={{ color: "var(--text-tertiary)" }}>
-                      {fmt(cats.reduce((s, c) => s + (categorySpend.get(c.name) || 0), 0))}
-                    </span>
-                  </div>
+                if (yr.length === 0) return <>{fold}{mon.map(renderRow)}</>;
+                const monAll = [...paidOnce, ...mon];
+                const tab = (key: "monthly" | "yearly", label: string, cats: Category[]) => (
+                  <button type="button" className="flex-1 py-2 rounded-lg text-xs font-semibold border-0 cursor-pointer"
+                    style={listTab === key
+                      ? { background: "var(--accent)", color: "#fff" }
+                      : { background: "transparent", color: "var(--text-tertiary)" }}
+                    onClick={() => setListTab(key)}>
+                    {label} · {cats.length} · {fmt(cats.reduce((s, c) => s + (categorySpend.get(c.name) || 0), 0))}
+                  </button>
                 );
                 return (
                   <>
-                    {yr.length > 0 && head("Monthly", mon)}
-                    {mon.map(renderRow)}
-                    {yr.length > 0 && head("Yearly · planned this month", yr)}
-                    {yr.map(renderRow)}
+                    <div className="flex gap-1 mx-5 my-3 p-1 rounded-xl" style={{ background: "rgba(255,255,255,0.05)" }}>
+                      {tab("monthly", "Monthly", monAll)}
+                      {tab("yearly", "Yearly", yr)}
+                    </div>
+                    {listTab === "yearly" ? yr.map(renderRow) : <>{fold}{mon.map(renderRow)}</>}
                   </>
                 );
               })()}
