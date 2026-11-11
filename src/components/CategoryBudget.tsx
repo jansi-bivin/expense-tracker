@@ -164,6 +164,21 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
   const totalPct = totalCap > 0 ? Math.min((totalSpent / totalCap) * 100, 100) : 0;
   const totalRemainingPct = Math.max(100 - totalPct, 0);
   const totalRemaining = totalCap - totalSpent;
+  // Under soft lock: money still to arrange (what's left in each category, never
+  // less than ₹0) and, apart from it, what's already gone over the limits.
+  const softActive = isPrimary && !!softLock;
+  const { toArrange, alreadyOver } = useMemo(() => {
+    let toArrange = 0, alreadyOver = 0;
+    for (const c of monthlyCategories) {
+      const eCap = getEffectiveCap(c);
+      if (eCap === 0 && c.cap === 0 && monthlyOverrides[c.id] == null) continue; // no limit
+      const spent = categorySpend.get(c.name) || 0;
+      toArrange += Math.max(eCap - spent, 0);
+      alreadyOver += Math.max(spent - eCap, 0);
+    }
+    return { toArrange, alreadyOver };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [monthlyCategories, categorySpend, monthlyOverrides, scaleFactor, softLock]);
 
   // Yearly totals
   const yearlyTotalCap = useMemo(() => {
@@ -608,9 +623,16 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
           <div className="flex justify-between items-baseline mb-2">
             <span className="text-2xl font-bold amount-debit">{fmt(totalSpentForView)}</span>
             <span className="text-sm" style={{ color: "var(--text-tertiary)" }}>/ {fmt(totalCapForView)}</span>
-            <span className="text-sm font-semibold" style={{ color: totalRemForView >= 0 ? "var(--accent-green)" : "var(--accent-red)" }}>
-              {totalRemForView >= 0 ? fmt(totalRemForView) + " left" : fmt(-totalRemForView) + " over"}
-            </span>
+            {softActive && !isYearlyView ? (
+              <span className="text-sm font-semibold text-right" style={{ color: "var(--accent-green)" }}>
+                {fmt(toArrange)} to arrange
+                {alreadyOver > 0 && <span className="block text-[10px]" style={{ color: "var(--accent-red)" }}>already over {fmt(alreadyOver)}</span>}
+              </span>
+            ) : (
+              <span className="text-sm font-semibold" style={{ color: totalRemForView >= 0 ? "var(--accent-green)" : "var(--accent-red)" }}>
+                {totalRemForView >= 0 ? fmt(totalRemForView) + " left" : fmt(-totalRemForView) + " over"}
+              </span>
+            )}
           </div>
           <div className="progress-track" style={{ height: "6px" }}>
             <div className={`progress-fill ${totalPctForView >= 90 ? "progress-fill-red" : totalPctForView >= 75 ? "progress-fill-yellow" : "progress-fill-green"}`}
@@ -1200,12 +1222,22 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
                     {pctFmt(totalPct)} of {fmt(totalCap)}
                   </div>
                 </div>
-                <div className="text-right">
-                  <div className="section-label mb-0.5">Left</div>
-                  <div className="text-lg font-extrabold" style={{ color: totalRemaining >= 0 ? "var(--accent-green)" : "var(--accent-red)" }}>
-                    {totalRemaining >= 0 ? fmt(totalRemaining) : "-" + fmt(-totalRemaining)}
+                {softActive ? (
+                  <div className="text-right">
+                    <div className="section-label mb-0.5">To arrange</div>
+                    <div className="text-lg font-extrabold" style={{ color: "var(--accent-green)" }}>{fmt(toArrange)}</div>
+                    {alreadyOver > 0 && (
+                      <div className="text-[10px] font-semibold" style={{ color: "var(--accent-red)" }}>already over {fmt(alreadyOver)}</div>
+                    )}
                   </div>
-                </div>
+                ) : (
+                  <div className="text-right">
+                    <div className="section-label mb-0.5">Left</div>
+                    <div className="text-lg font-extrabold" style={{ color: totalRemaining >= 0 ? "var(--accent-green)" : "var(--accent-red)" }}>
+                      {totalRemaining >= 0 ? fmt(totalRemaining) : "-" + fmt(-totalRemaining)}
+                    </div>
+                  </div>
+                )}
               </>
             ) : (
               <>
