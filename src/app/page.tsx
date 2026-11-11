@@ -40,10 +40,11 @@ async function createDue(transactionId: number, category: string, amount: number
   if (used > 0) await saveAdvance(advanceLeft);
   if (used > 0 && dueLeft <= 0) {
     // Fully covered by the advance: record it as already settled.
-    await supabase.from("dues").insert({
+    const { data: row } = await supabase.from("dues").insert({
       transaction_id: transactionId, category, amount,
       cleared: true, cleared_at: new Date().toISOString(),
-    });
+    }).select("id").single();
+    if (row) logDues({ action: "cleared", how: `Paid from the advance when the ${category} expense was added`, dueIds: [row.id], amount });
   } else {
     await supabase.from("dues").insert({ transaction_id: transactionId, category, amount: dueLeft });
   }
@@ -59,6 +60,7 @@ import FeatureIdeas from "@/components/FeatureIdeas";
 import BudgetGrid from "@/components/BudgetGrid";
 import VendorRules from "@/components/VendorRules";
 import SplitSheet, { SplitPart } from "@/components/SplitSheet";
+import { logDues, setDuesActor, flushDuesLog } from "@/lib/duesLog";
 
 /* ── DebitOverlay: self-contained so overlayIdx doesn't re-render parent ── */
 function DebitOverlay({ txns, categories, isPrimary, unclearedDues, settlementHints, merchantCategoryMap, categoryFrequencyMap, onDone, onSnooze, onSettle, onDismissAll, onSaveMapping, onCategoryCreated, onAutoFile }: {
@@ -356,6 +358,7 @@ function HomeInner() {
       const phone = localStorage.getItem("userPhone");
       const user = users?.find((u: User) => u.phone_number === phone) || null;
       setCurrentUser(user);
+      if (user) { setDuesActor(user.name, user.phone_number); flushDuesLog(); }
 
       if (!user && users && users.length > 0 && !phone) {
         setLoading(false);
@@ -664,6 +667,7 @@ function HomeInner() {
   async function handleDeleteTxn(txnId: number) {
     const txn = categorizedTxns.find((t) => t.id === txnId);
     const partDue = dues.find((d) => d.transaction_id === txnId);
+    if (partDue) logDues({ action: "deleted", how: `Its expense was deleted${txn?.category ? ` (${txn.category})` : ""}`, dueIds: [partDue.id], amount: Number(partDue.amount) });
     await supabase.from("dues").delete().eq("transaction_id", txnId);
     await supabase.from("transactions").delete().eq("id", txnId);
     setCategorizedTxns((prev) => prev.filter((t) => t.id !== txnId));
@@ -801,7 +805,7 @@ function HomeInner() {
   // Settlement: primary user marks a debit as payment, partially settles dues
   async function handleSettle(txnId: number, plan: SettlementPlan) {
     await markSettlementTxn(txnId);
-    await applySettlementPlan(plan, txnId);
+    await applySettlementPlan(plan, txnId, "You marked a bank payment as Settle (on its review card)");
     // Settled by hand from review: the payment started from Pay is done
     if (pendingPay && Math.abs(plan.payment - pendingPay.amount) < 0.01) {
       setPendingPay(null);
@@ -821,7 +825,16 @@ function HomeInner() {
   }
 
   /** Clear / reduce dues as planned; `txnId` is the SMS proving the payment, if any. */
-  async function applySettlementPlan(plan: SettlementPlan, txnId: number | null) {
+  async function applySettlementPlan(plan: SettlementPlan, txnId: number | null, how: string) {
+    const amountOf = (ids: number[]) => round2(dues.filter((d) => ids.includes(d.id)).reduce((s, d) => s + Number(d.amount), 0));
+    logDues({ action: "cleared", how, dueIds: plan.clearIds, amount: amountOf(plan.clearIds), txnId });
+    if (plan.partial) {
+      const before = dues.find((d) => d.id === plan.partial!.id);
+      logDues({
+        action: "reduced", how: `${how} (part-paid${before ? `: ₹${Number(before.amount)} → ₹${plan.partial.newAmount}` : ""})`,
+        dueIds: [plan.partial.id], amount: before ? round2(Number(before.amount) - plan.partial.newAmount) : 0, txnId,
+      });
+    }
     // The plan was computed on the card (oldest first / chosen month / manual,
     // round-off, extra → advance). Apply it as-is.
     const nowIso = new Date().toISOString();
@@ -1080,7 +1093,7 @@ function HomeInner() {
         } else {
           const plan = planSettlement(p.amount, settleDuesRef.current, { onlyIds: open });
           await markSettlementTxn(proof.id, proof);
-          await applySettlementPlan(plan, proof.id);
+          await applySettlementPlan(plan, proof.id, `You tapped Pay; the app matched your ₹${p.amount} bank payment to her automatically`);
           const n = plan.clearIds.length;
           setPayNotice(`✓ Paid ₹${p.amount.toLocaleString("en-IN")} to ${payee.name}: ${n} due${n !== 1 ? "s" : ""} cleared${plan.partial ? ", 1 part-paid" : ""}${plan.extra > 0 ? `, ₹${plan.extra} kept as advance` : ""}.`);
         }
@@ -1310,7 +1323,8 @@ function HomeInner() {
     if (!p) return;
     const open = openDueIds(p.dueIds);
     if (open.size > 0) {
-      await applySettlementPlan(planSettlement(p.amount, settleDuesRef.current, { onlyIds: open }), null);
+      await applySettlementPlan(planSettlement(p.amount, settleDuesRef.current, { onlyIds: open }), null,
+        `You tapped Pay (₹${p.amount}), then "Yes, I paid" before the bank SMS came`);
     }
     const next = { ...p, confirmed: Date.now() };
     setPendingPay(next);

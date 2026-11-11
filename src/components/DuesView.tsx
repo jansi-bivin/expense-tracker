@@ -6,6 +6,7 @@ import { supabase, Transaction, Category } from "@/lib/supabase";
 import { SettleDue, monthKey, monthLabel } from "@/lib/dues";
 import { CategoryPosition } from "@/lib/budget";
 import { upiNote } from "@/lib/pendingPayment";
+import { DuesLogEntry, fetchDuesLog, lastEntryFor, logDues } from "@/lib/duesLog";
 
 interface Props {
   dues: SettleDue[];
@@ -50,6 +51,22 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
   }
   const [showCleared, setShowCleared] = useState(false);
   const [clearing, setClearing] = useState<Set<number>>(new Set());
+  // Clear / Clear All / Reopen need a second tap (no more accidental clears)
+  const [armed, setArmed] = useState<string | null>(null);
+  const armTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function confirmTap(key: string, act: () => void) {
+    if (armed === key) {
+      if (armTimer.current) clearTimeout(armTimer.current);
+      setArmed(null);
+      act();
+      return;
+    }
+    setArmed(key);
+    if (armTimer.current) clearTimeout(armTimer.current);
+    armTimer.current = setTimeout(() => setArmed(null), 4000);
+  }
+  // How each cleared due got cleared
+  const [duesLog, setDuesLog] = useState<DuesLogEntry[]>([]);
 
   const fmt = (n: number) => "\u20B9" + n.toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
   const fmtDate = (ts: number) => new Date(ts).toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
@@ -240,6 +257,8 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
   }
 
   async function clearDue(dueId: number) {
+    const due = dues.find((d) => d.id === dueId);
+    logDues({ action: "cleared", how: "You tapped Clear (and confirmed) on this due in Dues", dueIds: [dueId], amount: Number(due?.amount ?? 0) });
     setClearing((prev) => new Set(prev).add(dueId));
     await supabase.from("dues").update({ cleared: true, cleared_at: new Date().toISOString() }).eq("id", dueId);
     onDuesChange(dues.map((d) => d.id === dueId ? { ...d, cleared: true, cleared_at: new Date().toISOString() } : d));
@@ -248,6 +267,10 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
 
   async function clearGroup(groupDues: SettleDue[]) {
     const ids = groupDues.map((d) => d.id);
+    logDues({
+      action: "cleared", how: `You tapped Clear All (and confirmed) on "${expandedCat ?? "a group"}" in Dues`,
+      dueIds: ids, amount: groupDues.reduce((s, d) => s + Number(d.amount), 0),
+    });
     setClearing((prev) => { const s = new Set(prev); ids.forEach((id) => s.add(id)); return s; });
     const now = new Date().toISOString();
     await supabase.from("dues").update({ cleared: true, cleared_at: now }).in("id", ids);
@@ -255,6 +278,24 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
     setClearing((prev) => { const s = new Set(prev); ids.forEach((id) => s.delete(id)); return s; });
     setExpandedCat(null);
   }
+
+  async function reopenDue(dueId: number) {
+    const due = dues.find((d) => d.id === dueId);
+    logDues({ action: "reopened", how: "You tapped Reopen (and confirmed) on this cleared due", dueIds: [dueId], amount: Number(due?.amount ?? 0) });
+    await supabase.from("dues").update({ cleared: false, cleared_at: null, settlement_transaction_id: null }).eq("id", dueId);
+    onDuesChange(dues.map((d) => d.id === dueId ? { ...d, cleared: false, cleared_at: null, settlement_transaction_id: null } : d));
+  }
+
+  // Read the log when the cleared list is opened, and again as dues change
+  const clearedCount = clearedDues.length;
+  useEffect(() => {
+    if (!showCleared) return;
+    const t = setTimeout(() => { fetchDuesLog().then(setDuesLog).catch(() => {}); }, 1500);
+    return () => clearTimeout(t);
+  }, [showCleared, clearedCount]);
+
+  const fmtWhen = (v: string | number | null) => v == null ? "" :
+    new Date(v).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
 
   if (unclearedDues.length === 0 && clearedDues.length === 0 && advance <= 0) {
     return (
@@ -470,9 +511,9 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
                       <button
                         className={`${payeeUpi ? "flex-1" : "w-full"} py-2.5 btn-green text-sm rounded-xl disabled:opacity-35`}
                         disabled={categoryDues.some((d) => clearing.has(d.id))}
-                        onClick={(e) => { e.stopPropagation(); clearGroup(categoryDues); }}
+                        onClick={(e) => { e.stopPropagation(); confirmTap(`group:${category}`, () => clearGroup(categoryDues)); }}
                       >
-                        ✓ Clear All
+                        {armed === `group:${category}` ? `Tap again to clear ${fmt(catTotal)}` : "✓ Clear All"}
                       </button>
                     </div>
                   )}
@@ -558,9 +599,10 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
                               <button
                                 className="badge badge-green text-[10px] cursor-pointer disabled:opacity-35"
                                 disabled={clearing.has(due.id)}
-                                onClick={() => clearDue(due.id)}
+                                style={armed === `due:${due.id}` ? { background: "rgba(255,90,110,0.18)", color: "var(--accent-red)" } : undefined}
+                                onClick={() => confirmTap(`due:${due.id}`, () => clearDue(due.id))}
                               >
-                                {clearing.has(due.id) ? "..." : "Clear"}
+                                {clearing.has(due.id) ? "..." : armed === `due:${due.id}` ? `Sure? Clear ${fmt(Number(due.amount))}` : "Clear"}
                               </button>
                             )}
                           </div>
@@ -610,11 +652,13 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
 
           {showCleared && (
             <div className="space-y-2 stagger">
-              {clearedDues.map((due) => {
+              {[...clearedDues].sort((a, b) => (b.cleared_at ? Date.parse(b.cleared_at) : 0) - (a.cleared_at ? Date.parse(a.cleared_at) : 0)).map((due) => {
                 const txn = txnMap.get(due.transaction_id);
+                const entry = lastEntryFor(duesLog, due.id);
                 return (
-                  <div key={due.id} className="flex justify-between items-center rounded-2xl px-4 py-3 animate-slide-up"
+                  <div key={due.id} className="rounded-2xl px-4 py-3 animate-slide-up"
                     style={{ background: "rgba(255,255,255,0.02)", border: "1px solid var(--border)" }}>
+                  <div className="flex justify-between items-center">
                     <div>
                       <div className="text-sm" style={{ color: "var(--text-tertiary)" }}>{txn?.merchant ?? txn?.notes ?? "Transaction #" + due.transaction_id}</div>
                       <div className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
@@ -624,7 +668,28 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
                         )}
                       </div>
                     </div>
-                    <span className="text-sm line-through" style={{ color: "var(--text-tertiary)" }}>{fmt(Number(due.amount))}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm line-through" style={{ color: "var(--text-tertiary)" }}>{fmt(Number(due.amount))}</span>
+                      {isPrimary && (
+                        <button className="badge text-[10px] cursor-pointer"
+                          style={armed === `reopen:${due.id}`
+                            ? { background: "rgba(255,179,71,0.18)", color: "var(--accent-orange)" }
+                            : { background: "rgba(255,255,255,0.06)", color: "var(--text-tertiary)", border: "1px solid var(--border-light)" }}
+                          onClick={() => confirmTap(`reopen:${due.id}`, () => reopenDue(due.id))}>
+                          {armed === `reopen:${due.id}` ? "Sure? Reopen" : "Reopen"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-[10px] mt-1.5 leading-4" style={{ color: "var(--text-tertiary)" }}>
+                    {entry && entry.action !== "reopened" ? (
+                      <>Cleared {fmtWhen(entry.at)} by <b>{entry.byName || "?"}</b> · {entry.how} · on {entry.device}</>
+                    ) : (
+                      <>Cleared {fmtWhen(due.cleared_at)} · {due.settlement_transaction_id
+                        ? "linked to a bank payment (who and how were not recorded)"
+                        : "no payment linked; who and how were not recorded (cleared before this record started)"}</>
+                    )}
+                  </div>
                   </div>
                 );
               })}
