@@ -60,8 +60,7 @@ import FeatureIdeas from "@/components/FeatureIdeas";
 import BudgetGrid from "@/components/BudgetGrid";
 import VendorRules from "@/components/VendorRules";
 import SplitSheet, { SplitPart } from "@/components/SplitSheet";
-import PlanSheet from "@/components/PlanSheet";
-import { MonthPlans, fetchMonthPlans, planKey, saveMonthPlans, suggestExpected } from "@/lib/monthPlan";
+import { SoftLocks, fetchSoftLocks, saveSoftLocks, softCap, softKey, softLockable } from "@/lib/softLock";
 import { logDues, setDuesActor, flushDuesLog } from "@/lib/duesLog";
 
 /* ── DebitOverlay: self-contained so overlayIdx doesn't re-render parent ── */
@@ -211,9 +210,8 @@ function HomeInner() {
 
   // Monthly cap overrides: { categoryId: overrideCap }
   const [monthlyOverrides, setMonthlyOverrides] = useState<Record<number, number>>({});
-  // "Plan this month": expected cost per category, per month
-  const [monthPlans, setMonthPlans] = useState<MonthPlans>({});
-  const [showPlan, setShowPlan] = useState(false);
+  // Soft lock per month (leftovers count as ₹0 until a category is opened)
+  const [softLocks, setSoftLocks] = useState<SoftLocks>({});
 
   // Merchant category overrides: manually pinned mappings
   const [merchantOverrides, setMerchantOverrides] = useState<Map<string, string>>(new Map());
@@ -476,7 +474,7 @@ function HomeInner() {
       setLockedCatIds(await fetchLockedCategories());
       fetchSyncHealth().then(setSyncHealth).catch(() => {});
       setExpectedDebits(await fetchExpectedDebits());
-      fetchMonthPlans().then(setMonthPlans).catch(() => {});
+      fetchSoftLocks().then(setSoftLocks).catch(() => {});
       setPendingPay(await fetchPendingPayment());
 
       setLoading(false);
@@ -929,11 +927,70 @@ function HomeInner() {
 
   // Spend vs limit per category for the month shown in the header
   const categoryPositions = useMemo(
-    () => computePositions(categories, categorizedTxns, {
-      month: viewMonth, year: viewYear, monthlyOverrides, scaleFactor, excludedCategoryIds,
-    }),
-    [categories, categorizedTxns, viewMonth, viewYear, monthlyOverrides, scaleFactor, excludedCategoryIds]
+    () => {
+      // Soft-locked categories count their month limit as what was spent when locked
+      const lock = currentUser?.is_primary ? softLocks[softKey(viewYear, viewMonth)] : undefined;
+      let overrides = monthlyOverrides;
+      if (lock) {
+        overrides = { ...monthlyOverrides };
+        for (const c of categories) {
+          if (!softLockable(c) || lock.frozen[String(c.id)] == null) continue;
+          const normal = monthlyOverrides[c.id] ?? c.cap * scaleFactor;
+          overrides[c.id] = softCap(normal, c, lock);
+        }
+      }
+      return computePositions(categories, categorizedTxns, {
+        month: viewMonth, year: viewYear, monthlyOverrides: overrides, scaleFactor, excludedCategoryIds,
+      });
+    },
+    [categories, categorizedTxns, viewMonth, viewYear, monthlyOverrides, scaleFactor, excludedCategoryIds, softLocks, currentUser?.is_primary]
   );
+
+  // ── Soft lock: on/off for the viewed month, and per category ──
+  function spentThisMonth(): Map<string, number> {
+    const m = new Map<string, number>();
+    for (const t of categorizedTxns) {
+      if (!t.category || !t.amount) continue;
+      const d = new Date(t.sms_date);
+      if (d.getMonth() === viewMonth && d.getFullYear() === viewYear) m.set(t.category, (m.get(t.category) || 0) + Number(t.amount));
+    }
+    return m;
+  }
+  async function updateSoftLocks(change: (cur: SoftLocks) => SoftLocks) {
+    const next = change(softLocks);
+    setSoftLocks(next);
+    const latest = await fetchSoftLocks().catch(() => softLocks);
+    const key = softKey(viewYear, viewMonth);
+    const merged = { ...latest };
+    if (next[key]) merged[key] = next[key]; else delete merged[key];
+    await saveSoftLocks(merged);
+  }
+  function toggleSoftLock(on: boolean) {
+    const key = softKey(viewYear, viewMonth);
+    updateSoftLocks((cur) => {
+      const next = { ...cur };
+      if (!on) { delete next[key]; return next; }
+      const spent = spentThisMonth();
+      const frozen: Record<string, number> = {};
+      for (const c of categories) {
+        if (softLockable(c) && !excludedCategoryIds.has(c.id)) frozen[String(c.id)] = Math.round(spent.get(c.name) || 0);
+      }
+      next[key] = { frozen };
+      return next;
+    });
+  }
+  function softLockCategory(catId: number, locked: boolean) {
+    const key = softKey(viewYear, viewMonth);
+    const cat = categories.find((c) => c.id === catId);
+    updateSoftLocks((cur) => {
+      const lock = cur[key];
+      if (!lock || !cat) return cur;
+      const frozen = { ...lock.frozen };
+      if (locked) frozen[String(catId)] = Math.round(spentThisMonth().get(cat.name) || 0);
+      else delete frozen[String(catId)];
+      return { ...cur, [key]: { frozen } };
+    });
+  }
 
   const lockedCatNames = useMemo(
     () => new Set(categories.filter((c) => lockedCatIds.has(c.id)).map((c) => c.name)),
@@ -1638,8 +1695,9 @@ function HomeInner() {
               onToggleLock={isPrimary ? toggleCategoryLock : undefined}
               expectedDebits={expectedDebits.items}
               onSaveExpectedDebit={isPrimary ? handleSaveExpectedDebit : undefined}
-              monthPlan={monthPlans[planKey(viewYear, viewMonth)]}
-              onOpenPlan={isPrimary ? () => setShowPlan(true) : undefined}
+              softLock={isPrimary ? softLocks[softKey(viewYear, viewMonth)] ?? null : null}
+              onSoftLockToggle={isPrimary ? toggleSoftLock : undefined}
+              onSoftLockCat={isPrimary ? softLockCategory : undefined}
             />
             <VendorRules
               myRules={vendorRules}
@@ -1655,36 +1713,6 @@ function HomeInner() {
           </>
         )}
       </div>
-
-      {/* ═══ Plan this month ═══ */}
-      {showPlan && isPrimary && (() => {
-        const cats = categories.filter((c) => !excludedCategoryIds.has(c.id) &&
-          (c.recurrence === "Monthly" || (c.recurrence === "Yearly" && monthlyOverrides[c.id] != null)));
-        const names = new Set(cats.map((c) => c.name));
-        const spent = new Map<string, number>();
-        for (const t of categorizedTxns) {
-          if (!t.category || !t.amount || !names.has(t.category)) continue;
-          const d = new Date(t.sms_date);
-          if (d.getMonth() === viewMonth && d.getFullYear() === viewYear) spent.set(t.category, (spent.get(t.category) || 0) + Number(t.amount));
-        }
-        const key = planKey(viewYear, viewMonth);
-        return (
-          <PlanSheet
-            monthLabel={new Date(viewYear, viewMonth, 1).toLocaleDateString("en-IN", { month: "long" })}
-            categories={cats}
-            suggested={suggestExpected(cats, categorizedTxns, viewYear, viewMonth, expectedDebits.items)}
-            overrides={monthPlans[key]?.expected ?? {}}
-            spent={spent}
-            onSave={async (expected) => {
-              const latest = await fetchMonthPlans().catch(() => monthPlans);
-              const next = { ...latest, [key]: { expected, confirmed: true } };
-              setMonthPlans(next);
-              await saveMonthPlans(next);
-            }}
-            onClose={() => setShowPlan(false)}
-          />
-        );
-      })()}
 
       {/* ═══ Split a payment into parts (above the bottom bar and any open list) ═══ */}
       {splitTxnId != null && (() => {

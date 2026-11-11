@@ -4,7 +4,7 @@ import React, { useMemo, useState } from "react";
 import { supabase, Transaction, Category } from "@/lib/supabase";
 import { categoryNeedsNote } from "@/lib/dues";
 import { ExpectedDebit } from "@/lib/expectedDebits";
-import { MonthPlan, suggestExpected } from "@/lib/monthPlan";
+import { SoftLock, softCap, softLockable } from "@/lib/softLock";
 import BubbleBasket from "./BubbleBasket";
 interface Props {
   transactions: Transaction[];
@@ -35,13 +35,15 @@ interface Props {
   expectedDebits?: Record<string, ExpectedDebit>;
   /** Primary only: set (or clear with null) a category's auto-debit day and amount. */
   onSaveExpectedDebit?: (categoryId: number, item: ExpectedDebit | null) => void;
-  /** The user's plan for the viewed month (expected cost per category). */
-  monthPlan?: MonthPlan;
-  /** Opens "Plan this month" (primary only). */
-  onOpenPlan?: () => void;
+  /** Soft lock for the viewed month (primary only); null when off. */
+  softLock?: SoftLock | null;
+  /** Turn the month's soft lock on/off (primary only). */
+  onSoftLockToggle?: (on: boolean) => void;
+  /** Soft-lock one category again, or open it. */
+  onSoftLockCat?: (catId: number, locked: boolean) => void;
 }
 
-function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, monthlyOverrides, excludedCategoryIds, onCategoriesChange, onShowAddCategory, onMonthlyOverride, activeDays, daysInMonth, onActiveDaysUpdate, onReclassify, onDeleteTxn, onSplit, myPhone, dues, viewMonth, viewYear, lockedNames, onToggleLock, expectedDebits, onSaveExpectedDebit, monthPlan, onOpenPlan }: Props) {
+function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, monthlyOverrides, excludedCategoryIds, onCategoriesChange, onShowAddCategory, onMonthlyOverride, activeDays, daysInMonth, onActiveDaysUpdate, onReclassify, onDeleteTxn, onSplit, myPhone, dues, viewMonth, viewYear, lockedNames, onToggleLock, expectedDebits, onSaveExpectedDebit, softLock, onSoftLockToggle, onSoftLockCat }: Props) {
   const currentMonth = viewMonth;
   const currentYear = viewYear;
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -114,10 +116,16 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
       return cat.cap;
     }
     const hasOverride = monthlyOverrides[cat.id] != null;
-    if (hasOverride) return monthlyOverrides[cat.id];
-    if (cat.cap === 0) return 0;
-    return cat.cap * scaleFactor;
+    const normal = hasOverride ? monthlyOverrides[cat.id] : cat.cap === 0 ? 0 : cat.cap * scaleFactor;
+    return isPrimary ? softCap(normal, cat, softLock) : normal;
   }
+  const isSoftLocked = (cat: Category) =>
+    isPrimary && !!softLock && softLockable(cat) && softLock.frozen[String(cat.id)] != null;
+  const softOpenCount = softLock ? categories.filter((c) => softLockable(c) && !excludedCategoryIds?.has(c.id) && softLock.frozen[String(c.id)] == null).length : 0;
+  const nowD = new Date();
+  const canSoftLock = isPrimary && !!onSoftLockToggle &&
+    currentYear * 12 + currentMonth >= nowD.getFullYear() * 12 + nowD.getMonth();
+  const [softOffArmed, setSoftOffArmed] = useState(false);
 
   // Sort categories: most spend first, then alphabetical for zero-spend
   function sortByActivity(cats: Category[]): Category[] {
@@ -156,32 +164,6 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
   const totalPct = totalCap > 0 ? Math.min((totalSpent / totalCap) * 100, 100) : 0;
   const totalRemainingPct = Math.max(100 - totalPct, 0);
   const totalRemaining = totalCap - totalSpent;
-
-  // ── Forecast: money still to arrange this month, from what's expected (not the limits) ──
-  const monthlyCatIds = monthlyCategories.map((c) => c.id).join(",");
-  const suggested = useMemo(
-    () => suggestExpected(monthlyCategories, transactions, currentYear, currentMonth, expectedDebits),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [transactions, currentYear, currentMonth, expectedDebits, monthlyCatIds]
-  );
-  const forecast = useMemo(() => {
-    let likely = 0, upTo = 0, unplanned = 0;
-    const unplannedNames: string[] = [];
-    for (const c of monthlyCategories) {
-      const k = String(c.id);
-      const exp = monthPlan?.expected[k] ?? suggested[k] ?? 0;
-      const spent = categorySpend.get(c.name) || 0;
-      const eCap = getEffectiveCap(c);
-      likely += Math.max(exp - spent, 0);
-      upTo += eCap > 0 ? Math.max(eCap - spent, 0) : Math.max(exp - spent, 0);
-      if (exp === 0 && spent > 0) { unplanned += spent; unplannedNames.push(c.name); }
-    }
-    return { likely, upTo: Math.max(upTo, likely), unplanned, unplannedNames };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [monthlyCatIds, suggested, monthPlan, categorySpend, scaleFactor, monthlyOverrides]);
-  const nowD = new Date();
-  const showForecast = isPrimary && !!onOpenPlan &&
-    currentYear * 12 + currentMonth >= nowD.getFullYear() * 12 + nowD.getMonth();
 
   // Yearly totals
   const yearlyTotalCap = useMemo(() => {
@@ -723,6 +705,7 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
                 return;
               }
               onMonthlyOverride(cat.id, newCap);
+              if (isSoftLocked(cat)) onSoftLockCat?.(cat.id, false);
               setEditingRowCatId(null);
               setRowCapInput("");
             };
@@ -735,6 +718,19 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
                     <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{cat.name}</span>
                     {hasMonthOverride && !isYearlyView && (
                       <span className="badge badge-orange text-[9px] py-0">This Mo</span>
+                    )}
+                    {!isYearlyView && softLock && isPrimary && onSoftLockCat && softLockable(cat) && (
+                      isSoftLocked(cat) ? (
+                        <button className="badge text-[10px] py-0 cursor-pointer"
+                          style={{ background: "rgba(167,139,250,0.15)", color: "#a78bfa", border: "1px solid rgba(167,139,250,0.3)" }}
+                          title="Soft-locked: its leftover counts as ₹0. Tap to open it for this month."
+                          onClick={(e) => { e.stopPropagation(); onSoftLockCat(cat.id, false); }}>◐ Soft</button>
+                      ) : (
+                        <button className="badge text-[10px] py-0 cursor-pointer"
+                          style={{ background: "rgba(52,211,153,0.12)", color: "var(--accent-green)", border: "1px solid rgba(52,211,153,0.3)" }}
+                          title="Open this month. Tap to soft-lock it again."
+                          onClick={(e) => { e.stopPropagation(); onSoftLockCat(cat.id, true); }}>Open</button>
+                      )
                     )}
                     {isPrimary && onToggleLock ? (
                       <button
@@ -788,14 +784,10 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
                         onClick={(e) => {
                           if (!canEditMonthCap) return;
                           e.stopPropagation();
-                        }}
-                        onDoubleClick={(e) => {
-                          if (!canEditMonthCap) return;
-                          e.stopPropagation();
                           setEditingRowCatId(cat.id);
                           setRowCapInput(String(hasMonthOverride ? monthlyOverrides[cat.id] : cat.cap));
                         }}
-                        title={canEditMonthCap ? "Double-click to set this month's cap" : undefined}
+                        title={canEditMonthCap ? "Tap to set this month's cap" : undefined}
                       >
                         {fmt(spent)} / {fmt(eCap)}
                       </span>
@@ -1166,6 +1158,30 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
                 </span>
               )}
             </button>
+            {canSoftLock && (
+              softLock ? (
+                <span className="flex items-center gap-1.5">
+                  <button className="badge text-[10px] cursor-pointer"
+                    style={{ background: "rgba(167,139,250,0.15)", color: "#a78bfa", border: "1px solid rgba(167,139,250,0.3)" }}
+                    onClick={() => setShowComparison("monthly")}>
+                    ◐ Soft lock on · {softOpenCount} open ›
+                  </button>
+                  <button className="badge text-[10px] cursor-pointer badge-muted"
+                    onClick={() => {
+                      if (softOffArmed) { setSoftOffArmed(false); onSoftLockToggle!(false); return; }
+                      setSoftOffArmed(true); setTimeout(() => setSoftOffArmed(false), 4000);
+                    }}>
+                    {softOffArmed ? "Tap again to turn off" : "Off"}
+                  </button>
+                </span>
+              ) : (
+                <button className="badge text-[10px] cursor-pointer badge-muted"
+                  title="Count every category's leftover as ₹0, then open the ones you'll really spend"
+                  onClick={() => { onSoftLockToggle!(true); setShowComparison("monthly"); }}>
+                  ◐ Soft lock
+                </button>
+              )
+            )}
           </div>
           {/* Inline summary row */}
           <div className="flex justify-between items-center mb-3 px-1" style={{ cursor: "pointer" }} onClick={() => setShowMonthlyList(true)}>
@@ -1211,26 +1227,6 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
               </>
             )}
           </div>
-          {showForecast && (
-            <button type="button" className="w-full text-left mb-3 px-3 py-2 rounded-xl border-0 cursor-pointer"
-              style={{ background: "rgba(255,255,255,0.04)" }} onClick={onOpenPlan}>
-              <div className="flex justify-between items-baseline">
-                <span className="text-[11px]" style={{ color: "var(--text-secondary)" }}>
-                  Still to arrange <b className="text-sm" style={{ color: "var(--accent)" }}>{fmt(forecast.likely)}</b>
-                  <span style={{ color: "var(--text-tertiary)" }}> likely</span>
-                </span>
-                <span className="text-[11px] font-semibold" style={{ color: monthPlan?.confirmed ? "var(--text-tertiary)" : "var(--accent-orange)" }}>
-                  {monthPlan?.confirmed ? "Plan ›" : "Plan this month ›"}
-                </span>
-              </div>
-              <div className="text-[10px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>
-                up to {fmt(forecast.upTo)} if every limit is hit
-                {forecast.unplanned > 0 && (
-                  <> · <span style={{ color: "var(--accent-orange)" }}>unplanned {fmt(forecast.unplanned)}</span> ({forecast.unplannedNames.join(", ")})</>
-                )}
-              </div>
-            </button>
-          )}
           {yearlyThisMonth.length > 0 && (
             <button type="button" className="w-full text-left text-[11px] mb-3 px-1 bg-transparent border-0 cursor-pointer"
               style={{ color: "var(--text-tertiary)" }} onClick={() => setShowMonthlyList(true)}>
