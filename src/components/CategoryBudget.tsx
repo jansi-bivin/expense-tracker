@@ -4,6 +4,7 @@ import React, { useMemo, useState } from "react";
 import { supabase, Transaction, Category } from "@/lib/supabase";
 import { categoryNeedsNote } from "@/lib/dues";
 import { ExpectedDebit } from "@/lib/expectedDebits";
+import { MonthPlan, suggestExpected } from "@/lib/monthPlan";
 import BubbleBasket from "./BubbleBasket";
 interface Props {
   transactions: Transaction[];
@@ -34,9 +35,13 @@ interface Props {
   expectedDebits?: Record<string, ExpectedDebit>;
   /** Primary only: set (or clear with null) a category's auto-debit day and amount. */
   onSaveExpectedDebit?: (categoryId: number, item: ExpectedDebit | null) => void;
+  /** The user's plan for the viewed month (expected cost per category). */
+  monthPlan?: MonthPlan;
+  /** Opens "Plan this month" (primary only). */
+  onOpenPlan?: () => void;
 }
 
-function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, monthlyOverrides, excludedCategoryIds, onCategoriesChange, onShowAddCategory, onMonthlyOverride, activeDays, daysInMonth, onActiveDaysUpdate, onReclassify, onDeleteTxn, onSplit, myPhone, dues, viewMonth, viewYear, lockedNames, onToggleLock, expectedDebits, onSaveExpectedDebit }: Props) {
+function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, monthlyOverrides, excludedCategoryIds, onCategoriesChange, onShowAddCategory, onMonthlyOverride, activeDays, daysInMonth, onActiveDaysUpdate, onReclassify, onDeleteTxn, onSplit, myPhone, dues, viewMonth, viewYear, lockedNames, onToggleLock, expectedDebits, onSaveExpectedDebit, monthPlan, onOpenPlan }: Props) {
   const currentMonth = viewMonth;
   const currentYear = viewYear;
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -151,6 +156,32 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
   const totalPct = totalCap > 0 ? Math.min((totalSpent / totalCap) * 100, 100) : 0;
   const totalRemainingPct = Math.max(100 - totalPct, 0);
   const totalRemaining = totalCap - totalSpent;
+
+  // ── Forecast: money still to arrange this month, from what's expected (not the limits) ──
+  const monthlyCatIds = monthlyCategories.map((c) => c.id).join(",");
+  const suggested = useMemo(
+    () => suggestExpected(monthlyCategories, transactions, currentYear, currentMonth, expectedDebits),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [transactions, currentYear, currentMonth, expectedDebits, monthlyCatIds]
+  );
+  const forecast = useMemo(() => {
+    let likely = 0, upTo = 0, unplanned = 0;
+    const unplannedNames: string[] = [];
+    for (const c of monthlyCategories) {
+      const k = String(c.id);
+      const exp = monthPlan?.expected[k] ?? suggested[k] ?? 0;
+      const spent = categorySpend.get(c.name) || 0;
+      const eCap = getEffectiveCap(c);
+      likely += Math.max(exp - spent, 0);
+      upTo += eCap > 0 ? Math.max(eCap - spent, 0) : Math.max(exp - spent, 0);
+      if (exp === 0 && spent > 0) { unplanned += spent; unplannedNames.push(c.name); }
+    }
+    return { likely, upTo: Math.max(upTo, likely), unplanned, unplannedNames };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [monthlyCatIds, suggested, monthPlan, categorySpend, scaleFactor, monthlyOverrides]);
+  const nowD = new Date();
+  const showForecast = isPrimary && !!onOpenPlan &&
+    currentYear * 12 + currentMonth >= nowD.getFullYear() * 12 + nowD.getMonth();
 
   // Yearly totals
   const yearlyTotalCap = useMemo(() => {
@@ -1180,6 +1211,26 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
               </>
             )}
           </div>
+          {showForecast && (
+            <button type="button" className="w-full text-left mb-3 px-3 py-2 rounded-xl border-0 cursor-pointer"
+              style={{ background: "rgba(255,255,255,0.04)" }} onClick={onOpenPlan}>
+              <div className="flex justify-between items-baseline">
+                <span className="text-[11px]" style={{ color: "var(--text-secondary)" }}>
+                  Still to arrange <b className="text-sm" style={{ color: "var(--accent)" }}>{fmt(forecast.likely)}</b>
+                  <span style={{ color: "var(--text-tertiary)" }}> likely</span>
+                </span>
+                <span className="text-[11px] font-semibold" style={{ color: monthPlan?.confirmed ? "var(--text-tertiary)" : "var(--accent-orange)" }}>
+                  {monthPlan?.confirmed ? "Plan ›" : "Plan this month ›"}
+                </span>
+              </div>
+              <div className="text-[10px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>
+                up to {fmt(forecast.upTo)} if every limit is hit
+                {forecast.unplanned > 0 && (
+                  <> · <span style={{ color: "var(--accent-orange)" }}>unplanned {fmt(forecast.unplanned)}</span> ({forecast.unplannedNames.join(", ")})</>
+                )}
+              </div>
+            </button>
+          )}
           {yearlyThisMonth.length > 0 && (
             <button type="button" className="w-full text-left text-[11px] mb-3 px-1 bg-transparent border-0 cursor-pointer"
               style={{ color: "var(--text-tertiary)" }} onClick={() => setShowMonthlyList(true)}>
