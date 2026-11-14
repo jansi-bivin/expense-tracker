@@ -6,6 +6,7 @@ import { supabase, Transaction, Category } from "@/lib/supabase";
 import { SettleDue, monthKey, monthLabel } from "@/lib/dues";
 import { CategoryPosition } from "@/lib/budget";
 import { upiNote } from "@/lib/pendingPayment";
+import { saveSetting } from "@/lib/budget";
 import { DuesLogEntry, fetchDuesLog, lastEntryFor, logDues } from "@/lib/duesLog";
 
 interface Props {
@@ -30,6 +31,8 @@ interface Props {
   onPayStarted?: (p: { amount: number; dueIds: number[]; label: string }) => void;
   /** True while a payment started from Pay is waiting for its bank SMS. */
   paymentWaiting?: boolean;
+  /** This person's phone (to remember which dues they've already seen). */
+  myPhone?: string | null;
 }
 
 const STATUS_COLOR: Record<CategoryPosition["status"], string> = {
@@ -39,16 +42,39 @@ const STATUS_COLOR: Record<CategoryPosition["status"], string> = {
   over: "var(--accent-red)",
 };
 
-function DuesView({ dues, advance, transactions, categories, onDuesChange, payeeUpi, payeeName, isPrimary, primaryName, positions, periodLabel, periodYear, lockedNames, onToggleLock, onPayStarted, paymentWaiting }: Props) {
+function DuesView({ dues, advance, transactions, categories, onDuesChange, payeeUpi, payeeName, isPrimary, primaryName, positions, periodLabel, periodYear, lockedNames, onToggleLock, onPayStarted, paymentWaiting, myPhone }: Props) {
   const [expandedCat, setExpandedCat] = useState<string | null>(null);
-  const [groupBy, setGroupBy] = useState<"category" | "month">(() => {
-    try { return localStorage.getItem("duesGroupBy") === "month" ? "month" : "category"; } catch { return "category"; }
+  const [groupBy, setGroupBy] = useState<"category" | "month" | "recent">(() => {
+    try {
+      const v = localStorage.getItem("duesGroupBy");
+      return v === "month" || v === "recent" ? v : "category";
+    } catch { return "category"; }
   });
-  function changeGroupBy(g: "category" | "month") {
+  function changeGroupBy(g: "category" | "month" | "recent") {
     setGroupBy(g);
     setExpandedCat(null);
     try { localStorage.setItem("duesGroupBy", g); } catch { /* ignore */ }
   }
+  // "Recent": only dues added since this person last looked at that list
+  const seenKey = myPhone ? `dues_seen:${myPhone}` : null;
+  const openedAt = useRef(Date.now());
+  const [seenAt, setSeenAt] = useState<number | null>(null);
+  useEffect(() => {
+    if (!seenKey) { setSeenAt(Date.now() - 3 * 86400000); return; }
+    supabase.from("settings").select("value").eq("key", seenKey).limit(1).maybeSingle().then(({ data }) => {
+      const at = Number((data?.value as { at?: number } | undefined)?.at);
+      setSeenAt(Number.isFinite(at) && at > 0 ? at : Date.now() - 3 * 86400000); // first time: last 3 days
+    });
+  }, [seenKey]);
+  const recentViewed = useRef(false);
+  if (groupBy === "recent") recentViewed.current = true;
+  useEffect(() => {
+    // Leaving Dues (or the app) after looking at Recent: those dues are no longer new
+    const save = () => { if (seenKey && recentViewed.current) saveSetting(seenKey, { at: openedAt.current }).catch(() => {}); };
+    const onHide = () => { if (document.visibilityState === "hidden") save(); };
+    document.addEventListener("visibilitychange", onHide);
+    return () => { document.removeEventListener("visibilitychange", onHide); save(); };
+  }, [seenKey]);
   const [showCleared, setShowCleared] = useState(false);
   const [clearing, setClearing] = useState<Set<number>>(new Set());
   // Clear / Clear All / Reopen need a second tap (no more accidental clears)
@@ -106,7 +132,13 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
     return Array.from(map.entries()).sort((a, b) => b[0].localeCompare(a[0]));
   }, [unclearedDues]);
 
-  const groups = groupBy === "month" ? byMonth : byCategory;
+  const groups = groupBy === "month" ? byMonth : groupBy === "recent" ? [] : byCategory;
+  const newDues = useMemo(
+    () => seenAt == null ? [] : unclearedDues
+      .filter((d) => Date.parse(d.created_at) > seenAt)
+      .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)),
+    [unclearedDues, seenAt]
+  );
 
   /**
    * Second level of grouping, returned as [label, dues]:
@@ -435,17 +467,56 @@ function DuesView({ dues, advance, transactions, categories, onDuesChange, payee
       {/* ═══ Group-by toggle ═══ */}
       {unclearedDues.length > 0 && (
         <div className="flex gap-1.5 mb-3">
-          {(["category", "month"] as const).map((g) => (
+          {(["category", "month", "recent"] as const).map((g) => (
             <button
               key={g}
               type="button"
               className={`badge text-[11px] py-1 px-3 cursor-pointer ${groupBy === g ? "badge-purple" : "badge-muted"}`}
               onClick={() => changeGroupBy(g)}
             >
-              By {g}
+              {g === "recent" ? `New${newDues.length ? ` · ${newDues.length}` : ""}` : `By ${g}`}
             </button>
           ))}
         </div>
+      )}
+
+      {/* ═══ New: dues added since you last looked, newest first ═══ */}
+      {groupBy === "recent" && unclearedDues.length > 0 && (
+        newDues.length === 0 ? (
+          <div className="card p-6 mb-3 text-center text-sm" style={{ color: "var(--text-tertiary)" }}>
+            No new transactions
+          </div>
+        ) : (
+          <div className="card mb-3 px-4 py-1">
+            {newDues.map((due, i) => {
+              const txn = txnMap.get(due.transaction_id);
+              return (
+                <div key={due.id} className="flex justify-between items-center py-3"
+                  style={{ borderBottom: i < newDues.length - 1 ? "1px solid var(--border)" : "none" }}>
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium truncate" style={{ color: "var(--text-secondary)" }}>
+                      {txn?.merchant ?? txn?.notes ?? "Transaction #" + due.transaction_id}
+                    </div>
+                    <div className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                      {due.category} · {fmtDate(due.paid_on)}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>{fmt(Number(due.amount))}</span>
+                    {isPrimary && (
+                      <button className="badge badge-green text-[10px] cursor-pointer"
+                        disabled={clearing.has(due.id)}
+                        style={armed === `due:${due.id}` ? { background: "rgba(255,90,110,0.18)", color: "var(--accent-red)" } : undefined}
+                        onClick={() => confirmTap(`due:${due.id}`, () => clearDue(due.id))}>
+                        {clearing.has(due.id) ? "..." : armed === `due:${due.id}` ? `Sure? Clear ${fmt(Number(due.amount))}` : "Clear"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )
       )}
 
       {/* ═══ Group Rows (category or month) ═══ */}

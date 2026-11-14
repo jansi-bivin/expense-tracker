@@ -1604,6 +1604,7 @@ function HomeInner() {
             onToggleLock={isPrimary ? toggleCategoryLock : undefined}
             onPayStarted={isPrimary ? startPayment : undefined}
             paymentWaiting={!!pendingPay && !pendingPay.confirmed}
+            myPhone={currentUser?.phone_number ?? null}
           />
         ) : (
           <>
