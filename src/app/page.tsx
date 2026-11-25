@@ -672,6 +672,20 @@ function HomeInner() {
   }
 
   // B2: Delete a manual transaction
+  /** A saved split part was her own expense: off the budget and its due removed (the payment isn't topped back up). */
+  async function handleMakePersonal(txnId: number) {
+    const txn = categorizedTxns.find((t) => t.id === txnId);
+    const partDue = dues.find((d) => d.transaction_id === txnId);
+    if (partDue?.cleared) { alert("Its due is already cleared, so it can't be made personal now"); return; }
+    if (partDue) logDues({ action: "deleted", how: `Marked personal${txn?.category ? ` (${txn.category})` : ""}`, dueIds: [partDue.id], amount: Number(partDue.amount) });
+    await supabase.from("dues").delete().eq("transaction_id", txnId);
+    await supabase.from("transactions").update({
+      status: "ignored", notes: `Personal${txn?.category ? ` (${txn.category})` : ""}${txn?.notes ? `: ${txn.notes}` : ""}`,
+    }).eq("id", txnId);
+    setCategorizedTxns((prev) => prev.filter((t) => t.id !== txnId));
+    setDues((prev) => prev.filter((d) => d.transaction_id !== txnId));
+  }
+
   async function handleDeleteTxn(txnId: number) {
     const txn = categorizedTxns.find((t) => t.id === txnId);
     const partDue = dues.find((d) => d.transaction_id === txnId);
@@ -726,8 +740,8 @@ function HomeInner() {
       sms_date: txn.sms_date,
       phone_number: txn.phone_number,
       category: p.category,
-      notes: p.note || null,
-      status: "categorized",
+      notes: p.personal ? `Personal${p.note ? `: ${p.note}` : ""}` : p.note || null,
+      status: p.personal ? "ignored" : "categorized",
       amount: p.amount,
       merchant: txn.merchant,
       device_id: `split:${txnId}`,
@@ -747,14 +761,16 @@ function HomeInner() {
       const restDues = rest.map((p) => round2(p.amount * share));
       const firstDue = round2(Number(due.amount) - restDues.reduce((s, a) => s + a, 0));
       await supabase.from("dues").update({ amount: firstDue, category: first.category }).eq("id", due.id);
-      await supabase.from("dues").insert(inserted.map((row, i) => ({
-        transaction_id: row.id, category: rest[i].category, amount: restDues[i],
-      })));
+      // Personal parts: no due (her own expense)
+      const owed = inserted.map((row, i) => ({ transaction_id: row.id, category: rest[i].category, amount: restDues[i] }))
+        .filter((_, i) => !rest[i].personal);
+      if (owed.length) await supabase.from("dues").insert(owed);
       const { data: duesData } = await supabase.from("dues").select("*").order("created_at", { ascending: false });
       if (duesData) setDues(duesData);
     }
 
-    const added = (inserted as RawSms[]).map(enrichSms);
+    // Personal parts stay out of the budget lists
+    const added = (inserted as RawSms[]).filter((_, i) => !rest[i].personal).map(enrichSms);
     setCategorizedTxns((prev) => [
       ...added.filter((a) => !prev.some((t) => t.id === a.id)),
       ...prev.map((t) => (t.id === txnId ? { ...t, ...firstUpdate } : t)),
@@ -1717,6 +1733,7 @@ function HomeInner() {
               onActiveDaysUpdate={handleActiveDaysUpdate}
               onReclassify={handleReclassify}
               onDeleteTxn={handleDeleteTxn}
+              onMakePersonal={handleMakePersonal}
               onSplit={setSplitTxnId}
               myPhone={currentUser?.phone_number ?? null}
               viewMonth={viewMonth}
@@ -1754,13 +1771,14 @@ function HomeInner() {
           <SplitSheet txn={t}
             categories={entryCategories.filter((c) => isPrimary || (c.visible_to !== "primary" && (!lockedCatNames.has(c.name) || c.name === t.category)))}
             onSave={(parts) => handleSplit(t.id, parts)} onClose={() => setSplitTxnId(null)}
+            canPersonal={dues.some((d) => d.transaction_id === t.id && !d.cleared)}
             phone={currentUser?.phone_number ?? null} />
         ) : null;
       })()}
 
       {/* ═══ File a new payment from its bill: read it, then file and split in one go ═══ */}
       {billFiling && (
-        <SplitSheet txn={billFiling.txn} initialBill={billFiling.photo} filing
+        <SplitSheet txn={billFiling.txn} initialBill={billFiling.photo} filing canPersonal={!isPrimary}
           categories={entryCategories.filter((c) => isPrimary || (c.visible_to !== "primary" && !lockedCatNames.has(c.name)))}
           phone={currentUser?.phone_number ?? null}
           onSave={(parts) => handleFileByBill(billFiling.txn, parts)} onClose={() => setBillFiling(null)} />

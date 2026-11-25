@@ -4,7 +4,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Category, Transaction } from "@/lib/supabase";
 import { categoryNeedsNote } from "@/lib/dues";
 
-export interface SplitPart { category: string; amount: number; note: string }
+/** `personal`: her own expense, kept out of the budget and with no due. */
+export interface SplitPart { category: string; amount: number; note: string; personal?: boolean }
+type Draft = { category: string; amount: string; note: string; personal?: boolean };
 
 interface Props {
   txn: Transaction;
@@ -18,6 +20,8 @@ interface Props {
   initialBill?: File | null;
   /** Filing a new payment: one part is fine (then it's simply filed), and the button says so. */
   filing?: boolean;
+  /** Parts can be marked personal (no due): for the secondary person, whose expenses become dues. */
+  canPersonal?: boolean;
 }
 
 interface BillItem { name: string; amount: number; category: string }
@@ -48,9 +52,9 @@ const fmt = (n: number) => "₹" + n.toLocaleString("en-IN", { maximumFractionDi
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /** Split one payment into parts, each filed into its own category. */
-export default function SplitSheet({ txn, categories, onSave, onClose, phone, initialBill, filing }: Props) {
+export default function SplitSheet({ txn, categories, onSave, onClose, phone, initialBill, filing, canPersonal }: Props) {
   const total = Number(txn.amount) || 0;
-  const [parts, setParts] = useState<{ category: string; amount: string; note: string }[]>([
+  const [parts, setParts] = useState<Draft[]>([
     { category: txn.category ?? "", amount: "", note: txn.notes ?? "" },
     ...(filing ? [] : [{ category: "", amount: "", note: "" }]),
   ]);
@@ -110,19 +114,21 @@ export default function SplitSheet({ txn, categories, onSave, onClose, phone, in
   const amounts = [firstAmount, ...parts.slice(1).map((p) => Number(p.amount) || 0)];
 
   const problem =
-    parts.some((p) => !p.category) ? "Pick a category for every part"
+    parts.some((p) => !p.category && !p.personal) ? "Pick a category for every part"
     : amounts.some((a) => a <= 0) ? (firstAmount <= 0 ? `The parts add up to more than ${fmt(total)}` : "Every part needs an amount")
-    : parts.some((p) => categoryNeedsNote(p.category) && !p.note.trim()) ? "Add a note where the category needs one"
+    : parts.some((p) => !p.personal && categoryNeedsNote(p.category) && !p.note.trim()) ? "Add a note where the category needs one"
     : null;
 
-  const set = (i: number, patch: Partial<{ category: string; amount: string; note: string }>) =>
+  const set = (i: number, patch: Partial<Draft>) =>
     setParts((prev) => prev.map((p, j) => (j === i ? { ...p, ...patch } : p)));
 
   async function save() {
     if (problem || saving) return;
     setSaving(true);
     setError(null);
-    const err = await onSave(parts.map((p, i) => ({ category: p.category, amount: amounts[i], note: p.note.trim() })));
+    const err = await onSave(parts.map((p, i) => ({
+      category: p.category || "Personal", amount: amounts[i], note: p.note.trim(), personal: i > 0 && !!p.personal,
+    })));
     setSaving(false);
     if (err) setError(err); else onClose();
   }
@@ -172,7 +178,7 @@ export default function SplitSheet({ txn, categories, onSave, onClose, phone, in
 
         <div className="overflow-y-auto px-4 pb-2 space-y-2.5">
           {parts.map((p, i) => (
-            <div key={i} className="rounded-xl p-2.5" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}>
+            <div key={i} className="rounded-xl p-2.5" style={{ background: "rgba(255,255,255,0.04)", border: p.personal ? "1px dashed rgba(255,179,71,0.4)" : "1px solid rgba(255,255,255,0.06)" }}>
               <div className="flex gap-2">
                 <select className="flex-1 min-w-0 px-2 py-2 rounded-lg text-xs" style={field}
                   value={p.category} onChange={(e) => set(i, { category: e.target.value })} aria-label={`Part ${i + 1} category`}>
@@ -199,6 +205,15 @@ export default function SplitSheet({ txn, categories, onSave, onClose, phone, in
                   value={p.note} onChange={(e) => set(i, { note: e.target.value })} aria-label={`Part ${i + 1} note`} />
               )}
               {i === 0 && <div className="text-[10px] mt-1" style={{ color: "var(--text-tertiary)" }}>Gets whatever the other parts don&apos;t</div>}
+              {i > 0 && canPersonal && (
+                <button type="button" className="mt-1.5 text-[10px] px-2 py-0.5 rounded-md border-0 cursor-pointer"
+                  style={p.personal
+                    ? { background: "rgba(255,179,71,0.15)", color: "var(--accent-orange)" }
+                    : { background: "rgba(255,255,255,0.05)", color: "var(--text-tertiary)" }}
+                  onClick={() => set(i, { personal: !p.personal })}>
+                  {p.personal ? "👤 Personal · no due, not in the budget (tap to undo)" : "👤 Mark personal (no due)"}
+                </button>
+              )}
             </div>
           ))}
           <button type="button" className="w-full py-2 rounded-xl text-xs font-semibold btn-ghost"
@@ -212,7 +227,7 @@ export default function SplitSheet({ txn, categories, onSave, onClose, phone, in
             <div className="text-[11px] mb-2" style={{ color: "var(--accent-red)" }}>{error ?? problem}</div>
           )}
           <button className="w-full py-2.5 btn-primary text-sm rounded-xl disabled:opacity-35" disabled={!!problem || saving} onClick={save}>
-            {saving ? "Saving…" : reading ? "Reading the bill…" : parts.length === 1 ? `File as ${parts[0].category || "…"}` : `${filing ? "File, split" : "Split"} into ${parts.length} parts`}
+            {saving ? "Saving…" : reading ? "Reading the bill…" : parts.length === 1 ? `File as ${parts[0].category || "…"}` : `${filing ? "File, split" : "Split"} into ${parts.length} parts${parts.some((p) => p.personal) ? ` (${parts.filter((p) => p.personal).length} personal)` : ""}`}
           </button>
         </div>
       </div>

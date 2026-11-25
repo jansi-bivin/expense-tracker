@@ -23,6 +23,8 @@ interface Props {
   onDeleteTxn?: (txnId: number) => void;
   /** Open the split window for a payment (parts in different categories). */
   onSplit?: (txnId: number) => void;
+  /** A split part was her own expense: remove it from the budget and drop its due. */
+  onMakePersonal?: (txnId: number) => void;
   /** This person's phone: they can split their own payments (the primary can split any). */
   myPhone?: string | null;
   dues?: { id: number; transaction_id: number; cleared: boolean; settlement_transaction_id?: number | null }[];
@@ -46,7 +48,7 @@ interface Props {
   onToggleOneTime?: (catId: number) => void;
 }
 
-function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, monthlyOverrides, excludedCategoryIds, onCategoriesChange, onShowAddCategory, onMonthlyOverride, activeDays, daysInMonth, onActiveDaysUpdate, onReclassify, onDeleteTxn, onSplit, myPhone, dues, viewMonth, viewYear, lockedNames, onToggleLock, expectedDebits, onSaveExpectedDebit, softLock, onSoftLockToggle, onSoftLockCat, oneTimeIds, onToggleOneTime }: Props) {
+function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, monthlyOverrides, excludedCategoryIds, onCategoriesChange, onShowAddCategory, onMonthlyOverride, activeDays, daysInMonth, onActiveDaysUpdate, onReclassify, onDeleteTxn, onSplit, onMakePersonal, myPhone, dues, viewMonth, viewYear, lockedNames, onToggleLock, expectedDebits, onSaveExpectedDebit, softLock, onSoftLockToggle, onSoftLockCat, oneTimeIds, onToggleOneTime }: Props) {
   const currentMonth = viewMonth;
   const currentYear = viewYear;
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -344,6 +346,20 @@ function CategoryBudget({ transactions, categories, isPrimary, scaleFactor, mont
               onClick={(e) => { e.stopPropagation(); onSplit!(txn.id); }}
             >
               ✂
+            </button>
+          )}
+          {onMakePersonal && isSplitPart && associatedDue && !isSettled && (isPrimary || txn.phone_number === myPhone) && (
+            <button
+              className="text-[10px] shrink-0 px-1.5 py-0.5 rounded-md"
+              style={{ color: "var(--accent-orange)", background: "rgba(255,179,71,0.1)" }}
+              title="Personal expense: remove it from the budget and drop its due"
+              aria-label="Mark personal"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (confirm(`Mark this ${fmtDec(Number(txn.amount))} part as personal? It leaves the budget and its due is removed.`)) onMakePersonal(txn.id);
+              }}
+            >
+              👤
             </button>
           )}
           {isPrimary && onReclassify && (
