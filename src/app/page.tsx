@@ -510,8 +510,28 @@ function HomeInner() {
             setCategorizedTxns((prev) => prev.some((t) => t.id === enriched.id)
               ? prev.map((t) => (t.id === enriched.id ? enriched : t))
               : [enriched, ...prev]);
+          } else {
+            // Skipped or made personal: off the budget lists
+            setCategorizedTxns((prev) => prev.filter((t) => t.id !== updated.id));
+          }
+        } else if (updated.status === "new") {
+          // Sent back for review: off the lists, onto its owner's review cards
+          const enriched = enrichSms(updated);
+          setCategorizedTxns((prev) => prev.filter((t) => t.id !== updated.id));
+          if (enriched.phone_number === localStorage.getItem("userPhone")) {
+            setNewTxns((prev) => prev.some((t) => t.id === enriched.id) ? prev : [enriched, ...prev]);
           }
         }
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "transactions" }, (payload) => {
+        const id = (payload.old as { id?: number }).id;
+        if (id == null) return;
+        setNewTxns((prev) => prev.filter((t) => t.id !== id));
+        setCategorizedTxns((prev) => prev.filter((t) => t.id !== id));
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "dues" }, (payload) => {
+        const id = (payload.old as { id?: number }).id;
+        if (id != null) setDues((prev) => prev.filter((d) => d.id !== id));
       })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "dues" }, (payload) => {
         const d = payload.new as Due;
