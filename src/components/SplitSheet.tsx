@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Category, Transaction } from "@/lib/supabase";
 import { categoryNeedsNote } from "@/lib/dues";
 
@@ -14,6 +14,10 @@ interface Props {
   onClose: () => void;
   /** This person's phone (lets the bill reader know who's asking). */
   phone?: string | null;
+  /** A bill photo to read straight away (filing a new payment from its review card). */
+  initialBill?: File | null;
+  /** Filing a new payment: one part is fine (then it's simply filed), and the button says so. */
+  filing?: boolean;
 }
 
 interface BillItem { name: string; amount: number; category: string }
@@ -44,11 +48,11 @@ const fmt = (n: number) => "₹" + n.toLocaleString("en-IN", { maximumFractionDi
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /** Split one payment into parts, each filed into its own category. */
-export default function SplitSheet({ txn, categories, onSave, onClose, phone }: Props) {
+export default function SplitSheet({ txn, categories, onSave, onClose, phone, initialBill, filing }: Props) {
   const total = Number(txn.amount) || 0;
   const [parts, setParts] = useState<{ category: string; amount: string; note: string }[]>([
     { category: txn.category ?? "", amount: "", note: txn.notes ?? "" },
-    { category: "", amount: "", note: "" },
+    ...(filing ? [] : [{ category: "", amount: "", note: "" }]),
   ]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -80,7 +84,7 @@ export default function SplitSheet({ txn, categories, onSave, onClose, phone }: 
       }
       const sorted = [...groups.entries()].sort((a, b) => b[1].amount - a[1].amount);
       const next = sorted.map(([category, g]) => ({ category, amount: String(round2(g.amount)), note: g.names.join(", ").slice(0, 200) }));
-      if (next.length === 1) next.push({ category: "", amount: "", note: "" });
+      if (next.length === 1 && !filing) next.push({ category: "", amount: "", note: "" });
       setParts(next);
       setBill(reading);
     } catch (e) {
@@ -90,6 +94,13 @@ export default function SplitSheet({ txn, categories, onSave, onClose, phone }: 
       if (fileRef.current) fileRef.current.value = "";
     }
   }
+
+  // Filing from the review card: the photo was already picked
+  const started = useRef(false);
+  useEffect(() => {
+    if (initialBill && !started.current) { started.current = true; readBill(initialBill); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialBill]);
 
   const choices = useMemo(() => [...categories].sort((a, b) => a.name.localeCompare(b.name)), [categories]);
 
@@ -126,7 +137,7 @@ export default function SplitSheet({ txn, categories, onSave, onClose, phone }: 
         onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Split payment">
         <div className="flex items-start justify-between px-4 pt-4 pb-2">
           <div className="min-w-0">
-            <div className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>✂ Split {fmt(total)}</div>
+            <div className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>{filing ? "📷 File by bill" : "✂ Split"} {fmt(total)}</div>
             <div className="text-[11px] truncate" style={{ color: "var(--text-tertiary)" }}>
               {txn.merchant || "Payment"} · {new Date(txn.sms_date).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
             </div>
@@ -180,7 +191,7 @@ export default function SplitSheet({ txn, categories, onSave, onClose, phone }: 
                 {i > 0 && (
                   <button type="button" className="px-1 text-xs bg-transparent border-0 cursor-pointer" style={{ color: "var(--text-tertiary)" }}
                     onClick={() => setParts((prev) => prev.filter((_, j) => j !== i))} aria-label={`Remove part ${i + 1}`}
-                    disabled={parts.length <= 2}>✕</button>
+                    disabled={parts.length <= (filing ? 1 : 2)}>✕</button>
                 )}
               </div>
               {(categoryNeedsNote(p.category) || p.note) && (
@@ -201,7 +212,7 @@ export default function SplitSheet({ txn, categories, onSave, onClose, phone }: 
             <div className="text-[11px] mb-2" style={{ color: "var(--accent-red)" }}>{error ?? problem}</div>
           )}
           <button className="w-full py-2.5 btn-primary text-sm rounded-xl disabled:opacity-35" disabled={!!problem || saving} onClick={save}>
-            {saving ? "Saving…" : `Split into ${parts.length} parts`}
+            {saving ? "Saving…" : reading ? "Reading the bill…" : parts.length === 1 ? `File as ${parts[0].category || "…"}` : `${filing ? "File, split" : "Split"} into ${parts.length} parts`}
           </button>
         </div>
       </div>

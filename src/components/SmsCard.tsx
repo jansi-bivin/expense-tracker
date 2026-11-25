@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { supabase, Transaction, Category } from "@/lib/supabase";
 import {
   SettleDue, SettlementPlan, planSettlement, roundOffCandidate, smallLimit,
@@ -28,9 +28,11 @@ interface Props {
   onCategoryCreated?: (cat: Category) => void;
   /** Save a rule: future debits from this vendor are filed into this category without review (shared = for both people). */
   onAutoFile?: (vendor: string, category: string, shared: boolean) => void;
+  /** A bill photo was picked: read it and file this payment split by the bill's items. */
+  onBill?: (txn: Transaction, photo: File) => void;
 }
 
-export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedDues, onSettle, settlementHints, onSnooze, merchantCategoryMap, categoryFrequencyMap, onCategoryCreated, onAutoFile }: Props) {
+export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedDues, onSettle, settlementHints, onSnooze, merchantCategoryMap, categoryFrequencyMap, onCategoryCreated, onAutoFile, onBill }: Props) {
   // Auto-detect category from merchant history
   const suggestedCategory = useMemo(() => {
     if (!merchantCategoryMap || !txn.merchant) return "";
@@ -43,6 +45,7 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
   const [category, setCategory] = useState(suggestedCategory);
   const [comment, setComment] = useState("");
   const [saving, setSaving] = useState(false);
+  const billRef = useRef<HTMLInputElement>(null);
   const [expanded, setExpanded] = useState(false);
   const [settleMode, setSettleMode] = useState(false);
   const [selectedDues, setSelectedDues] = useState<Set<number>>(new Set());
@@ -447,22 +450,37 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
 
             <div className="flex gap-2">
               <button
-                className="flex-1 btn-primary py-2.5 text-sm disabled:opacity-35"
+                className="flex-1 whitespace-nowrap btn-primary py-2.5 text-sm disabled:opacity-35"
                 disabled={!category || saving || (noteRequired && !comment.trim())}
                 onClick={handleSave}
               >
                 {saving ? "Saving..." : "✓ Save"}
               </button>
               <button
-                className="flex-1 btn-ghost py-2.5 text-sm"
+                className="flex-1 whitespace-nowrap btn-ghost py-2.5 text-sm"
                 disabled={saving}
                 onClick={handleIgnore}
               >
                 Skip
               </button>
+              {onBill && isDebit && Number(txn.amount) > 0 && (
+                <>
+                  <input ref={billRef} type="file" accept="image/*" className="hidden"
+                    onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) onBill(txn, f); }} />
+                  <button
+                    className="px-3 py-2.5 text-xs font-semibold rounded-xl transition-all whitespace-nowrap"
+                    style={{ background: "rgba(52,211,153,0.1)", color: "var(--accent-green)", border: "1px solid rgba(52,211,153,0.25)" }}
+                    disabled={saving}
+                    onClick={() => billRef.current?.click()}
+                    title="Pick the bill photo: the payment is split by the bill's items"
+                  >
+                    📷 Bill
+                  </button>
+                </>
+              )}
               {onSnooze && (
                 <button
-                  className="px-4 py-2.5 text-xs font-semibold rounded-xl transition-all"
+                  className="px-3 py-2.5 text-xs font-semibold rounded-xl transition-all whitespace-nowrap"
                   style={{ background: "rgba(123, 108, 246, 0.1)", color: "var(--accent)", border: "1px solid rgba(123, 108, 246, 0.2)" }}
                   disabled={saving}
                   onClick={() => onSnooze(txn.id)}
@@ -472,7 +490,7 @@ export default function SmsCard({ txn, categories, onDone, isPrimary, unclearedD
               )}
               {isPrimary && hasDues && !isLikelySettlement && (
                 <button
-                  className="px-4 py-2.5 text-xs font-semibold rounded-xl transition-all"
+                  className="px-3 py-2.5 text-xs font-semibold rounded-xl transition-all whitespace-nowrap"
                   style={{ background: "rgba(255,179,71,0.1)", color: "var(--accent-orange)", border: "1px solid rgba(255,179,71,0.2)" }}
                   onClick={enterSettleMode}
                 >

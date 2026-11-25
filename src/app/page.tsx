@@ -64,7 +64,7 @@ import { SoftLocks, fetchSoftLocks, saveSoftLocks, softCap, softKey, softLockabl
 import { logDues, setDuesActor, flushDuesLog } from "@/lib/duesLog";
 
 /* ── DebitOverlay: self-contained so overlayIdx doesn't re-render parent ── */
-function DebitOverlay({ txns, categories, isPrimary, unclearedDues, settlementHints, merchantCategoryMap, categoryFrequencyMap, onDone, onSnooze, onSettle, onDismissAll, onSaveMapping, onCategoryCreated, onAutoFile }: {
+function DebitOverlay({ txns, categories, isPrimary, unclearedDues, settlementHints, merchantCategoryMap, categoryFrequencyMap, onDone, onSnooze, onSettle, onDismissAll, onSaveMapping, onCategoryCreated, onAutoFile, onBill }: {
   txns: Transaction[]; categories: Category[]; isPrimary: boolean;
   unclearedDues: SettleDue[]; settlementHints: string[];
   merchantCategoryMap: Map<string, string>;
@@ -76,6 +76,7 @@ function DebitOverlay({ txns, categories, isPrimary, unclearedDues, settlementHi
   onSaveMapping: (merchant: string, category: string) => void;
   onCategoryCreated: (cat: Category) => void;
   onAutoFile: (vendor: string, category: string, shared: boolean) => void;
+  onBill: (txn: Transaction, photo: File) => void;
 }) {
   const [idx, setIdx] = useState(0);
   const safeIdx = Math.min(idx, txns.length - 1);
@@ -126,6 +127,7 @@ function DebitOverlay({ txns, categories, isPrimary, unclearedDues, settlementHi
               onSaveMapping={onSaveMapping}
               onCategoryCreated={onCategoryCreated}
               onAutoFile={onAutoFile}
+              onBill={onBill}
             />
           </div>
         </div>
@@ -702,8 +704,10 @@ function HomeInner() {
    * Returns an error to show, or null.
    */
   const [splitTxnId, setSplitTxnId] = useState<number | null>(null);
-  async function handleSplit(txnId: number, parts: SplitPart[]): Promise<string | null> {
-    const txn = categorizedTxns.find((t) => t.id === txnId);
+  /** A new payment being filed from its bill photo (review card → 📷 Bill). */
+  const [billFiling, setBillFiling] = useState<{ txn: Transaction; photo: File } | null>(null);
+  async function handleSplit(txnId: number, parts: SplitPart[], txnHint?: Transaction): Promise<string | null> {
+    const txn = categorizedTxns.find((t) => t.id === txnId) ?? txnHint;
     if (!txn || txn.amount == null || parts.length < 2) return "This payment can't be split";
     const total = Number(txn.amount);
     if (Math.abs(parts.reduce((s, p) => s + p.amount, 0) - total) > 0.01) return "The parts don't add up to the payment";
@@ -755,6 +759,23 @@ function HomeInner() {
       ...added.filter((a) => !prev.some((t) => t.id === a.id)),
       ...prev.map((t) => (t.id === txnId ? { ...t, ...firstUpdate } : t)),
     ]);
+    return null;
+  }
+
+  /** Files a new payment from its review card into the bill's parts (one part: simply filed). */
+  async function handleFileByBill(txn: Transaction, parts: SplitPart[]): Promise<string | null> {
+    const first = parts[0];
+    if (!first?.category) return "Pick a category";
+    const { error } = await supabase.from("transactions")
+      .update({ category: first.category, notes: parts.length === 1 ? first.note || null : null, status: "categorized" }).eq("id", txn.id);
+    if (error) return "Couldn't save, try again";
+    // Off the review list, into the lists, and a due for the secondary (as Save does)
+    await handleReviewDone(txn.id, first.category, parts.length === 1 ? first.note || undefined : undefined);
+    if (parts.length === 1) return null;
+    const filed = { ...txn, category: first.category, status: "categorized" as const };
+    const err = await handleSplit(txn.id, parts, filed);
+    // Already filed: close rather than let a retry file it twice
+    if (err) alert(`Filed as ${first.category}, but the split failed (${err}). Split it from the category list.`);
     return null;
   }
 
@@ -1737,6 +1758,14 @@ function HomeInner() {
         ) : null;
       })()}
 
+      {/* ═══ File a new payment from its bill: read it, then file and split in one go ═══ */}
+      {billFiling && (
+        <SplitSheet txn={billFiling.txn} initialBill={billFiling.photo} filing
+          categories={entryCategories.filter((c) => isPrimary || (c.visible_to !== "primary" && !lockedCatNames.has(c.name)))}
+          phone={currentUser?.phone_number ?? null}
+          onSave={(parts) => handleFileByBill(billFiling.txn, parts)} onClose={() => setBillFiling(null)} />
+      )}
+
       {/* ═══ New updates panel (above the review overlay) ═══ */}
       {activityOpen && (
         <ActivityPanel
@@ -1767,6 +1796,7 @@ function HomeInner() {
           onSaveMapping={handleSaveMapping}
           onCategoryCreated={handleAddCategory}
           onAutoFile={autoFileFromReview}
+          onBill={(t, photo) => setBillFiling({ txn: t, photo })}
         />
       )}
 
