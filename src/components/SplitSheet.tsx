@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Category, Transaction } from "@/lib/supabase";
 import { categoryNeedsNote } from "@/lib/dues";
 
@@ -12,13 +12,39 @@ interface Props {
   categories: Category[];
   onSave: (parts: SplitPart[]) => Promise<string | null>;
   onClose: () => void;
+  /** This person's phone (lets the bill reader know who's asking). */
+  phone?: string | null;
+}
+
+interface BillItem { name: string; amount: number; category: string }
+interface BillReading { store: string | null; total: number | null; items: BillItem[] }
+
+/** Shrinks a photo to at most 1600px on the long side, as a JPEG data URL. */
+async function photoToDataUrl(file: File): Promise<string> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = () => reject(new Error("Couldn't open that picture"));
+      i.src = url;
+    });
+    const scale = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(img.naturalWidth * scale);
+    canvas.height = Math.round(img.naturalHeight * scale);
+    canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", 0.85);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 const fmt = (n: number) => "₹" + n.toLocaleString("en-IN", { maximumFractionDigits: 2 });
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /** Split one payment into parts, each filed into its own category. */
-export default function SplitSheet({ txn, categories, onSave, onClose }: Props) {
+export default function SplitSheet({ txn, categories, onSave, onClose, phone }: Props) {
   const total = Number(txn.amount) || 0;
   const [parts, setParts] = useState<{ category: string; amount: string; note: string }[]>([
     { category: txn.category ?? "", amount: "", note: txn.notes ?? "" },
@@ -26,6 +52,44 @@ export default function SplitSheet({ txn, categories, onSave, onClose }: Props) 
   ]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [reading, setReading] = useState(false);
+  const [bill, setBill] = useState<BillReading | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  /** Reads a bill photo and turns its items into parts, one per category (largest first). */
+  async function readBill(file: File) {
+    setReading(true);
+    setError(null);
+    try {
+      const image = await photoToDataUrl(file);
+      const res = await fetch("/api/read-bill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image, categories: categories.map((c) => c.name), hint: txn.category, phone }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Couldn't read the bill");
+      const reading = data as BillReading;
+      const groups = new Map<string, { amount: number; names: string[] }>();
+      for (const it of reading.items) {
+        const g = groups.get(it.category) ?? { amount: 0, names: [] };
+        g.amount += it.amount;
+        g.names.push(it.name);
+        groups.set(it.category, g);
+      }
+      const sorted = [...groups.entries()].sort((a, b) => b[1].amount - a[1].amount);
+      const next = sorted.map(([category, g]) => ({ category, amount: String(round2(g.amount)), note: g.names.join(", ").slice(0, 200) }));
+      if (next.length === 1) next.push({ category: "", amount: "", note: "" });
+      setParts(next);
+      setBill(reading);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't read the bill");
+    } finally {
+      setReading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
 
   const choices = useMemo(() => [...categories].sort((a, b) => a.name.localeCompare(b.name)), [categories]);
 
@@ -69,6 +133,30 @@ export default function SplitSheet({ txn, categories, onSave, onClose }: Props) 
           </div>
           <button className="text-sm px-2 py-1 bg-transparent border-0 cursor-pointer" style={{ color: "var(--text-tertiary)" }}
             onClick={onClose} aria-label="Close">✕</button>
+        </div>
+
+        <div className="px-4 pb-2">
+          <input ref={fileRef} type="file" accept="image/*" className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) readBill(f); }} />
+          <button type="button" className="w-full py-2 rounded-xl text-xs font-semibold btn-ghost disabled:opacity-50"
+            disabled={reading} onClick={() => fileRef.current?.click()}>
+            {reading ? "Reading the bill…" : bill ? "📷 Read another bill" : "📷 Read bill: split by its items"}
+          </button>
+          {bill && (() => {
+            const billTotal = bill.total ?? round2(bill.items.reduce((s, it) => s + it.amount, 0));
+            const diff = round2(total - billTotal);
+            const unsure = bill.items.filter((it) => !it.category).length;
+            return (
+              <div className="text-[11px] mt-1.5" style={{ color: "var(--text-tertiary)" }}>
+                {bill.items.length} items{bill.store ? ` · ${bill.store}` : ""} · bill {fmt(billTotal)}
+                {Math.abs(diff) >= 1 && (
+                  <span style={{ color: "var(--accent-red)" }}> · payment is {fmt(Math.abs(diff))} {diff > 0 ? "more" : "less"}; the first part takes the difference</span>
+                )}
+                {unsure > 0 && <span style={{ color: "var(--accent-red)" }}> · {unsure} item{unsure > 1 ? "s" : ""} need a category</span>}
+                <div>Check the parts, then save.</div>
+              </div>
+            );
+          })()}
         </div>
 
         <div className="overflow-y-auto px-4 pb-2 space-y-2.5">

@@ -1732,7 +1732,8 @@ function HomeInner() {
         return t ? (
           <SplitSheet txn={t}
             categories={entryCategories.filter((c) => isPrimary || (c.visible_to !== "primary" && (!lockedCatNames.has(c.name) || c.name === t.category)))}
-            onSave={(parts) => handleSplit(t.id, parts)} onClose={() => setSplitTxnId(null)} />
+            onSave={(parts) => handleSplit(t.id, parts)} onClose={() => setSplitTxnId(null)}
+            phone={currentUser?.phone_number ?? null} />
         ) : null;
       })()}
 

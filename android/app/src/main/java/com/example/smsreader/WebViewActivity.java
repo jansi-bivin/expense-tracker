@@ -10,6 +10,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.provider.MediaStore;
 import android.util.Base64;
+import android.webkit.ValueCallback;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -18,6 +19,8 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 
 import java.io.OutputStream;
@@ -35,6 +38,16 @@ public class WebViewActivity extends AppCompatActivity {
     private static final String WEB_APP_URL = "https://exptrack-wine.vercel.app";
     private WebView webView;
     private AlertDialog setupDialog;
+
+    /** Photo picker for <input type="file"> (e.g. reading a bill in Split). */
+    private ValueCallback<Uri[]> filePathCallback;
+    private final ActivityResultLauncher<Intent> fileChooser = registerForActivityResult(
+        new ActivityResultContracts.StartActivityForResult(), result -> {
+            if (filePathCallback == null) return;
+            filePathCallback.onReceiveValue(
+                WebChromeClient.FileChooserParams.parseResult(result.getResultCode(), result.getData()));
+            filePathCallback = null;
+        });
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -69,7 +82,21 @@ public class WebViewActivity extends AppCompatActivity {
                 return false;
             }
         });
-        webView.setWebChromeClient(new WebChromeClient());
+        webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
+                if (filePathCallback != null) filePathCallback.onReceiveValue(null);
+                filePathCallback = callback;
+                try {
+                    fileChooser.launch(params.createIntent());
+                } catch (Exception e) {
+                    filePathCallback = null;
+                    Toast.makeText(WebViewActivity.this, "Could not open the photo picker", Toast.LENGTH_SHORT).show();
+                    return false;
+                }
+                return true;
+            }
+        });
 
         // WebView ignores downloads, so hand them (the APK update link) to the
         // phone's browser, which downloads the file and offers to install it.
